@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MAC Study icon">
+  <rect width="512" height="512" rx="96" fill="#252525"/>
+  <path fill="#FFE330" d="M112 126h68l76 138 76-138h68v260h-60V229l-62 110h-44l-62-110v157h-60V126Z"/>
+  <path fill="#6CB6FF" d="M142 408h228v28H142z"/>
+</svg>
