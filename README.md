@@ -59,7 +59,7 @@ MVP auth is Google sign-in plus email magic links, followed by a MAC invite
 gate. The app stays in demo mode until Supabase env vars are configured.
 
 1. Create a Supabase project.
-2. Run the SQL migrations in `supabase/migrations`.
+2. Run the SQL migrations in `supabase/migrations` in filename order.
 3. Add these env vars locally and in Vercel:
 
 ```bash
