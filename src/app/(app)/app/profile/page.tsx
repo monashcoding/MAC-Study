@@ -1,4 +1,4 @@
-import { Bell, ShieldCheck, UserRound } from "lucide-react";
+import { Bell, LogOut, ShieldCheck, UserRound } from "lucide-react";
 
 export default function ProfilePage() {
   return (
@@ -35,6 +35,20 @@ export default function ProfilePage() {
           title="MAC access"
           value="Invite required"
         />
+        <a
+          className="mac-panel mac-focus flex items-center justify-between gap-4 p-4"
+          href="/auth/logout"
+        >
+          <span className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[#262626] text-[var(--color-mac-yellow)]">
+              <LogOut aria-hidden size={19} />
+            </span>
+            <span className="font-medium">Sign out</span>
+          </span>
+          <span className="text-sm text-[var(--color-text-muted)]">
+            Current account
+          </span>
+        </a>
       </section>
     </div>
   );

@@ -1,0 +1,67 @@
+import type { SupabaseClient, User } from "@supabase/supabase-js";
+
+export type AccessStatus = "pending" | "active" | "blocked";
+
+export type Profile = {
+  id: string;
+  display_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+  course: string | null;
+  access_status: AccessStatus;
+  access_granted_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function getDisplayName(user: User) {
+  const metadataName =
+    typeof user.user_metadata?.full_name === "string"
+      ? user.user_metadata.full_name
+      : null;
+
+  return metadataName ?? user.email?.split("@")[0] ?? "MAC member";
+}
+
+export async function ensureProfile(
+  supabase: SupabaseClient,
+  user: User,
+): Promise<Profile | null> {
+  const { data: existing, error: fetchError } = await supabase
+    .from("profiles")
+    .select(
+      "id, display_name, username, avatar_url, course, access_status, access_granted_at, created_at, updated_at",
+    )
+    .eq("id", user.id)
+    .maybeSingle<Profile>();
+
+  if (fetchError) {
+    throw fetchError;
+  }
+
+  if (existing) {
+    return existing;
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .insert({
+      id: user.id,
+      display_name: getDisplayName(user),
+      avatar_url:
+        typeof user.user_metadata?.avatar_url === "string"
+          ? user.user_metadata.avatar_url
+          : null,
+      access_status: "pending",
+    })
+    .select(
+      "id, display_name, username, avatar_url, course, access_status, access_granted_at, created_at, updated_at",
+    )
+    .single<Profile>();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}

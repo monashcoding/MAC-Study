@@ -1,8 +1,12 @@
 import { createBrowserClient } from "@supabase/ssr";
-import { getSupabasePublicEnv } from "./env";
+import { getOptionalSupabasePublicEnv } from "./env";
 
 export function createSupabaseBrowserClient() {
-  const env = getSupabasePublicEnv();
+  const env = getOptionalSupabasePublicEnv();
+
+  if (!env) {
+    throw new Error("Supabase environment variables are not configured.");
+  }
 
   return createBrowserClient(
     env.NEXT_PUBLIC_SUPABASE_URL,

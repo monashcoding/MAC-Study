@@ -6,10 +6,12 @@ import {
   BarChart3,
   BookOpen,
   Clock3,
+  LogOut,
   Settings,
   Sparkles,
   Users,
 } from "lucide-react";
+import type { AppAuthState } from "@/lib/auth/app-auth";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -20,8 +22,19 @@ const navItems = [
   { href: "/app/profile", label: "Profile", icon: Settings },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  authState,
+  children,
+}: {
+  authState: AppAuthState;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
+  const isDemo = authState.mode === "demo";
+  const displayName =
+    authState.mode === "authenticated"
+      ? authState.profile.display_name ?? authState.user.email ?? "MAC member"
+      : "Demo mode";
 
   return (
     <div className="min-h-dvh bg-[var(--color-background)]">
@@ -51,13 +64,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
               <div className="hidden lg:block">
                 <p className="text-sm text-[var(--color-text-muted)]">
-                  Australia/Sydney
+                  {displayName}
                 </p>
                 <p className="text-lg font-semibold">Today&apos;s study plan</p>
               </div>
-              <div className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
-                <span className="h-2 w-2 rounded-full bg-[var(--color-success)]" />
-                MAC-only
+              <div className="flex items-center gap-2">
+                <div className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+                  <span
+                    className={cn(
+                      "h-2 w-2 rounded-full",
+                      isDemo
+                        ? "bg-[var(--color-mac-yellow)]"
+                        : "bg-[var(--color-success)]",
+                    )}
+                  />
+                  {isDemo ? "Demo" : "MAC-only"}
+                </div>
+                {!isDemo ? (
+                  <a
+                    className="mac-focus hidden h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)] lg:inline-flex"
+                    href="/auth/logout"
+                  >
+                    <LogOut aria-hidden size={17} />
+                    <span className="sr-only">Sign out</span>
+                  </a>
+                ) : null}
               </div>
             </div>
           </header>

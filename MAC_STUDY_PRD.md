@@ -351,8 +351,39 @@ display_name text
 username text unique
 avatar_url text
 course text
+access_status text -- pending, active, blocked
+access_granted_at timestamptz null
+access_granted_by uuid references profiles(id) null
+access_granted_source text null
 created_at timestamptz
 updated_at timestamptz
+```
+
+### access_invites
+
+Invite codes for MAC-only access.
+
+```txt
+id uuid primary key
+code text unique
+note text
+created_by uuid references profiles(id) null
+max_uses integer null
+uses_count integer default 0
+expires_at timestamptz null
+revoked_at timestamptz null
+created_at timestamptz
+```
+
+### access_invite_redemptions
+
+Tracks which user redeemed which invite.
+
+```txt
+invite_id uuid references access_invites(id)
+user_id uuid references profiles(id)
+redeemed_at timestamptz
+primary key (invite_id, user_id)
 ```
 
 ### subjects
