@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import type { MouseEvent } from "react";
+import { useEffect, useOptimistic, useTransition } from "react";
 import {
   BarChart3,
   BookOpen,
@@ -30,14 +32,56 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [optimisticPathname, setOptimisticPathname] = useOptimistic(pathname);
   const isDemo = authState.mode === "demo";
   const displayName =
     authState.mode === "authenticated"
-      ? authState.profile.display_name ?? authState.user.email ?? "MAC member"
+      ? (authState.profile.display_name ?? authState.user.email ?? "MAC member")
       : "Demo mode";
+
+  useEffect(() => {
+    navItems.forEach((item) => {
+      router.prefetch(item.href);
+    });
+  }, [router]);
+
+  function warmRoute(href: string) {
+    router.prefetch(href);
+  }
+
+  function navigateTo(href: string, event: MouseEvent<HTMLAnchorElement>) {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    if (href === pathname) {
+      event.preventDefault();
+      return;
+    }
+
+    event.preventDefault();
+    warmRoute(href);
+
+    startTransition(() => {
+      setOptimisticPathname(href);
+      router.push(href);
+    });
+  }
 
   return (
     <div className="min-h-dvh bg-[var(--color-background)]">
+      {isPending ? (
+        <div className="fixed inset-x-0 top-0 z-50 h-0.5 bg-[var(--color-mac-yellow)] lg:hidden" />
+      ) : null}
       <div className="mx-auto flex h-[calc(100dvh-var(--mobile-nav-height))] w-full max-w-6xl overflow-y-auto lg:h-auto lg:min-h-dvh lg:gap-5 lg:overflow-visible lg:px-6">
         <aside className="hidden w-64 shrink-0 py-6 lg:block">
           <div className="sticky top-6">
@@ -47,9 +91,11 @@ export function AppShell({
                 <NavLink
                   href={item.href}
                   icon={item.icon}
-                  isActive={isActive(pathname, item.href)}
+                  isActive={isActive(optimisticPathname, item.href)}
                   key={item.href}
                   label={item.label}
+                  onIntent={warmRoute}
+                  onNavigate={navigateTo}
                 />
               ))}
             </nav>
@@ -101,19 +147,24 @@ export function AppShell({
         <div className="mx-auto grid h-full max-w-lg grid-cols-5 gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active = isActive(pathname, item.href);
+            const active = isActive(optimisticPathname, item.href);
 
             return (
               <Link
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "mac-focus flex h-14 flex-col items-center justify-center gap-1 rounded-md text-xs font-medium",
+                  "mac-focus flex h-14 touch-manipulation flex-col items-center justify-center gap-1 rounded-md text-xs font-medium transition-colors active:scale-[0.98]",
                   active
                     ? "bg-[var(--color-mac-yellow)] text-[#141414]"
                     : "text-[var(--color-text-muted)]",
                 )}
                 href={item.href}
                 key={item.href}
+                onClick={(event) => navigateTo(item.href, event)}
+                onFocus={() => warmRoute(item.href)}
+                onPointerDown={() => warmRoute(item.href)}
+                onPointerEnter={() => warmRoute(item.href)}
+                prefetch
               >
                 <Icon aria-hidden size={19} />
                 <span>{item.label}</span>
@@ -156,11 +207,15 @@ function NavLink({
   icon: Icon,
   isActive,
   label,
+  onIntent,
+  onNavigate,
 }: {
   href: string;
   icon: React.ComponentType<{ size?: number; "aria-hidden"?: boolean }>;
   isActive: boolean;
   label: string;
+  onIntent: (href: string) => void;
+  onNavigate: (href: string, event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   return (
     <Link
@@ -172,6 +227,10 @@ function NavLink({
           : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]",
       )}
       href={href}
+      onClick={(event) => onNavigate(href, event)}
+      onFocus={() => onIntent(href)}
+      onPointerEnter={() => onIntent(href)}
+      prefetch
     >
       <Icon aria-hidden size={19} />
       {label}
