@@ -103,7 +103,7 @@ export function LoginForm({
         Continue with Google
       </button>
 
-      <div className="flex items-center gap-3 text-xs uppercase tracking-wide text-[var(--color-text-muted)]">
+      <div className="flex items-center gap-3 text-xs uppercase tracking-normal text-[var(--color-text-muted)]">
         <span className="h-px flex-1 bg-[var(--color-border)]" />
         or
         <span className="h-px flex-1 bg-[var(--color-border)]" />
@@ -114,7 +114,7 @@ export function LoginForm({
           Email magic link
         </label>
         <input
-          className="mac-focus h-12 w-full rounded-md border border-[var(--color-border)] bg-[#262626] px-3 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
+          className="mac-focus h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
           disabled={!isConfigured || isPending}
           id="email"
           onChange={(event) => setEmail(event.target.value)}

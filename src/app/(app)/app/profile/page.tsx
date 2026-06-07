@@ -2,29 +2,32 @@ import { Bell, LogOut, ShieldCheck, UserRound } from "lucide-react";
 
 export default function ProfilePage() {
   return (
-    <div className="space-y-5">
-      <div>
-        <p className="text-sm font-medium text-[var(--color-mac-yellow)]">
-          Profile
-        </p>
-        <h1 className="text-2xl font-semibold">Settings</h1>
-      </div>
-
-      <section className="mac-panel p-4">
-        <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414]">
+    <div className="space-y-6">
+      <section className="mac-panel overflow-hidden">
+        <div className="border-b border-[var(--color-border)] p-4">
+          <h2 className="font-semibold">Account</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Signed-in MAC study profile
+          </p>
+        </div>
+        <div className="flex items-center gap-4 p-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414]">
             <UserRound aria-hidden size={28} />
           </div>
-          <div>
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold">MAC member</h2>
-            <p className="text-sm text-[var(--color-text-muted)]">
-              @mac_study
-            </p>
+            <p className="text-sm text-[var(--color-text-muted)]">@mac_study</p>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-3">
+      <section className="mac-panel overflow-hidden">
+        <div className="border-b border-[var(--color-border)] p-4">
+          <h2 className="font-semibold">Settings</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            App access and notification defaults
+          </p>
+        </div>
         <SettingRow
           icon={<Bell aria-hidden size={19} />}
           title="Nudges"
@@ -36,11 +39,11 @@ export default function ProfilePage() {
           value="Invite required"
         />
         <a
-          className="mac-panel mac-focus flex items-center justify-between gap-4 p-4"
+          className="mac-focus flex items-center justify-between gap-4 border-t border-[var(--color-border)] p-4"
           href="/auth/logout"
         >
           <span className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[#262626] text-[var(--color-mac-yellow)]">
+            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-surface-raised)] text-[var(--color-mac-yellow)]">
               <LogOut aria-hidden size={19} />
             </span>
             <span className="font-medium">Sign out</span>
@@ -64,9 +67,9 @@ function SettingRow({
   value: string;
 }) {
   return (
-    <div className="mac-panel flex items-center justify-between gap-4 p-4">
+    <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] p-4 first:border-t-0">
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[#262626] text-[var(--color-mac-yellow)]">
+        <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-surface-raised)] text-[var(--color-mac-yellow)]">
           {icon}
         </span>
         <p className="font-medium">{title}</p>

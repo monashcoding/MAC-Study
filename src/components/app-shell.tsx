@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
@@ -7,21 +8,50 @@ import { useEffect, useOptimistic, useTransition } from "react";
 import {
   BarChart3,
   BookOpen,
-  Clock3,
+  House,
   LogOut,
   Settings,
-  Sparkles,
   Users,
 } from "lucide-react";
 import type { AppAuthState } from "@/lib/auth/app-auth";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/app", label: "Timer", icon: Clock3 },
-  { href: "/app/subjects", label: "Subjects", icon: BookOpen },
-  { href: "/app/groups", label: "Groups", icon: Users },
-  { href: "/app/leaderboards", label: "Ranks", icon: BarChart3 },
-  { href: "/app/profile", label: "Profile", icon: Settings },
+  {
+    href: "/app",
+    label: "Home",
+    title: "Home",
+    subtitle: "Track today's study and jump straight into a subject.",
+    icon: House,
+  },
+  {
+    href: "/app/subjects",
+    label: "Subjects",
+    title: "Subjects",
+    subtitle: "See where today's study time is going.",
+    icon: BookOpen,
+  },
+  {
+    href: "/app/groups",
+    label: "Groups",
+    title: "Groups",
+    subtitle: "Manage study crews and invite codes.",
+    icon: Users,
+  },
+  {
+    href: "/app/leaderboards",
+    label: "Ranks",
+    title: "Leaderboards",
+    subtitle: "Compare effort across MAC study sessions.",
+    icon: BarChart3,
+  },
+  {
+    href: "/app/profile",
+    label: "Profile",
+    title: "Profile",
+    subtitle: "Control access, nudges, and account settings.",
+    icon: Settings,
+  },
 ];
 
 export function AppShell({
@@ -35,11 +65,9 @@ export function AppShell({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [optimisticPathname, setOptimisticPathname] = useOptimistic(pathname);
-  const isDemo = authState.mode === "demo";
-  const displayName =
-    authState.mode === "authenticated"
-      ? (authState.profile.display_name ?? authState.user.email ?? "MAC member")
-      : "Demo mode";
+  const currentNav =
+    navItems.find((item) => isActive(optimisticPathname, item.href)) ??
+    navItems[0];
 
   useEffect(() => {
     navItems.forEach((item) => {
@@ -80,7 +108,7 @@ export function AppShell({
   return (
     <div className="min-h-dvh bg-[var(--color-background)]">
       {isPending ? (
-        <div className="fixed inset-x-0 top-0 z-50 h-0.5 bg-[var(--color-mac-yellow)] lg:hidden" />
+        <div className="fixed inset-x-0 top-[var(--safe-area-top)] z-50 h-0.5 bg-[var(--color-mac-yellow)] lg:hidden" />
       ) : null}
       <div className="mx-auto flex h-[calc(100dvh-var(--mobile-nav-height))] w-full max-w-6xl overflow-y-auto lg:h-auto lg:min-h-dvh lg:gap-5 lg:overflow-visible lg:px-6">
         <aside className="hidden w-64 shrink-0 py-6 lg:block">
@@ -103,30 +131,24 @@ export function AppShell({
         </aside>
 
         <main className="min-w-0 flex-1">
-          <header className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[rgb(37_37_37/0.88)] px-4 py-3 backdrop-blur lg:border-b-0 lg:bg-transparent lg:px-0 lg:pt-6">
+          <header className="sticky top-0 z-20 bg-[rgb(23_23_23/0.94)] px-4 pb-3 pt-[calc(var(--safe-area-top)+0.85rem)] backdrop-blur lg:static lg:bg-transparent lg:px-0 lg:pb-5 lg:pt-6">
             <div className="flex items-center justify-between gap-4">
-              <div className="lg:hidden">
-                <Brand compact />
+              <div className="flex min-w-0 items-center gap-3 lg:hidden">
+                <LogoMark size="sm" />
+                <h1 className="min-w-0 truncate text-xl font-semibold">
+                  {currentNav.title}
+                </h1>
               </div>
               <div className="hidden lg:block">
-                <p className="text-sm text-[var(--color-text-muted)]">
-                  {displayName}
+                <h1 className="mt-1 text-3xl font-semibold tracking-normal">
+                  {currentNav.title}
+                </h1>
+                <p className="mt-2 max-w-xl text-sm text-[var(--color-text-muted)]">
+                  {currentNav.subtitle}
                 </p>
-                <p className="text-lg font-semibold">Today&apos;s study plan</p>
               </div>
               <div className="flex items-center gap-2">
-                <div className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
-                  <span
-                    className={cn(
-                      "h-2 w-2 rounded-full",
-                      isDemo
-                        ? "bg-[var(--color-mac-yellow)]"
-                        : "bg-[var(--color-success)]",
-                    )}
-                  />
-                  {isDemo ? "Demo" : "MAC-only"}
-                </div>
-                {!isDemo ? (
+                {authState.mode === "authenticated" ? (
                   <a
                     className="mac-focus hidden h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)] lg:inline-flex"
                     href="/auth/logout"
@@ -139,11 +161,13 @@ export function AppShell({
             </div>
           </header>
 
-          <div className="px-4 pb-8 pt-4 sm:px-6 lg:px-0">{children}</div>
+          <div className="px-4 pb-8 pt-5 sm:px-6 lg:px-0 lg:pt-0">
+            {children}
+          </div>
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 h-[var(--mobile-nav-height)] border-t border-[var(--color-border)] bg-[rgb(37_37_37/0.96)] px-2 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 h-[var(--mobile-nav-height)] border-t border-[var(--color-border)] bg-[rgb(23_23_23/0.97)] px-2 pb-[max(0.55rem,var(--safe-area-bottom))] pt-2 backdrop-blur lg:hidden">
         <div className="mx-auto grid h-full max-w-lg grid-cols-5 gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -153,10 +177,10 @@ export function AppShell({
               <Link
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "mac-focus flex h-14 touch-manipulation flex-col items-center justify-center gap-1 rounded-md text-xs font-medium transition-colors active:scale-[0.98]",
+                  "mac-focus flex h-13 touch-manipulation flex-col items-center justify-center gap-1 rounded-md border text-xs font-medium transition active:scale-[0.98]",
                   active
-                    ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-                    : "text-[var(--color-text-muted)]",
+                    ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
+                    : "border-transparent text-[var(--color-text-muted)]",
                 )}
                 href={item.href}
                 key={item.href}
@@ -180,9 +204,7 @@ export function AppShell({
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <Link className="mac-focus flex items-center gap-3 rounded-md" href="/app">
-      <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414]">
-        <Sparkles aria-hidden size={20} />
-      </span>
+      <LogoMark size={compact ? "sm" : "md"} />
       <span>
         <span
           className={cn(
@@ -194,11 +216,27 @@ function Brand({ compact = false }: { compact?: boolean }) {
         </span>
         {!compact ? (
           <span className="text-sm text-[var(--color-text-muted)]">
-            Timers, crews, ranks
+            Study, crews, ranks
           </span>
         ) : null}
       </span>
     </Link>
+  );
+}
+
+function LogoMark({ size = "md" }: { size?: "sm" | "md" }) {
+  const pixels = size === "sm" ? 36 : 42;
+
+  return (
+    <Image
+      alt=""
+      aria-hidden
+      className="shrink-0 rounded-full"
+      height={pixels}
+      priority={size === "md"}
+      src="/icons/mac-square.png"
+      width={pixels}
+    />
   );
 }
 
@@ -221,10 +259,10 @@ function NavLink({
     <Link
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "mac-focus flex h-12 items-center gap-3 rounded-md px-3 text-sm font-medium",
+        "mac-focus flex min-h-13 items-center gap-3 rounded-md border px-3 py-2 text-sm font-medium transition",
         isActive
-          ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-          : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]",
+          ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
+          : "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]",
       )}
       href={href}
       onClick={(event) => onNavigate(href, event)}

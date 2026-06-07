@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LogOut, TicketCheck } from "lucide-react";
@@ -25,12 +26,21 @@ export default async function AccessPage({ searchParams }: AccessPageProps) {
   }
 
   return (
-    <main className="min-h-dvh bg-[var(--color-background)] px-4 py-8">
+    <main className="min-h-dvh bg-[var(--color-background)] px-4 pb-8 pt-[calc(var(--safe-area-top)+2rem)]">
       <div className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-md flex-col justify-center">
-        <Link className="mac-focus mb-8 inline-flex items-center gap-3 rounded-md" href="/">
-          <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] font-semibold text-[#141414]">
-            M
-          </span>
+        <Link
+          className="mac-focus mb-8 inline-flex items-center gap-3 rounded-md"
+          href="/"
+        >
+          <Image
+            alt=""
+            aria-hidden
+            className="rounded-md"
+            height={42}
+            priority
+            src="/icons/mac-square.png"
+            width={42}
+          />
           <span>
             <span className="block text-xl font-semibold">MAC Study</span>
             <span className="text-sm text-[var(--color-text-muted)]">
@@ -58,7 +68,7 @@ export default async function AccessPage({ searchParams }: AccessPageProps) {
             </label>
             <input
               autoComplete="one-time-code"
-              className="mac-focus h-12 w-full rounded-md border border-[var(--color-border)] bg-[#262626] px-3 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
+              className="mac-focus h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
               id="inviteCode"
               name="inviteCode"
               placeholder="MAC-FOUNDING"

@@ -9,8 +9,8 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/app",
     scope: "/",
     display: "standalone",
-    background_color: "#252525",
-    theme_color: "#252525",
+    background_color: "#171717",
+    theme_color: "#171717",
     orientation: "portrait",
     icons: [
       {
@@ -29,18 +29,6 @@ export default function manifest(): MetadataRoute.Manifest {
         src: "/icons/icon-maskable-512.png",
         sizes: "512x512",
         type: "image/png",
-        purpose: "maskable",
-      },
-      {
-        src: "/icons/mac-study.svg",
-        sizes: "any",
-        type: "image/svg+xml",
-        purpose: "any",
-      },
-      {
-        src: "/icons/mac-study-maskable.svg",
-        sizes: "any",
-        type: "image/svg+xml",
         purpose: "maskable",
       },
     ],

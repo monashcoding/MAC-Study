@@ -1,5 +1,5 @@
-const CACHE_NAME = "mac-study-shell-v1";
-const SHELL_ASSETS = ["/app", "/icons/mac-study.svg"];
+const CACHE_NAME = "mac-study-shell-v2";
+const SHELL_ASSETS = ["/app", "/icons/mac-square.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -43,8 +43,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: "/icons/mac-study.svg",
-      badge: "/icons/mac-study-maskable.svg",
+      icon: "/icons/icon-512.png",
+      badge: "/icons/icon-maskable-512.png",
       data: {
         url: data.url ?? "/app",
       },
