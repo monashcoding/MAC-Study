@@ -121,7 +121,7 @@ export function StatisticsDashboard() {
 
   return (
     <div className="space-y-6 pt-1">
-      <section className="grid grid-cols-2 divide-x divide-y divide-[var(--color-border)] border-y border-[var(--color-border)] sm:grid-cols-4 sm:divide-y-0">
+      <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <SummaryTile
           icon={Clock}
           label="Today"
@@ -173,7 +173,7 @@ export function StatisticsDashboard() {
             </div>
           </div>
 
-          <div className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
+          <div className="grid gap-2">
             {subjectRows.length ? (
               subjectRows.map((subject) => {
                 const percent = subjectTotal
@@ -181,7 +181,10 @@ export function StatisticsDashboard() {
                   : 0;
 
                 return (
-                  <div className="py-3" key={subject.id}>
+                  <div
+                    className="rounded-md bg-[rgb(255_255_255/0.035)] p-3"
+                    key={subject.id}
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-2">
                         <span
@@ -212,7 +215,7 @@ export function StatisticsDashboard() {
                 );
               })
             ) : (
-              <p className="py-4 text-sm text-[var(--color-text-muted)]">
+              <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
                 Start a session to fill your study split.
               </p>
             )}
@@ -248,7 +251,7 @@ function SummaryTile({
   value: string;
 }) {
   return (
-    <div className="px-3 py-4">
+    <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-4">
       <div className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414]">
         <Icon aria-hidden size={17} />
       </div>
@@ -264,7 +267,7 @@ function SummaryTile({
 
 function InsightTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border-y border-[var(--color-border)] py-3">
+    <div className="rounded-md bg-[rgb(255_255_255/0.035)] p-3">
       <p className="truncate text-lg font-semibold">{value}</p>
       <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
         {label}

@@ -306,10 +306,10 @@ export function GroupsDashboard() {
             </div>
           </div>
 
-          <div className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
+          <div className="grid gap-2">
             {ranking.map((member, index) => (
               <div
-                className="grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 py-2.5"
+                className="grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2.5"
                 key={member.id}
               >
                 <span className="font-mono text-sm font-semibold text-[var(--color-text-muted)]">
@@ -334,7 +334,7 @@ export function GroupsDashboard() {
 
   return (
     <div className="space-y-5 pt-1">
-      <section className="grid grid-cols-3 divide-x divide-[var(--color-border)] border-y border-[var(--color-border)] py-3">
+      <section className="grid grid-cols-3 gap-2">
         <SummaryStat label="Groups" value={`${socialState.groups.length}`} />
         <SummaryStat label="Active" value={`${activeTotal}`} />
         <SummaryStat label="Members" value={`${uniqueMemberCount}`} />
@@ -353,10 +353,10 @@ export function GroupsDashboard() {
           </button>
         </div>
 
-        <div className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
+        <div className="grid gap-2">
           {groupSummaries.map(({ group, activeNow, memberCount }) => (
             <button
-              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-4 text-left"
+              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-4 text-left transition active:scale-[0.99]"
               key={group.id}
               onClick={() => setSelectedGroupId(group.id)}
               type="button"
@@ -430,7 +430,7 @@ function CreateGroupDialog({
       role="dialog"
     >
       <div className="max-h-[min(88dvh,680px)] w-full max-w-xl overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-background)] p-4">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-[var(--color-background)] p-4">
           <h2 className="text-lg font-semibold">Create group</h2>
           <button
             className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
@@ -477,13 +477,13 @@ function CreateGroupDialog({
 
           <div>
             <p className="text-sm font-medium">Members</p>
-            <div className="mt-3 divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
+            <div className="mt-3 grid gap-2">
               {inviteableFriends.map((friend) => {
                 const selected = selectedMembers.includes(friend.id);
 
                 return (
                   <button
-                    className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3 text-left"
+                    className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left"
                     key={friend.id}
                     onClick={() => onMemberToggle(friend.id)}
                     type="button"
@@ -512,7 +512,7 @@ function CreateGroupDialog({
           </div>
         </div>
 
-        <div className="sticky bottom-0 border-t border-[var(--color-border)] bg-[var(--color-background)] p-4">
+        <div className="sticky bottom-0 bg-[var(--color-background)] p-4">
           <button
             className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
             disabled={!groupName.trim()}
@@ -530,7 +530,7 @@ function CreateGroupDialog({
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="px-3 text-center">
+    <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center">
       <p className="text-xl font-semibold tabular-nums">{value}</p>
       <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
         {label}
@@ -585,7 +585,7 @@ function MemberIconDialog({
       role="dialog"
     >
       <div className="max-h-[min(88dvh,680px)] w-full max-w-xl overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-background)] p-4">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-[var(--color-background)] p-4">
           <h2 className="text-lg font-semibold">Member icons</h2>
           <button
             className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
@@ -597,9 +597,12 @@ function MemberIconDialog({
           </button>
         </div>
 
-        <div className="divide-y divide-[var(--color-border)]">
+        <div className="grid gap-3 p-4">
           {members.map((member) => (
-            <div className="space-y-3 px-4 py-4" key={member.id}>
+            <div
+              className="space-y-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
+              key={member.id}
+            >
               <div className="flex items-center justify-between gap-3">
                 <p className="truncate font-semibold">{member.name}</p>
                 <p className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">

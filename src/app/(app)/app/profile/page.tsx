@@ -3,14 +3,14 @@ import { Bell, LogOut, ShieldCheck, UserRound } from "lucide-react";
 export default function ProfilePage() {
   return (
     <div className="space-y-6">
-      <section className="mac-panel overflow-hidden">
-        <div className="border-b border-[var(--color-border)] p-4">
+      <section className="rounded-md bg-[rgb(255_255_255/0.035)] p-4">
+        <div>
           <h2 className="font-semibold">Account</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             Signed-in MAC study profile
           </p>
         </div>
-        <div className="flex items-center gap-4 p-4">
+        <div className="mt-4 flex items-center gap-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414]">
             <UserRound aria-hidden size={28} />
           </div>
@@ -21,8 +21,8 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      <section className="mac-panel overflow-hidden">
-        <div className="border-b border-[var(--color-border)] p-4">
+      <section className="space-y-2">
+        <div className="rounded-md bg-[rgb(255_255_255/0.035)] p-4">
           <h2 className="font-semibold">Settings</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             App access and notification defaults
@@ -39,7 +39,7 @@ export default function ProfilePage() {
           value="Invite required"
         />
         <a
-          className="mac-focus flex items-center justify-between gap-4 border-t border-[var(--color-border)] p-4"
+          className="mac-focus flex items-center justify-between gap-4 rounded-md bg-[rgb(255_255_255/0.035)] p-4"
           href="/auth/logout"
         >
           <span className="flex items-center gap-3">
@@ -67,7 +67,7 @@ function SettingRow({
   value: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] p-4 first:border-t-0">
+    <div className="flex items-center justify-between gap-4 rounded-md bg-[rgb(255_255_255/0.035)] p-4">
       <div className="flex items-center gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-surface-raised)] text-[var(--color-mac-yellow)]">
           {icon}

@@ -152,7 +152,7 @@ export function FriendsDashboard() {
           </div>
         </section>
 
-        <section className="grid grid-cols-2 divide-x divide-y divide-[var(--color-border)] border-y border-[var(--color-border)] sm:grid-cols-4 sm:divide-y-0">
+        <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <ProfileStat
             label="Today"
             value={formatDuration(selectedFriend.daySeconds)}
@@ -216,7 +216,7 @@ export function FriendsDashboard() {
 
   return (
     <div className="space-y-5 pt-1">
-      <section className="grid grid-cols-3 divide-x divide-[var(--color-border)] border-y border-[var(--color-border)] py-3">
+      <section className="grid grid-cols-3 gap-2">
         <SummaryStat label="Friends" value={`${friendList.length}`} />
         <SummaryStat label="Studying" value={`${studyingCount}`} />
         <SummaryStat label="Groups" value={`${socialState.groups.length}`} />
@@ -235,10 +235,10 @@ export function FriendsDashboard() {
           </button>
         </div>
 
-        <div className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
+        <div className="grid gap-2">
           {friendList.map((friend) => (
             <button
-              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3 text-left"
+              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition active:scale-[0.99]"
               key={friend.id}
               onClick={() => {
                 setSelectedFriendId(friend.id);
@@ -308,7 +308,7 @@ function AddFriendDialog({
       role="dialog"
     >
       <div className="w-full max-w-xl rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] p-4">
+        <div className="flex items-center justify-between gap-3 p-4">
           <h2 className="text-lg font-semibold">Add friend</h2>
           <button
             className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
@@ -363,7 +363,7 @@ function AddFriendDialog({
           </div>
         </div>
 
-        <div className="border-t border-[var(--color-border)] p-4">
+        <div className="p-4">
           <button
             className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
             disabled={!name.trim()}
@@ -381,7 +381,7 @@ function AddFriendDialog({
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="px-3 text-center">
+    <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center">
       <p className="text-xl font-semibold tabular-nums">{value}</p>
       <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
         {label}
@@ -392,7 +392,7 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
 
 function ProfileStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="px-3 py-3 text-center">
+    <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center">
       <p className="font-mono text-sm font-semibold tabular-nums sm:text-base">
         {value}
       </p>

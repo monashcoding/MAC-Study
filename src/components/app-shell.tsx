@@ -63,17 +63,30 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [optimisticPathname, setOptimisticPathname] = useOptimistic(pathname);
   const currentNav =
     navItems.find((item) => isActive(optimisticPathname, item.href)) ??
     navItems[0];
 
   useEffect(() => {
+    function prefetchAll() {
+      navItems.forEach((item) => {
+        router.prefetch(item.href);
+      });
+    }
+
+    prefetchAll();
+    const timeout = window.setTimeout(prefetchAll, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [router]);
+
+  useEffect(() => {
     navItems.forEach((item) => {
       router.prefetch(item.href);
     });
-  }, [router]);
+  }, [pathname, router]);
 
   function warmRoute(href: string) {
     router.prefetch(href);
@@ -107,9 +120,6 @@ export function AppShell({
 
   return (
     <div className="min-h-dvh bg-[var(--color-background)]">
-      {isPending ? (
-        <div className="fixed inset-x-0 top-[var(--safe-area-top)] z-50 h-0.5 bg-[var(--color-mac-yellow)] lg:hidden" />
-      ) : null}
       <div className="mx-auto flex h-[calc(100dvh-var(--mobile-nav-height))] w-full max-w-6xl overflow-y-auto lg:h-auto lg:min-h-dvh lg:gap-5 lg:overflow-visible lg:px-6">
         <aside className="hidden w-64 shrink-0 py-6 lg:block">
           <div className="sticky top-6">
@@ -167,7 +177,7 @@ export function AppShell({
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 h-[var(--mobile-nav-height)] border-t border-[var(--color-border)] bg-[rgb(23_23_23/0.97)] px-2 pb-[max(0.55rem,var(--safe-area-bottom))] pt-2 backdrop-blur lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 h-[var(--mobile-nav-height)] bg-[rgb(23_23_23/0.97)] px-2 pb-[max(0.55rem,var(--safe-area-bottom))] pt-2 shadow-[0_-16px_36px_rgb(0_0_0/0.28)] backdrop-blur lg:hidden">
         <div className="mx-auto grid h-full max-w-lg grid-cols-5 gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -267,6 +277,7 @@ function NavLink({
       href={href}
       onClick={(event) => onNavigate(href, event)}
       onFocus={() => onIntent(href)}
+      onPointerDown={() => onIntent(href)}
       onPointerEnter={() => onIntent(href)}
       prefetch
     >
