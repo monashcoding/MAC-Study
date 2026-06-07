@@ -7,10 +7,10 @@ import type { MouseEvent } from "react";
 import { useEffect, useOptimistic, useTransition } from "react";
 import {
   BarChart3,
-  BookOpen,
   House,
   LogOut,
   Settings,
+  UserRound,
   Users,
 } from "lucide-react";
 import type { AppAuthState } from "@/lib/auth/app-auth";
@@ -25,24 +25,24 @@ const navItems = [
     icon: House,
   },
   {
-    href: "/app/subjects",
-    label: "Subjects",
-    title: "Subjects",
-    subtitle: "See where today's study time is going.",
-    icon: BookOpen,
-  },
-  {
     href: "/app/groups",
-    label: "Groups",
-    title: "Groups",
-    subtitle: "Manage study crews and invite codes.",
+    label: "Group",
+    title: "Group",
+    subtitle: "Study with friends and compare group effort.",
     icon: Users,
   },
   {
-    href: "/app/leaderboards",
-    label: "Ranks",
-    title: "Leaderboards",
-    subtitle: "Compare effort across MAC study sessions.",
+    href: "/app/friends",
+    label: "Friends",
+    title: "Friends",
+    subtitle: "See friends, profiles, and group invites.",
+    icon: UserRound,
+  },
+  {
+    href: "/app/statistics",
+    label: "Statistics",
+    title: "Statistics",
+    subtitle: "Review time, streaks, and subject split.",
     icon: BarChart3,
   },
   {
