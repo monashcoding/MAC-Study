@@ -49,7 +49,7 @@ create table public.group_members (
 create table public.study_sessions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
-  subject_id uuid not null references public.subjects(id) on delete restrict,
+  subject_id uuid references public.subjects(id) on delete restrict,
   group_id uuid references public.groups(id) on delete set null,
   started_at timestamptz not null,
   ended_at timestamptz,

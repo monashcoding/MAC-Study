@@ -6,7 +6,9 @@ import {
   ArrowLeft,
   BookOpen,
   Check,
+  CircleStop,
   Flame,
+  Play,
   Plus,
   Save,
   Settings2,
@@ -15,6 +17,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   GROUP_ICON_KEYS,
   PERSON_ICON_KEYS,
@@ -31,14 +34,20 @@ import {
 } from "@/lib/social-state";
 import {
   createRemoteGroup,
+  fetchRemoteTimerState,
   fetchRemoteSocialSnapshot,
   inviteRemoteFriendToGroup,
+  startRemoteStudySession,
+  stopRemoteStudySession,
   subscribeToRemoteAppChanges,
+  type RemoteActiveSession,
+  type RemoteSubject,
   updateRemoteGroupIcon,
   updateRemoteStudyIcon,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { formatDuration } from "@/lib/timer";
+import { StartStudyDialog } from "@/components/study/start-study-dialog";
+import { formatDuration, isLongSession } from "@/lib/timer";
 import { cn } from "@/lib/utils";
 
 const rankingWindows = [
@@ -69,6 +78,12 @@ const groupIconLabels = {
 const MEMBER_ACTIVE_COLOR = "#ff7a00";
 const MEMBER_INACTIVE_COLOR = "#555b6e";
 const emptySocialState: SocialState = { friends: [], groups: [] };
+const TIMER_STORAGE_KEY = "mac-study-demo-state";
+const fallbackStudySubjects = defaultSubjects.map((subject) => ({
+  id: subject.id,
+  name: subject.code,
+  color: subject.color,
+})) satisfies RemoteSubject[];
 
 const personIconLabels = {
   "flame-desk": "Flame",
@@ -79,8 +94,14 @@ const personIconLabels = {
 
 export function GroupsDashboard() {
   const [socialState, setSocialState] = useState<SocialState>(emptySocialState);
+  const [timerSubjects, setTimerSubjects] = useState<RemoteSubject[]>(
+    fallbackStudySubjects,
+  );
+  const [activeStudySession, setActiveStudySession] =
+    useState<RemoteActiveSession | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isChoosingStudy, setIsChoosingStudy] = useState(false);
   const [isEditingMemberIcons, setIsEditingMemberIcons] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [rankingWindow, setRankingWindow] = useState<RankingWindow>("day");
@@ -99,6 +120,15 @@ export function GroupsDashboard() {
     }
   }, []);
 
+  const refreshRemoteTimer = useCallback(async (supabase: SupabaseClient) => {
+    const timerState = await fetchRemoteTimerState(supabase);
+
+    if (timerState) {
+      setTimerSubjects(timerState.subjects);
+      setActiveStudySession(timerState.activeSession);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -107,12 +137,19 @@ export function GroupsDashboard() {
 
       try {
         supabase = createSupabaseBrowserClient();
-        const snapshot = await fetchRemoteSocialSnapshot(supabase);
+        const [snapshot, timerState] = await Promise.all([
+          fetchRemoteSocialSnapshot(supabase),
+          fetchRemoteTimerState(supabase),
+        ]);
 
         if (!cancelled && snapshot) {
           setRemoteClient(supabase);
           setCurrentUserId(snapshot.currentUserId);
           setSocialState(snapshot.socialState);
+          if (timerState) {
+            setTimerSubjects(timerState.subjects);
+            setActiveStudySession(timerState.activeSession);
+          }
           setIsLoaded(true);
           return;
         }
@@ -138,6 +175,9 @@ export function GroupsDashboard() {
           setSocialState(defaultSocialState);
         }
 
+        const localTimerState = readLocalTimerState();
+        setTimerSubjects(normalizeTimerSubjects(localTimerState?.subjects));
+        setActiveStudySession(localTimerState?.activeSession ?? null);
         setIsLoaded(true);
       }
     }
@@ -167,8 +207,9 @@ export function GroupsDashboard() {
 
     return subscribeToRemoteAppChanges(remoteClient, () => {
       void refreshRemoteSocial(remoteClient);
+      void refreshRemoteTimer(remoteClient);
     });
-  }, [refreshRemoteSocial, remoteClient]);
+  }, [refreshRemoteSocial, refreshRemoteTimer, remoteClient]);
 
   const selectedGroup = socialState.groups.find(
     (group) => group.id === selectedGroupId,
@@ -197,6 +238,9 @@ export function GroupsDashboard() {
 
   async function createGroup() {
     const name = groupName.trim();
+    const invitedMemberIds = selectedMembers.filter(
+      (memberId) => memberId !== "you" && memberId !== currentUserId,
+    );
 
     if (!name) {
       return;
@@ -211,7 +255,7 @@ export function GroupsDashboard() {
 
       if (newGroupId) {
         await Promise.all(
-          selectedMembers.map((friendId) =>
+          invitedMemberIds.map((friendId) =>
             inviteRemoteFriendToGroup({
               friendId,
               groupId: newGroupId,
@@ -234,7 +278,7 @@ export function GroupsDashboard() {
       id: `group-${crypto.randomUUID()}`,
       name,
       icon: groupIcon,
-      memberIds: uniqueIds(["you", ...selectedMembers]),
+      memberIds: uniqueIds(["you", ...invitedMemberIds]),
     };
 
     setSocialState((current) => ({
@@ -254,6 +298,89 @@ export function GroupsDashboard() {
         ? current.filter((id) => id !== friendId)
         : [...current, friendId],
     );
+  }
+
+  async function startGroupStudy(subjectId: string | null) {
+    if (!selectedGroup || activeStudySession) {
+      setIsChoosingStudy(false);
+      return;
+    }
+
+    if (remoteClient) {
+      try {
+        await startRemoteStudySession({
+          groupId: selectedGroup.id,
+          subjectId,
+          supabase: remoteClient,
+        });
+      } finally {
+        setIsChoosingStudy(false);
+        await Promise.all([
+          refreshRemoteTimer(remoteClient),
+          refreshRemoteSocial(remoteClient),
+        ]);
+      }
+
+      return;
+    }
+
+    const nextSession = {
+      groupId: selectedGroup.id,
+      subjectId,
+      startedAt: new Date().toISOString(),
+    };
+    const currentTimerState = readLocalTimerState();
+
+    writeLocalTimerState({
+      ...currentTimerState,
+      activeSession: nextSession,
+      subjects: timerSubjects,
+    });
+    setActiveStudySession(nextSession);
+    setIsChoosingStudy(false);
+  }
+
+  async function stopGroupStudy() {
+    if (!activeStudySession) {
+      return;
+    }
+
+    if (remoteClient) {
+      try {
+        await stopRemoteStudySession(remoteClient);
+      } finally {
+        await Promise.all([
+          refreshRemoteTimer(remoteClient),
+          refreshRemoteSocial(remoteClient),
+        ]);
+      }
+
+      return;
+    }
+
+    const endedAt = new Date();
+    const currentTimerState = readLocalTimerState();
+
+    writeLocalTimerState({
+      ...currentTimerState,
+      activeSession: null,
+      sessions: [
+        {
+          id: crypto.randomUUID(),
+          groupId: activeStudySession.groupId ?? null,
+          subjectId: activeStudySession.subjectId,
+          startedAt: activeStudySession.startedAt,
+          endedAt: endedAt.toISOString(),
+          status: isLongSession(activeStudySession.startedAt, endedAt)
+            ? "needs_confirmation"
+            : "completed",
+          source: "timer",
+        },
+        ...(currentTimerState?.sessions ?? []),
+      ],
+      subjects: timerSubjects,
+    });
+    setActiveStudySession(null);
   }
 
   async function updateGroupIcon(icon: GroupIconKey) {
@@ -308,6 +435,11 @@ export function GroupsDashboard() {
         getRankingSeconds(second, rankingWindow) -
         getRankingSeconds(first, rankingWindow),
     );
+    const activeInSelectedGroup =
+      activeStudySession?.groupId === selectedGroup.id;
+    const isStudyingElsewhere = Boolean(
+      activeStudySession && !activeInSelectedGroup,
+    );
 
     return (
       <div className="space-y-5 pt-1">
@@ -334,6 +466,32 @@ export function GroupsDashboard() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <button
+              className={cn(
+                "mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45",
+                activeInSelectedGroup
+                  ? "bg-[var(--color-danger)] text-white"
+                  : "bg-[var(--color-mac-yellow)] text-[#141414]",
+              )}
+              disabled={isStudyingElsewhere}
+              onClick={() =>
+                void (activeInSelectedGroup
+                  ? stopGroupStudy()
+                  : setIsChoosingStudy(true))
+              }
+              type="button"
+            >
+              {activeInSelectedGroup ? (
+                <CircleStop aria-hidden size={16} />
+              ) : (
+                <Play aria-hidden size={16} />
+              )}
+              {activeInSelectedGroup
+                ? "Stop study"
+                : isStudyingElsewhere
+                  ? "Studying"
+                  : "Start study"}
+            </button>
             {GROUP_ICON_KEYS.map((icon) => (
               <button
                 aria-label={`Use ${groupIconLabels[icon]} icon`}
@@ -394,6 +552,15 @@ export function GroupsDashboard() {
             onClose={() => setIsEditingMemberIcons(false)}
             remoteCurrentUserId={remoteClient ? currentUserId : null}
             onUpdate={updateFriendIcon}
+          />
+        ) : null}
+
+        {isChoosingStudy ? (
+          <StartStudyDialog
+            onClose={() => setIsChoosingStudy(false)}
+            onStart={(subjectId) => void startGroupStudy(subjectId)}
+            subjects={timerSubjects}
+            title={`Study in ${selectedGroup.name}`}
           />
         ) : null}
 
@@ -503,6 +670,7 @@ export function GroupsDashboard() {
           onIconChange={setGroupIcon}
           onMemberToggle={toggleMember}
           onNameChange={setGroupName}
+          currentUserId={currentUserId}
           selectedMembers={selectedMembers}
           socialState={socialState}
         />
@@ -519,6 +687,7 @@ function CreateGroupDialog({
   onIconChange,
   onMemberToggle,
   onNameChange,
+  currentUserId,
   selectedMembers,
   socialState,
 }: {
@@ -529,11 +698,12 @@ function CreateGroupDialog({
   onIconChange: (icon: GroupIconKey) => void;
   onMemberToggle: (friendId: string) => void;
   onNameChange: (name: string) => void;
+  currentUserId: string | null;
   selectedMembers: string[];
   socialState: SocialState;
 }) {
   const inviteableFriends = socialState.friends.filter(
-    (friend) => friend.id !== "you",
+    (friend) => friend.id !== "you" && friend.id !== currentUserId,
   );
 
   return (
@@ -836,4 +1006,59 @@ function getGroupMembers(
 
 function uniqueIds(ids: string[]) {
   return Array.from(new Set(ids));
+}
+
+type LocalTimerState = {
+  activeSession?: RemoteActiveSession | null;
+  sessions?: {
+    id: string;
+    subjectId: string | null;
+    groupId?: string | null;
+    startedAt: string;
+    endedAt: string;
+    status: "completed" | "needs_confirmation";
+    source: "timer";
+  }[];
+  subjects?: Partial<RemoteSubject>[];
+};
+
+function readLocalTimerState(): LocalTimerState | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const saved = window.localStorage.getItem(TIMER_STORAGE_KEY);
+
+  if (!saved) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(saved) as LocalTimerState;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalTimerState(state: LocalTimerState) {
+  window.localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(state));
+}
+
+function normalizeTimerSubjects(value: LocalTimerState["subjects"]) {
+  if (!Array.isArray(value) || !value.length) {
+    return fallbackStudySubjects;
+  }
+
+  const normalized = value
+    .map((subject, index) => ({
+      id: subject.id || fallbackStudySubjects[index]?.id || `subject-${index}`,
+      name:
+        subject.name ||
+        fallbackStudySubjects[index]?.name ||
+        `Subject ${index + 1}`,
+      color: subject.color || fallbackStudySubjects[index]?.color || "#FFE330",
+    }))
+    .filter((subject) => subject.name);
+
+  return normalized.length ? normalized : fallbackStudySubjects;
 }

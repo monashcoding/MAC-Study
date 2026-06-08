@@ -22,7 +22,7 @@ type StudySubject = {
 
 type StoredSession = {
   id: string;
-  subjectId: string;
+  subjectId: string | null;
   startedAt: string;
   endedAt: string;
   status: "completed" | "needs_confirmation";
@@ -30,7 +30,7 @@ type StoredSession = {
 };
 
 type ActiveSession = {
-  subjectId: string;
+  subjectId: string | null;
   startedAt: string;
 };
 
@@ -338,8 +338,11 @@ function buildStats({
     const seconds = getSessionSeconds(session);
 
     summary.allTime += seconds;
-    subjectTotals[session.subjectId] =
-      (subjectTotals[session.subjectId] ?? 0) + seconds;
+
+    if (session.subjectId) {
+      subjectTotals[session.subjectId] =
+        (subjectTotals[session.subjectId] ?? 0) + seconds;
+    }
 
     if (getLocalDateKey(endedAt) === todayKey) {
       summary.today += seconds;
@@ -359,8 +362,11 @@ function buildStats({
     const activeSeconds = getElapsedSeconds(activeSession.startedAt, now);
 
     summary.allTime += activeSeconds;
-    subjectTotals[activeSession.subjectId] =
-      (subjectTotals[activeSession.subjectId] ?? 0) + activeSeconds;
+
+    if (activeSession.subjectId) {
+      subjectTotals[activeSession.subjectId] =
+        (subjectTotals[activeSession.subjectId] ?? 0) + activeSeconds;
+    }
 
     if (getLocalDateKey(startedAt) === todayKey) {
       summary.today += activeSeconds;

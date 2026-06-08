@@ -19,14 +19,14 @@ export type RemoteSubject = {
 };
 
 export type RemoteActiveSession = {
-  subjectId: string;
+  subjectId: string | null;
   groupId?: string | null;
   startedAt: string;
 };
 
 export type RemoteStoredSession = {
   id: string;
-  subjectId: string;
+  subjectId: string | null;
   groupId?: string | null;
   startedAt: string;
   endedAt: string;
@@ -82,7 +82,7 @@ type FriendshipRow = {
 type SessionRow = {
   id: string;
   user_id: string;
-  subject_id: string;
+  subject_id: string | null;
   group_id: string | null;
   started_at: string;
   ended_at: string | null;
@@ -162,7 +162,7 @@ export async function startRemoteStudySession({
   supabase,
 }: {
   groupId?: string | null;
-  subjectId: string;
+  subjectId: string | null;
   supabase: SupabaseClient;
 }) {
   const userId = await getRemoteUserId(supabase);
@@ -573,7 +573,9 @@ function friendFromProfile(
   return {
     id: profile.id,
     name: profile.display_name || profile.username || "MAC member",
-    handle: profile.username ? `@${profile.username}` : "@mac",
+    handle: profile.username
+      ? `@${profile.username}`
+      : `@user_${profile.id.slice(0, 6)}`,
     initials: getInitials(profile.display_name || profile.username || "MAC"),
     color: normalizeProfileColor(profile.profile_color),
     personIcon: normalizePersonIcon(profile.study_icon),

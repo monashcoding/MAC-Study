@@ -1,5 +1,5 @@
 type CompletedSession = {
-  subjectId: string;
+  subjectId: string | null;
   startedAt: string;
   endedAt: string;
 };
@@ -43,6 +43,10 @@ export function sumCompletedSeconds(sessions: CompletedSession[]) {
 
 export function groupSessionsBySubject(sessions: CompletedSession[]) {
   return sessions.reduce<Record<string, number>>((totals, session) => {
+    if (!session.subjectId) {
+      return totals;
+    }
+
     totals[session.subjectId] =
       (totals[session.subjectId] ?? 0) + getSessionSeconds(session);
 

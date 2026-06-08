@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ensureProfile } from "@/lib/supabase/profile";
+import { ensureProfile, needsProfileSetup } from "@/lib/supabase/profile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
@@ -41,7 +41,13 @@ export async function GET(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (user) {
-    await ensureProfile(supabase, user);
+    const profile = await ensureProfile(supabase, user);
+
+    if (needsProfileSetup(profile)) {
+      return NextResponse.redirect(
+        new URL(`/auth/profile?next=${encodeURIComponent(next)}`, requestUrl),
+      );
+    }
   }
 
   return NextResponse.redirect(new URL(next, requestUrl));

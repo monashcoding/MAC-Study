@@ -25,6 +25,10 @@ function getDisplayName(user: User) {
   return metadataName ?? user.email?.split("@")[0] ?? "MAC member";
 }
 
+export function needsProfileSetup(profile: Profile | null) {
+  return !profile?.display_name?.trim() || !profile.username?.trim();
+}
+
 export async function ensureProfile(
   supabase: SupabaseClient,
   user: User,
@@ -54,7 +58,7 @@ export async function ensureProfile(
         typeof user.user_metadata?.avatar_url === "string"
           ? user.user_metadata.avatar_url
           : null,
-      username: user.email ? makeUsername(user.email, user.id) : null,
+      username: null,
       study_icon: "flame-desk",
       profile_color: "#FFE330",
       access_status: "pending",
@@ -69,15 +73,4 @@ export async function ensureProfile(
   }
 
   return data;
-}
-
-function makeUsername(email: string, userId: string) {
-  const prefix = email
-    .split("@")[0]
-    .toLowerCase()
-    .replace(/[^a-z0-9_]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 24);
-
-  return `${prefix || "mac"}_${userId.slice(0, 6)}`;
 }

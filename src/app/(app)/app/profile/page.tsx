@@ -1,6 +1,13 @@
 import { Bell, LogOut, ShieldCheck, UserRound } from "lucide-react";
+import { getAppAuthState } from "@/lib/auth/app-auth";
 
-export default function ProfilePage() {
+export default async function ProfilePage() {
+  const authState = await getAppAuthState("/app/profile");
+  const profile = authState.mode === "authenticated" ? authState.profile : null;
+  const displayName = profile?.display_name?.trim() || "MAC member";
+  const handle = profile?.username ? `@${profile.username}` : "@set_username";
+  const initials = getInitials(displayName);
+
   return (
     <div className="space-y-6">
       <section className="rounded-md bg-[rgb(255_255_255/0.035)] p-4">
@@ -12,11 +19,15 @@ export default function ProfilePage() {
         </div>
         <div className="mt-4 flex items-center gap-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414]">
-            <UserRound aria-hidden size={28} />
+            {initials ? (
+              <span className="text-lg font-semibold">{initials}</span>
+            ) : (
+              <UserRound aria-hidden size={28} />
+            )}
           </div>
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold">MAC member</h2>
-            <p className="text-sm text-[var(--color-text-muted)]">@mac_study</p>
+            <h2 className="truncate text-lg font-semibold">{displayName}</h2>
+            <p className="text-sm text-[var(--color-text-muted)]">{handle}</p>
           </div>
         </div>
       </section>
@@ -55,6 +66,15 @@ export default function ProfilePage() {
       </section>
     </div>
   );
+}
+
+function getInitials(value: string) {
+  return value
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }
 
 function SettingRow({

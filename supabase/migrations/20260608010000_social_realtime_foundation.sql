@@ -72,7 +72,7 @@ begin
   values (
     normalized_name,
     auth.uid(),
-    upper(substr(encode(gen_random_bytes(5), 'hex'), 1, 10)),
+    upper(substr(md5(auth.uid()::text || clock_timestamp()::text || random()::text), 1, 10)),
     normalized_icon
   )
   returning id into new_group_id;

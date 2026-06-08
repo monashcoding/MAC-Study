@@ -1,5 +1,9 @@
 import { redirect } from "next/navigation";
-import { ensureProfile, type Profile } from "@/lib/supabase/profile";
+import {
+  ensureProfile,
+  needsProfileSetup,
+  type Profile,
+} from "@/lib/supabase/profile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type AppAuthState =
@@ -17,7 +21,9 @@ export type AppAuthState =
       profile: Profile;
     };
 
-export async function getAppAuthState(nextPath = "/app"): Promise<AppAuthState> {
+export async function getAppAuthState(
+  nextPath = "/app",
+): Promise<AppAuthState> {
   const supabase = await createSupabaseServerClient();
 
   if (!supabase) {
@@ -37,6 +43,10 @@ export async function getAppAuthState(nextPath = "/app"): Promise<AppAuthState> 
   }
 
   const profile = await ensureProfile(supabase, user);
+
+  if (needsProfileSetup(profile)) {
+    redirect(`/auth/profile?next=${encodeURIComponent(nextPath)}`);
+  }
 
   if (!profile || profile.access_status !== "active") {
     redirect(`/auth/access?next=${encodeURIComponent(nextPath)}`);
@@ -72,6 +82,10 @@ export async function getPendingAuthState(nextPath = "/app") {
   }
 
   const profile = await ensureProfile(supabase, user);
+
+  if (needsProfileSetup(profile)) {
+    redirect(`/auth/profile?next=${encodeURIComponent(nextPath)}`);
+  }
 
   return {
     mode: "authenticated" as const,

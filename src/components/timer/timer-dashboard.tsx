@@ -30,6 +30,7 @@ import {
   isLongSession,
   sumCompletedSeconds,
 } from "@/lib/timer";
+import { StartStudyDialog } from "@/components/study/start-study-dialog";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "mac-study-demo-state";
@@ -58,14 +59,14 @@ type StoredSubject = Partial<StudySubject> & {
 };
 
 type ActiveSession = {
-  subjectId: string;
+  subjectId: string | null;
   groupId?: string | null;
   startedAt: string;
 };
 
 type StoredSession = {
   id: string;
-  subjectId: string;
+  subjectId: string | null;
   groupId?: string | null;
   startedAt: string;
   endedAt: string;
@@ -93,6 +94,7 @@ export function TimerDashboard() {
   const [now, setNow] = useState(() => new Date());
   const [isLoaded, setIsLoaded] = useState(false);
   const [isEditingSubjects, setIsEditingSubjects] = useState(false);
+  const [isChoosingStudy, setIsChoosingStudy] = useState(false);
   const [initialEditingSubjectId, setInitialEditingSubjectId] = useState<
     string | null
   >(null);
@@ -217,14 +219,20 @@ export function TimerDashboard() {
   const completedToday = sumCompletedSeconds(todaySessions);
   const totalToday = completedToday + elapsedSeconds;
 
-  async function startStudy(subjectId: string) {
+  async function startStudy(
+    subjectId: string | null,
+    groupId: string | null = null,
+  ) {
     if (activeSession) {
       return;
     }
 
+    setIsChoosingStudy(false);
+
     if (dataMode === "remote" && remoteClient) {
       try {
         await startRemoteStudySession({
+          groupId,
           subjectId,
           supabase: remoteClient,
         });
@@ -238,7 +246,7 @@ export function TimerDashboard() {
 
     setActiveSession({
       subjectId,
-      groupId: null,
+      groupId,
       startedAt: new Date().toISOString(),
     });
   }
@@ -335,7 +343,7 @@ export function TimerDashboard() {
       setSubjects(cleanedSubjects);
     }
 
-    if (activeSession && !subjectIds.has(activeSession.subjectId)) {
+    if (activeSession?.subjectId && !subjectIds.has(activeSession.subjectId)) {
       setActiveSession(null);
     }
 
@@ -349,6 +357,25 @@ export function TimerDashboard() {
         <p className="font-mono text-6xl font-semibold leading-none tabular-nums sm:text-7xl lg:text-8xl">
           {formatDuration(totalToday)}
         </p>
+        <button
+          className={cn(
+            "mac-focus mt-5 inline-flex h-12 min-w-40 items-center justify-center gap-2 rounded-md px-5 text-sm font-semibold transition active:scale-[0.99]",
+            activeSession
+              ? "bg-[var(--color-danger)] text-white"
+              : "bg-[var(--color-mac-yellow)] text-[#141414]",
+          )}
+          onClick={() =>
+            void (activeSession ? stopStudy() : setIsChoosingStudy(true))
+          }
+          type="button"
+        >
+          {activeSession ? (
+            <CircleStop aria-hidden size={18} />
+          ) : (
+            <Play aria-hidden size={18} />
+          )}
+          {activeSession ? "Stop study" : "Start study"}
+        </button>
       </section>
 
       <section className="space-y-3">
@@ -435,6 +462,14 @@ export function TimerDashboard() {
           onDelete={deleteDraftSubject}
           onSave={saveSubjects}
           onUpdate={updateDraftSubject}
+        />
+      ) : null}
+
+      {isChoosingStudy ? (
+        <StartStudyDialog
+          onClose={() => setIsChoosingStudy(false)}
+          onStart={(subjectId) => void startStudy(subjectId)}
+          subjects={subjects}
         />
       ) : null}
     </div>
