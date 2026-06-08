@@ -1,3 +1,5 @@
+import { getElapsedSeconds, getLocalDateKey } from "@/lib/timer";
+
 export const SOCIAL_STORAGE_KEY = "mac-study-social-state";
 
 export const GROUP_ICON_KEYS = [
@@ -42,6 +44,8 @@ export type SocialFriend = {
   weekSeconds: number;
   monthSeconds: number;
   allTimeSeconds: number;
+  activeStartedAt?: string | null;
+  activeUpdatedAt?: string | null;
   subjectSeconds: Record<string, number>;
 };
 
@@ -238,6 +242,8 @@ function normalizeFriend(value: unknown) {
     weekSeconds: asNumber(value.weekSeconds),
     monthSeconds: asNumber(value.monthSeconds),
     allTimeSeconds: asNumber(value.allTimeSeconds),
+    activeStartedAt: asNullableString(value.activeStartedAt),
+    activeUpdatedAt: asNullableString(value.activeUpdatedAt),
     subjectSeconds: isObject(value.subjectSeconds)
       ? normalizeSubjectSeconds(value.subjectSeconds)
       : {},
@@ -299,6 +305,10 @@ function asString(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+function asNullableString(value: unknown) {
+  return typeof value === "string" && value ? value : null;
+}
+
 function asNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.max(0, Math.floor(value))
@@ -327,4 +337,60 @@ function makeStableId(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+export function getLiveRankingSeconds(
+  friend: SocialFriend,
+  window: RankingWindow | "allTime",
+  now = new Date(),
+) {
+  const baseSeconds =
+    window === "allTime"
+      ? friend.allTimeSeconds
+      : getRankingSeconds(friend, window);
+
+  return baseSeconds + getLiveActiveDelta(friend, window, now);
+}
+
+function getLiveActiveDelta(
+  friend: SocialFriend,
+  window: RankingWindow | "allTime",
+  now: Date,
+) {
+  if (!friend.studying || !friend.activeStartedAt || !friend.activeUpdatedAt) {
+    return 0;
+  }
+
+  if (!activeSessionCountsForWindow(friend.activeStartedAt, window, now)) {
+    return 0;
+  }
+
+  return getElapsedSeconds(friend.activeUpdatedAt, now);
+}
+
+function activeSessionCountsForWindow(
+  activeStartedAt: string,
+  window: RankingWindow | "allTime",
+  now: Date,
+) {
+  if (window === "day") {
+    return getLocalDateKey(new Date(activeStartedAt)) === getLocalDateKey(now);
+  }
+
+  if (window === "week") {
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+
+    return new Date(activeStartedAt) >= weekStart;
+  }
+
+  if (window === "month") {
+    return (
+      new Date(activeStartedAt) >=
+      new Date(now.getFullYear(), now.getMonth(), 1)
+    );
+  }
+
+  return true;
 }

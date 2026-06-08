@@ -14,6 +14,15 @@ import {
   Users,
 } from "lucide-react";
 import type { AppAuthState } from "@/lib/auth/app-auth";
+import {
+  cacheRemoteSocialSnapshot,
+  cacheRemoteTimerState,
+} from "@/lib/client-cache";
+import {
+  fetchRemoteSocialSnapshot,
+  fetchRemoteTimerState,
+} from "@/lib/supabase/app-data";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -81,6 +90,44 @@ export function AppShell({
 
     return () => window.clearTimeout(timeout);
   }, [router]);
+
+  useEffect(() => {
+    if (authState.mode !== "authenticated") {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function warmAppData() {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const [timerResult, socialResult] = await Promise.allSettled([
+          fetchRemoteTimerState(supabase),
+          fetchRemoteSocialSnapshot(supabase),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (timerResult.status === "fulfilled" && timerResult.value) {
+          cacheRemoteTimerState(timerResult.value);
+        }
+
+        if (socialResult.status === "fulfilled" && socialResult.value) {
+          cacheRemoteSocialSnapshot(socialResult.value);
+        }
+      } catch {
+        // Route navigation should stay instant even if a background warm fails.
+      }
+    }
+
+    void warmAppData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authState.mode]);
 
   useEffect(() => {
     navItems.forEach((item) => {

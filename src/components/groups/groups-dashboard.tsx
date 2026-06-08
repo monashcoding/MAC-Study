@@ -19,11 +19,17 @@ import {
 } from "lucide-react";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
+  cacheRemoteSocialSnapshot,
+  cacheRemoteTimerState,
+  getCachedRemoteSocialSnapshot,
+  getCachedRemoteTimerState,
+} from "@/lib/client-cache";
+import {
   GROUP_ICON_KEYS,
   PERSON_ICON_KEYS,
   SOCIAL_STORAGE_KEY,
   defaultSocialState,
-  getRankingSeconds,
+  getLiveRankingSeconds,
   normalizeSocialState,
   type GroupIconKey,
   type PersonIconKey,
@@ -110,11 +116,13 @@ export function GroupsDashboard() {
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => new Date());
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
     const snapshot = await fetchRemoteSocialSnapshot(supabase);
 
     if (snapshot) {
+      cacheRemoteSocialSnapshot(snapshot);
       setCurrentUserId(snapshot.currentUserId);
       setSocialState(snapshot.socialState);
     }
@@ -124,9 +132,16 @@ export function GroupsDashboard() {
     const timerState = await fetchRemoteTimerState(supabase);
 
     if (timerState) {
+      cacheRemoteTimerState(timerState);
       setTimerSubjects(timerState.subjects);
       setActiveStudySession(timerState.activeSession);
     }
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(new Date()), 1000);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -134,19 +149,36 @@ export function GroupsDashboard() {
 
     async function loadInitialState() {
       let supabase: SupabaseClient | null = null;
+      const cachedSocial = getCachedRemoteSocialSnapshot();
+      const cachedTimer = getCachedRemoteTimerState();
+
+      if (cachedSocial) {
+        setCurrentUserId(cachedSocial.currentUserId);
+        setSocialState(cachedSocial.socialState);
+        setIsLoaded(true);
+      }
+
+      if (cachedTimer) {
+        setTimerSubjects(cachedTimer.subjects);
+        setActiveStudySession(cachedTimer.activeSession);
+      }
 
       try {
         supabase = createSupabaseBrowserClient();
+        if (!cancelled) {
+          setRemoteClient(supabase);
+        }
         const [snapshot, timerState] = await Promise.all([
           fetchRemoteSocialSnapshot(supabase),
           fetchRemoteTimerState(supabase),
         ]);
 
         if (!cancelled && snapshot) {
-          setRemoteClient(supabase);
+          cacheRemoteSocialSnapshot(snapshot);
           setCurrentUserId(snapshot.currentUserId);
           setSocialState(snapshot.socialState);
           if (timerState) {
+            cacheRemoteTimerState(timerState);
             setTimerSubjects(timerState.subjects);
             setActiveStudySession(timerState.activeSession);
           }
@@ -156,10 +188,16 @@ export function GroupsDashboard() {
       } catch {
         if (supabase) {
           setRemoteClient(supabase);
-          setSocialState(emptySocialState);
-          setIsLoaded(true);
+          if (!cachedSocial) {
+            setSocialState(emptySocialState);
+            setIsLoaded(true);
+          }
           return;
         }
+      }
+
+      if (cachedSocial) {
+        return;
       }
 
       if (!cancelled) {
@@ -427,13 +465,15 @@ export function GroupsDashboard() {
 
   if (selectedGroup) {
     const members = getGroupMembers(selectedGroup, friendsById).sort(
-      (first, second) => second.daySeconds - first.daySeconds,
+      (first, second) =>
+        getLiveRankingSeconds(second, "day", now) -
+        getLiveRankingSeconds(first, "day", now),
     );
     const activeNow = members.filter((member) => member.studying).length;
     const ranking = [...members].sort(
       (first, second) =>
-        getRankingSeconds(second, rankingWindow) -
-        getRankingSeconds(first, rankingWindow),
+        getLiveRankingSeconds(second, rankingWindow, now) -
+        getLiveRankingSeconds(first, rankingWindow, now),
     );
     const activeInSelectedGroup =
       activeStudySession?.groupId === selectedGroup.id;
@@ -539,7 +579,7 @@ export function GroupsDashboard() {
                   {member.name}
                 </p>
                 <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums">
-                  {formatDuration(member.daySeconds)}
+                  {formatDuration(getLiveRankingSeconds(member, "day", now))}
                 </p>
               </div>
             ))}
@@ -602,7 +642,9 @@ export function GroupsDashboard() {
                   </p>
                 </div>
                 <p className="font-mono text-sm font-semibold tabular-nums">
-                  {formatDuration(getRankingSeconds(member, rankingWindow))}
+                  {formatDuration(
+                    getLiveRankingSeconds(member, rankingWindow, now),
+                  )}
                 </p>
               </div>
             ))}

@@ -7,10 +7,15 @@ import {
   PROFILE_COLORS,
   SOCIAL_STORAGE_KEY,
   defaultSocialState,
+  getLiveRankingSeconds,
   normalizeSocialState,
   type SocialFriend,
   type SocialState,
 } from "@/lib/social-state";
+import {
+  cacheRemoteSocialSnapshot,
+  getCachedRemoteSocialSnapshot,
+} from "@/lib/client-cache";
 import {
   addRemoteFriend,
   fetchRemoteSocialSnapshot,
@@ -36,11 +41,13 @@ export function FriendsDashboard() {
   const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [availableFriends, setAvailableFriends] = useState<SocialFriend[]>([]);
+  const [now, setNow] = useState(() => new Date());
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
     const snapshot = await fetchRemoteSocialSnapshot(supabase);
 
     if (snapshot) {
+      cacheRemoteSocialSnapshot(snapshot);
       setCurrentUserId(snapshot.currentUserId);
       setSocialState(snapshot.socialState);
       setAvailableFriends(snapshot.availableFriends);
@@ -48,17 +55,34 @@ export function FriendsDashboard() {
   }, []);
 
   useEffect(() => {
+    const interval = window.setInterval(() => setNow(new Date()), 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadInitialState() {
       let supabase: SupabaseClient | null = null;
+      const cachedSocial = getCachedRemoteSocialSnapshot();
+
+      if (cachedSocial) {
+        setCurrentUserId(cachedSocial.currentUserId);
+        setSocialState(cachedSocial.socialState);
+        setAvailableFriends(cachedSocial.availableFriends);
+        setIsLoaded(true);
+      }
 
       try {
         supabase = createSupabaseBrowserClient();
+        if (!cancelled) {
+          setRemoteClient(supabase);
+        }
         const snapshot = await fetchRemoteSocialSnapshot(supabase);
 
         if (!cancelled && snapshot) {
-          setRemoteClient(supabase);
+          cacheRemoteSocialSnapshot(snapshot);
           setCurrentUserId(snapshot.currentUserId);
           setSocialState(snapshot.socialState);
           setAvailableFriends(snapshot.availableFriends);
@@ -68,11 +92,17 @@ export function FriendsDashboard() {
       } catch {
         if (supabase) {
           setRemoteClient(supabase);
-          setSocialState(emptySocialState);
-          setAvailableFriends([]);
-          setIsLoaded(true);
+          if (!cachedSocial) {
+            setSocialState(emptySocialState);
+            setAvailableFriends([]);
+            setIsLoaded(true);
+          }
           return;
         }
+      }
+
+      if (cachedSocial) {
+        return;
       }
 
       if (!cancelled) {
@@ -251,19 +281,27 @@ export function FriendsDashboard() {
         <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <ProfileStat
             label="Today"
-            value={formatDuration(selectedFriend.daySeconds)}
+            value={formatDuration(
+              getLiveRankingSeconds(selectedFriend, "day", now),
+            )}
           />
           <ProfileStat
             label="Week"
-            value={formatDuration(selectedFriend.weekSeconds)}
+            value={formatDuration(
+              getLiveRankingSeconds(selectedFriend, "week", now),
+            )}
           />
           <ProfileStat
             label="Month"
-            value={formatDuration(selectedFriend.monthSeconds)}
+            value={formatDuration(
+              getLiveRankingSeconds(selectedFriend, "month", now),
+            )}
           />
           <ProfileStat
             label="All time"
-            value={formatDuration(selectedFriend.allTimeSeconds)}
+            value={formatDuration(
+              getLiveRankingSeconds(selectedFriend, "allTime", now),
+            )}
           />
         </section>
 
@@ -351,7 +389,7 @@ export function FriendsDashboard() {
               </div>
               <div className="text-right">
                 <p className="font-mono text-sm font-semibold tabular-nums">
-                  {formatDuration(friend.daySeconds)}
+                  {formatDuration(getLiveRankingSeconds(friend, "day", now))}
                 </p>
                 <p className="text-xs font-medium text-[var(--color-text-muted)]">
                   today

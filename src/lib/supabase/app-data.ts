@@ -565,10 +565,13 @@ function friendFromProfile(
   profile: ProfileRow,
   sessions: SessionRow[],
 ): SocialFriend {
+  const now = new Date();
   const userSessions = sessions.filter(
     (session) => session.user_id === profile.id,
   );
-  const totals = getSessionTotals(userSessions);
+  const activeSession =
+    userSessions.find((session) => session.status === "active") ?? null;
+  const totals = getSessionTotals(userSessions, now);
 
   return {
     id: profile.id,
@@ -585,12 +588,13 @@ function friendFromProfile(
     weekSeconds: totals.week,
     monthSeconds: totals.month,
     allTimeSeconds: totals.allTime,
+    activeStartedAt: activeSession?.started_at ?? null,
+    activeUpdatedAt: activeSession ? now.toISOString() : null,
     subjectSeconds: {},
   };
 }
 
-function getSessionTotals(sessions: SessionRow[]) {
-  const now = new Date();
+function getSessionTotals(sessions: SessionRow[], now = new Date()) {
   const todayKey = now.toISOString().slice(0, 10);
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - 6);

@@ -14,6 +14,10 @@ import {
 } from "lucide-react";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
+  cacheRemoteTimerState,
+  getCachedRemoteTimerState,
+} from "@/lib/client-cache";
+import {
   fetchRemoteTimerState,
   saveRemoteSubjects,
   startRemoteStudySession,
@@ -135,6 +139,7 @@ export function TimerDashboard() {
       const remoteState = await fetchRemoteTimerState(supabase);
 
       if (remoteState) {
+        cacheRemoteTimerState(remoteState);
         applyRemoteTimerState(remoteState);
       }
     },
@@ -145,12 +150,23 @@ export function TimerDashboard() {
     let cancelled = false;
 
     async function loadInitialState() {
+      const cachedRemoteState = getCachedRemoteTimerState();
+
+      if (cachedRemoteState) {
+        applyRemoteTimerState(cachedRemoteState);
+        setDataMode("remote");
+        setIsLoaded(true);
+      }
+
       try {
         const supabase = createSupabaseBrowserClient();
+        if (!cancelled) {
+          setRemoteClient(supabase);
+        }
         const remoteState = await fetchRemoteTimerState(supabase);
 
         if (!cancelled && remoteState) {
-          setRemoteClient(supabase);
+          cacheRemoteTimerState(remoteState);
           applyRemoteTimerState(remoteState);
           setDataMode("remote");
           setIsLoaded(true);
@@ -158,6 +174,10 @@ export function TimerDashboard() {
         }
       } catch {
         // Fall through to local demo mode.
+      }
+
+      if (cachedRemoteState) {
+        return;
       }
 
       if (!cancelled) {

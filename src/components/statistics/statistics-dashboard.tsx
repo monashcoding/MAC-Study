@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, CalendarDays, Clock, PieChart } from "lucide-react";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
+import {
+  cacheRemoteTimerState,
+  getCachedRemoteTimerState,
+} from "@/lib/client-cache";
 import { fetchRemoteTimerState } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import {
@@ -65,11 +69,21 @@ export function StatisticsDashboard() {
     let cancelled = false;
 
     async function loadStats() {
+      const cachedRemoteState = getCachedRemoteTimerState();
+
+      if (cachedRemoteState) {
+        setSubjects(cachedRemoteState.subjects);
+        setSessions(cachedRemoteState.sessions);
+        setActiveSession(cachedRemoteState.activeSession);
+        setIsLoaded(true);
+      }
+
       try {
         const supabase = createSupabaseBrowserClient();
         const remoteState = await fetchRemoteTimerState(supabase);
 
         if (!cancelled && remoteState) {
+          cacheRemoteTimerState(remoteState);
           setSubjects(remoteState.subjects);
           setSessions(remoteState.sessions);
           setActiveSession(remoteState.activeSession);
@@ -78,6 +92,10 @@ export function StatisticsDashboard() {
         }
       } catch {
         // Fall through to local stats.
+      }
+
+      if (cachedRemoteState) {
+        return;
       }
 
       if (!cancelled) {
