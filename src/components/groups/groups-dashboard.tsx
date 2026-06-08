@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ArrowLeft,
   BookOpen,
@@ -28,6 +29,15 @@ import {
   type SocialGroup,
   type SocialState,
 } from "@/lib/social-state";
+import {
+  createRemoteGroup,
+  fetchRemoteSocialSnapshot,
+  inviteRemoteFriendToGroup,
+  subscribeToRemoteAppChanges,
+  updateRemoteGroupIcon,
+  updateRemoteStudyIcon,
+} from "@/lib/supabase/app-data";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { formatDuration } from "@/lib/timer";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +68,7 @@ const groupIconLabels = {
 
 const MEMBER_ACTIVE_COLOR = "#ff7a00";
 const MEMBER_INACTIVE_COLOR = "#555b6e";
+const emptySocialState: SocialState = { friends: [], groups: [] };
 
 const personIconLabels = {
   "flame-desk": "Flame",
@@ -67,8 +78,7 @@ const personIconLabels = {
 } satisfies Record<PersonIconKey, string>;
 
 export function GroupsDashboard() {
-  const [socialState, setSocialState] =
-    useState<SocialState>(defaultSocialState);
+  const [socialState, setSocialState] = useState<SocialState>(emptySocialState);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isEditingMemberIcons, setIsEditingMemberIcons] = useState(false);
@@ -77,26 +87,70 @@ export function GroupsDashboard() {
   const [groupName, setGroupName] = useState("");
   const [groupIcon, setGroupIcon] = useState<GroupIconKey>("users");
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const saved = window.localStorage.getItem(SOCIAL_STORAGE_KEY);
+  const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
+    const snapshot = await fetchRemoteSocialSnapshot(supabase);
 
-    /* eslint-disable react-hooks/set-state-in-effect -- Local demo state is
-     * hydrated after mount so the app shell stays deterministic. */
-    if (saved) {
-      try {
-        setSocialState(normalizeSocialState(JSON.parse(saved)));
-      } catch {
-        setSocialState(defaultSocialState);
-      }
+    if (snapshot) {
+      setCurrentUserId(snapshot.currentUserId);
+      setSocialState(snapshot.socialState);
     }
-
-    setIsLoaded(true);
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   useEffect(() => {
-    if (!isLoaded) {
+    let cancelled = false;
+
+    async function loadInitialState() {
+      let supabase: SupabaseClient | null = null;
+
+      try {
+        supabase = createSupabaseBrowserClient();
+        const snapshot = await fetchRemoteSocialSnapshot(supabase);
+
+        if (!cancelled && snapshot) {
+          setRemoteClient(supabase);
+          setCurrentUserId(snapshot.currentUserId);
+          setSocialState(snapshot.socialState);
+          setIsLoaded(true);
+          return;
+        }
+      } catch {
+        if (supabase) {
+          setRemoteClient(supabase);
+          setSocialState(emptySocialState);
+          setIsLoaded(true);
+          return;
+        }
+      }
+
+      if (!cancelled) {
+        const saved = window.localStorage.getItem(SOCIAL_STORAGE_KEY);
+
+        if (saved) {
+          try {
+            setSocialState(normalizeSocialState(JSON.parse(saved)));
+          } catch {
+            setSocialState(defaultSocialState);
+          }
+        } else {
+          setSocialState(defaultSocialState);
+        }
+
+        setIsLoaded(true);
+      }
+    }
+
+    void loadInitialState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isLoaded || remoteClient) {
       return;
     }
 
@@ -104,7 +158,17 @@ export function GroupsDashboard() {
       SOCIAL_STORAGE_KEY,
       JSON.stringify(socialState),
     );
-  }, [isLoaded, socialState]);
+  }, [isLoaded, remoteClient, socialState]);
+
+  useEffect(() => {
+    if (!remoteClient) {
+      return;
+    }
+
+    return subscribeToRemoteAppChanges(remoteClient, () => {
+      void refreshRemoteSocial(remoteClient);
+    });
+  }, [refreshRemoteSocial, remoteClient]);
 
   const selectedGroup = socialState.groups.find(
     (group) => group.id === selectedGroupId,
@@ -131,10 +195,38 @@ export function GroupsDashboard() {
     socialState.groups.flatMap((group) => group.memberIds),
   ).size;
 
-  function createGroup() {
+  async function createGroup() {
     const name = groupName.trim();
 
     if (!name) {
+      return;
+    }
+
+    if (remoteClient) {
+      const newGroupId = await createRemoteGroup({
+        icon: groupIcon,
+        name,
+        supabase: remoteClient,
+      });
+
+      if (newGroupId) {
+        await Promise.all(
+          selectedMembers.map((friendId) =>
+            inviteRemoteFriendToGroup({
+              friendId,
+              groupId: newGroupId,
+              supabase: remoteClient,
+            }),
+          ),
+        );
+        setSelectedGroupId(newGroupId);
+      }
+
+      setGroupName("");
+      setGroupIcon("users");
+      setSelectedMembers([]);
+      setIsCreating(false);
+      await refreshRemoteSocial(remoteClient);
       return;
     }
 
@@ -164,8 +256,18 @@ export function GroupsDashboard() {
     );
   }
 
-  function updateGroupIcon(icon: GroupIconKey) {
+  async function updateGroupIcon(icon: GroupIconKey) {
     if (!selectedGroup) {
+      return;
+    }
+
+    if (remoteClient) {
+      await updateRemoteGroupIcon({
+        groupId: selectedGroup.id,
+        icon,
+        supabase: remoteClient,
+      });
+      await refreshRemoteSocial(remoteClient);
       return;
     }
 
@@ -177,7 +279,17 @@ export function GroupsDashboard() {
     }));
   }
 
-  function updateFriendIcon(friendId: string, personIcon: PersonIconKey) {
+  async function updateFriendIcon(friendId: string, personIcon: PersonIconKey) {
+    if (remoteClient) {
+      await updateRemoteStudyIcon({
+        icon: personIcon,
+        supabase: remoteClient,
+        userId: friendId,
+      });
+      await refreshRemoteSocial(remoteClient);
+      return;
+    }
+
     setSocialState((current) => ({
       ...current,
       friends: current.friends.map((friend) =>
@@ -232,7 +344,7 @@ export function GroupsDashboard() {
                     : "border-[var(--color-border)] text-[var(--color-text-muted)]",
                 )}
                 key={icon}
-                onClick={() => updateGroupIcon(icon)}
+                onClick={() => void updateGroupIcon(icon)}
                 type="button"
               >
                 <GroupIconOnly icon={icon} size={17} />
@@ -244,7 +356,7 @@ export function GroupsDashboard() {
               type="button"
             >
               <Settings2 aria-hidden size={16} />
-              Icons
+              {remoteClient && currentUserId ? "My icon" : "Icons"}
             </button>
           </div>
         </section>
@@ -280,6 +392,7 @@ export function GroupsDashboard() {
           <MemberIconDialog
             members={members}
             onClose={() => setIsEditingMemberIcons(false)}
+            remoteCurrentUserId={remoteClient ? currentUserId : null}
             onUpdate={updateFriendIcon}
           />
         ) : null}
@@ -573,11 +686,17 @@ function MemberIconDialog({
   members,
   onClose,
   onUpdate,
+  remoteCurrentUserId,
 }: {
   members: SocialFriend[];
   onClose: () => void;
-  onUpdate: (friendId: string, icon: PersonIconKey) => void;
+  onUpdate: (friendId: string, icon: PersonIconKey) => void | Promise<void>;
+  remoteCurrentUserId: string | null;
 }) {
+  const editableMembers = remoteCurrentUserId
+    ? members.filter((member) => member.id === remoteCurrentUserId)
+    : members;
+
   return (
     <div
       aria-modal="true"
@@ -598,7 +717,7 @@ function MemberIconDialog({
         </div>
 
         <div className="grid gap-3 p-4">
-          {members.map((member) => (
+          {editableMembers.map((member) => (
             <div
               className="space-y-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
               key={member.id}
@@ -623,7 +742,7 @@ function MemberIconDialog({
                           : "border-[var(--color-border)]",
                       )}
                       key={icon}
-                      onClick={() => onUpdate(member.id, icon)}
+                      onClick={() => void onUpdate(member.id, icon)}
                       type="button"
                     >
                       <StudyPersonIcon active={member.studying} icon={icon} />

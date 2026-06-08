@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ArrowLeft,
   CircleStop,
@@ -12,6 +13,15 @@ import {
   X,
 } from "lucide-react";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
+import {
+  fetchRemoteTimerState,
+  saveRemoteSubjects,
+  startRemoteStudySession,
+  stopRemoteStudySession,
+  subscribeToRemoteAppChanges,
+  type RemoteTimerState,
+} from "@/lib/supabase/app-data";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import {
   formatDuration,
   getElapsedSeconds,
@@ -69,6 +79,8 @@ type StoredState = {
   subjects?: StoredSubject[];
 };
 
+type DataMode = "local" | "remote";
+
 export function TimerDashboard() {
   const [subjects, setSubjects] =
     useState<StudySubject[]>(defaultStudySubjects);
@@ -84,14 +96,19 @@ export function TimerDashboard() {
   const [initialEditingSubjectId, setInitialEditingSubjectId] = useState<
     string | null
   >(null);
+  const [dataMode, setDataMode] = useState<DataMode>("local");
+  const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
 
-  useEffect(() => {
+  const applyRemoteTimerState = useCallback((remoteState: RemoteTimerState) => {
+    setSubjects(remoteState.subjects);
+    setDraftSubjects(remoteState.subjects);
+    setActiveSession(remoteState.activeSession);
+    setSessions(remoteState.sessions);
+  }, []);
+
+  const loadLocalTimerState = useCallback(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
 
-    /* eslint-disable react-hooks/set-state-in-effect --
-     * The demo timer hydrates from localStorage after mount so the server
-     * render stays deterministic while active sessions still survive reloads.
-     */
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as StoredState;
@@ -109,13 +126,54 @@ export function TimerDashboard() {
     } else {
       setSessions(makeSeedSessions());
     }
-
-    setIsLoaded(true);
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
+  const refreshRemoteTimer = useCallback(
+    async (supabase: SupabaseClient) => {
+      const remoteState = await fetchRemoteTimerState(supabase);
+
+      if (remoteState) {
+        applyRemoteTimerState(remoteState);
+      }
+    },
+    [applyRemoteTimerState],
+  );
+
   useEffect(() => {
-    if (!isLoaded) {
+    let cancelled = false;
+
+    async function loadInitialState() {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const remoteState = await fetchRemoteTimerState(supabase);
+
+        if (!cancelled && remoteState) {
+          setRemoteClient(supabase);
+          applyRemoteTimerState(remoteState);
+          setDataMode("remote");
+          setIsLoaded(true);
+          return;
+        }
+      } catch {
+        // Fall through to local demo mode.
+      }
+
+      if (!cancelled) {
+        loadLocalTimerState();
+        setDataMode("local");
+        setIsLoaded(true);
+      }
+    }
+
+    void loadInitialState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyRemoteTimerState, loadLocalTimerState]);
+
+  useEffect(() => {
+    if (!isLoaded || dataMode !== "local") {
       return;
     }
 
@@ -123,7 +181,17 @@ export function TimerDashboard() {
       STORAGE_KEY,
       JSON.stringify({ activeSession, sessions, subjects }),
     );
-  }, [activeSession, isLoaded, sessions, subjects]);
+  }, [activeSession, dataMode, isLoaded, sessions, subjects]);
+
+  useEffect(() => {
+    if (!remoteClient) {
+      return;
+    }
+
+    return subscribeToRemoteAppChanges(remoteClient, () => {
+      void refreshRemoteTimer(remoteClient);
+    });
+  }, [refreshRemoteTimer, remoteClient]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -149,8 +217,22 @@ export function TimerDashboard() {
   const completedToday = sumCompletedSeconds(todaySessions);
   const totalToday = completedToday + elapsedSeconds;
 
-  function startStudy(subjectId: string) {
+  async function startStudy(subjectId: string) {
     if (activeSession) {
+      return;
+    }
+
+    if (dataMode === "remote" && remoteClient) {
+      try {
+        await startRemoteStudySession({
+          subjectId,
+          supabase: remoteClient,
+        });
+        await refreshRemoteTimer(remoteClient);
+      } catch {
+        await refreshRemoteTimer(remoteClient);
+      }
+
       return;
     }
 
@@ -161,8 +243,18 @@ export function TimerDashboard() {
     });
   }
 
-  function stopStudy() {
+  async function stopStudy() {
     if (!activeSession) {
+      return;
+    }
+
+    if (dataMode === "remote" && remoteClient) {
+      try {
+        await stopRemoteStudySession(remoteClient);
+      } finally {
+        await refreshRemoteTimer(remoteClient);
+      }
+
       return;
     }
 
@@ -227,11 +319,21 @@ export function TimerDashboard() {
     });
   }
 
-  function saveSubjects() {
+  async function saveSubjects() {
     const cleanedSubjects = normalizeSubjects(draftSubjects);
     const subjectIds = new Set(cleanedSubjects.map((subject) => subject.id));
 
-    setSubjects(cleanedSubjects);
+    if (dataMode === "remote" && remoteClient) {
+      const savedSubjects = await saveRemoteSubjects({
+        subjects: cleanedSubjects,
+        supabase: remoteClient,
+      });
+
+      setSubjects(savedSubjects);
+      setDraftSubjects(savedSubjects);
+    } else {
+      setSubjects(cleanedSubjects);
+    }
 
     if (activeSession && !subjectIds.has(activeSession.subjectId)) {
       setActiveSession(null);
@@ -282,7 +384,7 @@ export function TimerDashboard() {
                   )}
                   disabled={Boolean(activeSession) && !isActive}
                   onClick={() =>
-                    isActive ? stopStudy() : startStudy(subject.id)
+                    void (isActive ? stopStudy() : startStudy(subject.id))
                   }
                   style={
                     !isActive ? { backgroundColor: subject.color } : undefined

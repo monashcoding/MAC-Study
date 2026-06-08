@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, CalendarDays, Clock, PieChart } from "lucide-react";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
+import { fetchRemoteTimerState } from "@/lib/supabase/app-data";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import {
   formatDuration,
   getElapsedSeconds,
@@ -60,24 +62,42 @@ export function StatisticsDashboard() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(TIMER_STORAGE_KEY);
+    let cancelled = false;
 
-    /* eslint-disable react-hooks/set-state-in-effect -- Stats read timer demo
-     * state after mount because localStorage is only available in the browser. */
-    if (saved) {
+    async function loadStats() {
       try {
-        const parsed = JSON.parse(saved) as StoredTimerState;
+        const supabase = createSupabaseBrowserClient();
+        const remoteState = await fetchRemoteTimerState(supabase);
 
-        setSubjects(normalizeSubjects(parsed.subjects));
-        setSessions(Array.isArray(parsed.sessions) ? parsed.sessions : []);
-        setActiveSession(parsed.activeSession ?? null);
+        if (!cancelled && remoteState) {
+          setSubjects(remoteState.subjects);
+          setSessions(remoteState.sessions);
+          setActiveSession(remoteState.activeSession);
+          setIsLoaded(true);
+          return;
+        }
       } catch {
-        setSubjects(fallbackSubjects);
+        // Fall through to local stats.
+      }
+
+      if (!cancelled) {
+        const parsed = loadLocalTimerState();
+
+        if (parsed) {
+          setSubjects(normalizeSubjects(parsed.subjects));
+          setSessions(Array.isArray(parsed.sessions) ? parsed.sessions : []);
+          setActiveSession(parsed.activeSession ?? null);
+        }
+
+        setIsLoaded(true);
       }
     }
 
-    setIsLoaded(true);
-    /* eslint-enable react-hooks/set-state-in-effect */
+    void loadStats();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -239,6 +259,20 @@ export function StatisticsDashboard() {
       </section>
     </div>
   );
+}
+
+function loadLocalTimerState() {
+  const saved = window.localStorage.getItem(TIMER_STORAGE_KEY);
+
+  if (!saved) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(saved) as StoredTimerState;
+  } catch {
+    return null;
+  }
 }
 
 function SummaryTile({

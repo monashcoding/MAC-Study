@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { ArrowLeft, Check, Plus, Save, Send, Trash2, X } from "lucide-react";
 import {
   PROFILE_COLORS,
@@ -10,12 +11,21 @@ import {
   type SocialFriend,
   type SocialState,
 } from "@/lib/social-state";
+import {
+  addRemoteFriend,
+  fetchRemoteSocialSnapshot,
+  inviteRemoteFriendToGroup,
+  removeRemoteFriend,
+  subscribeToRemoteAppChanges,
+} from "@/lib/supabase/app-data";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { formatDuration } from "@/lib/timer";
 import { cn } from "@/lib/utils";
 
+const emptySocialState: SocialState = { friends: [], groups: [] };
+
 export function FriendsDashboard() {
-  const [socialState, setSocialState] =
-    useState<SocialState>(defaultSocialState);
+  const [socialState, setSocialState] = useState<SocialState>(emptySocialState);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
@@ -23,26 +33,74 @@ export function FriendsDashboard() {
   const [friendName, setFriendName] = useState("");
   const [friendHandle, setFriendHandle] = useState("");
   const [friendColor, setFriendColor] = useState<string>(PROFILE_COLORS[1]);
+  const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [availableFriends, setAvailableFriends] = useState<SocialFriend[]>([]);
 
-  useEffect(() => {
-    const saved = window.localStorage.getItem(SOCIAL_STORAGE_KEY);
+  const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
+    const snapshot = await fetchRemoteSocialSnapshot(supabase);
 
-    /* eslint-disable react-hooks/set-state-in-effect -- Local demo state is
-     * hydrated after mount so the app shell stays deterministic. */
-    if (saved) {
-      try {
-        setSocialState(normalizeSocialState(JSON.parse(saved)));
-      } catch {
-        setSocialState(defaultSocialState);
-      }
+    if (snapshot) {
+      setCurrentUserId(snapshot.currentUserId);
+      setSocialState(snapshot.socialState);
+      setAvailableFriends(snapshot.availableFriends);
     }
-
-    setIsLoaded(true);
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   useEffect(() => {
-    if (!isLoaded) {
+    let cancelled = false;
+
+    async function loadInitialState() {
+      let supabase: SupabaseClient | null = null;
+
+      try {
+        supabase = createSupabaseBrowserClient();
+        const snapshot = await fetchRemoteSocialSnapshot(supabase);
+
+        if (!cancelled && snapshot) {
+          setRemoteClient(supabase);
+          setCurrentUserId(snapshot.currentUserId);
+          setSocialState(snapshot.socialState);
+          setAvailableFriends(snapshot.availableFriends);
+          setIsLoaded(true);
+          return;
+        }
+      } catch {
+        if (supabase) {
+          setRemoteClient(supabase);
+          setSocialState(emptySocialState);
+          setAvailableFriends([]);
+          setIsLoaded(true);
+          return;
+        }
+      }
+
+      if (!cancelled) {
+        const saved = window.localStorage.getItem(SOCIAL_STORAGE_KEY);
+
+        if (saved) {
+          try {
+            setSocialState(normalizeSocialState(JSON.parse(saved)));
+          } catch {
+            setSocialState(defaultSocialState);
+          }
+        } else {
+          setSocialState(defaultSocialState);
+        }
+
+        setIsLoaded(true);
+      }
+    }
+
+    void loadInitialState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isLoaded || remoteClient) {
       return;
     }
 
@@ -50,10 +108,21 @@ export function FriendsDashboard() {
       SOCIAL_STORAGE_KEY,
       JSON.stringify(socialState),
     );
-  }, [isLoaded, socialState]);
+  }, [isLoaded, remoteClient, socialState]);
 
+  useEffect(() => {
+    if (!remoteClient) {
+      return;
+    }
+
+    return subscribeToRemoteAppChanges(remoteClient, () => {
+      void refreshRemoteSocial(remoteClient);
+    });
+  }, [refreshRemoteSocial, remoteClient]);
+
+  const selfId = currentUserId ?? "you";
   const friendList = socialState.friends.filter(
-    (friend) => friend.id !== "you",
+    (friend) => friend.id !== selfId,
   );
   const selectedFriend =
     friendList.find((friend) => friend.id === selectedFriendId) ?? null;
@@ -93,7 +162,24 @@ export function FriendsDashboard() {
     setIsAdding(false);
   }
 
-  function removeFriend(friendId: string) {
+  async function addRemoteFriendFromCandidate(friendId: string) {
+    if (!remoteClient) {
+      return;
+    }
+
+    await addRemoteFriend({ friendId, supabase: remoteClient });
+    setIsAdding(false);
+    await refreshRemoteSocial(remoteClient);
+  }
+
+  async function removeFriend(friendId: string) {
+    if (remoteClient) {
+      await removeRemoteFriend({ friendId, supabase: remoteClient });
+      setSelectedFriendId(null);
+      await refreshRemoteSocial(remoteClient);
+      return;
+    }
+
     setSocialState((current) => ({
       friends: current.friends.filter((friend) => friend.id !== friendId),
       groups: current.groups.map((group) => ({
@@ -104,8 +190,18 @@ export function FriendsDashboard() {
     setSelectedFriendId(null);
   }
 
-  function inviteFriendToGroup(friendId: string) {
+  async function inviteFriendToGroup(friendId: string) {
     if (!inviteGroupId) {
+      return;
+    }
+
+    if (remoteClient) {
+      await inviteRemoteFriendToGroup({
+        friendId,
+        groupId: inviteGroupId,
+        supabase: remoteClient,
+      });
+      await refreshRemoteSocial(remoteClient);
       return;
     }
 
@@ -189,7 +285,7 @@ export function FriendsDashboard() {
             <button
               className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
               disabled={!inviteGroupId || alreadyInSelectedGroup}
-              onClick={() => inviteFriendToGroup(selectedFriend.id)}
+              onClick={() => void inviteFriendToGroup(selectedFriend.id)}
               type="button"
             >
               {alreadyInSelectedGroup ? (
@@ -204,7 +300,7 @@ export function FriendsDashboard() {
 
         <button
           className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[rgb(255_107_107/0.45)] px-4 text-sm font-semibold text-[var(--color-danger)]"
-          onClick={() => removeFriend(selectedFriend.id)}
+          onClick={() => void removeFriend(selectedFriend.id)}
           type="button"
         >
           <Trash2 aria-hidden size={16} />
@@ -272,10 +368,14 @@ export function FriendsDashboard() {
           handle={friendHandle}
           name={friendName}
           onAdd={addFriend}
+          onAddRemote={(friendId) =>
+            void addRemoteFriendFromCandidate(friendId)
+          }
           onClose={() => setIsAdding(false)}
           onColorChange={setFriendColor}
           onHandleChange={setFriendHandle}
           onNameChange={setFriendName}
+          remoteCandidates={remoteClient ? availableFriends : null}
         />
       ) : null}
     </div>
@@ -287,19 +387,23 @@ function AddFriendDialog({
   handle,
   name,
   onAdd,
+  onAddRemote,
   onClose,
   onColorChange,
   onHandleChange,
   onNameChange,
+  remoteCandidates,
 }: {
   color: string;
   handle: string;
   name: string;
   onAdd: () => void;
+  onAddRemote: (friendId: string) => void;
   onClose: () => void;
   onColorChange: (color: string) => void;
   onHandleChange: (handle: string) => void;
   onNameChange: (name: string) => void;
+  remoteCandidates: SocialFriend[] | null;
 }) {
   return (
     <div
@@ -320,60 +424,92 @@ function AddFriendDialog({
           </button>
         </div>
 
-        <div className="space-y-5 p-4">
-          <label className="block text-sm font-medium">
-            Name
-            <input
-              className="mac-focus mt-2 h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
-              onChange={(event) => onNameChange(event.target.value)}
-              placeholder="Friend name"
-              value={name}
-            />
-          </label>
-
-          <label className="block text-sm font-medium">
-            Handle
-            <input
-              className="mac-focus mt-2 h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
-              onChange={(event) => onHandleChange(event.target.value)}
-              placeholder="@friend"
-              value={handle}
-            />
-          </label>
-
-          <div>
-            <p className="text-sm font-medium">Colour</p>
-            <div className="mt-3 flex flex-wrap gap-3">
-              {PROFILE_COLORS.map((profileColor) => (
+        {remoteCandidates ? (
+          <div className="grid gap-2 p-4">
+            {remoteCandidates.length ? (
+              remoteCandidates.map((candidate) => (
                 <button
-                  aria-label={`Use colour ${profileColor}`}
-                  className={cn(
-                    "mac-focus h-10 w-10 rounded-full border transition",
-                    profileColor === color
-                      ? "border-white ring-2 ring-[var(--color-mac-yellow)] ring-offset-2 ring-offset-[var(--color-background)]"
-                      : "border-[var(--color-border)]",
-                  )}
-                  key={profileColor}
-                  onClick={() => onColorChange(profileColor)}
-                  style={{ backgroundColor: profileColor }}
+                  className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left"
+                  key={candidate.id}
+                  onClick={() => onAddRemote(candidate.id)}
                   type="button"
-                />
-              ))}
-            </div>
+                >
+                  <ProfileBadge friend={candidate} />
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{candidate.name}</p>
+                    <p className="truncate text-sm text-[var(--color-text-muted)]">
+                      {candidate.handle}
+                    </p>
+                  </div>
+                  <span className="text-sm font-semibold text-[var(--color-mac-yellow)]">
+                    Add
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
+                No new profiles available.
+              </p>
+            )}
           </div>
-        </div>
+        ) : (
+          <>
+            <div className="space-y-5 p-4">
+              <label className="block text-sm font-medium">
+                Name
+                <input
+                  className="mac-focus mt-2 h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
+                  onChange={(event) => onNameChange(event.target.value)}
+                  placeholder="Friend name"
+                  value={name}
+                />
+              </label>
 
-        <div className="p-4">
-          <button
-            className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
-            disabled={!name.trim()}
-            onClick={onAdd}
-            type="button"
-          >
-            <Save aria-hidden size={17} />
-            Add friend
-          </button>
-        </div>
+              <label className="block text-sm font-medium">
+                Handle
+                <input
+                  className="mac-focus mt-2 h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
+                  onChange={(event) => onHandleChange(event.target.value)}
+                  placeholder="@friend"
+                  value={handle}
+                />
+              </label>
+
+              <div>
+                <p className="text-sm font-medium">Colour</p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {PROFILE_COLORS.map((profileColor) => (
+                    <button
+                      aria-label={`Use colour ${profileColor}`}
+                      className={cn(
+                        "mac-focus h-10 w-10 rounded-full border transition",
+                        profileColor === color
+                          ? "border-white ring-2 ring-[var(--color-mac-yellow)] ring-offset-2 ring-offset-[var(--color-background)]"
+                          : "border-[var(--color-border)]",
+                      )}
+                      key={profileColor}
+                      onClick={() => onColorChange(profileColor)}
+                      style={{ backgroundColor: profileColor }}
+                      type="button"
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4">
+              <button
+                className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
+                disabled={!name.trim()}
+                onClick={onAdd}
+                type="button"
+              >
+                <Save aria-hidden size={17} />
+                Add friend
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

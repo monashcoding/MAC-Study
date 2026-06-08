@@ -8,6 +8,8 @@ export type Profile = {
   username: string | null;
   avatar_url: string | null;
   course: string | null;
+  study_icon: string;
+  profile_color: string;
   access_status: AccessStatus;
   access_granted_at: string | null;
   created_at: string;
@@ -30,7 +32,7 @@ export async function ensureProfile(
   const { data: existing, error: fetchError } = await supabase
     .from("profiles")
     .select(
-      "id, display_name, username, avatar_url, course, access_status, access_granted_at, created_at, updated_at",
+      "id, display_name, username, avatar_url, course, study_icon, profile_color, access_status, access_granted_at, created_at, updated_at",
     )
     .eq("id", user.id)
     .maybeSingle<Profile>();
@@ -52,10 +54,13 @@ export async function ensureProfile(
         typeof user.user_metadata?.avatar_url === "string"
           ? user.user_metadata.avatar_url
           : null,
+      username: user.email ? makeUsername(user.email, user.id) : null,
+      study_icon: "flame-desk",
+      profile_color: "#FFE330",
       access_status: "pending",
     })
     .select(
-      "id, display_name, username, avatar_url, course, access_status, access_granted_at, created_at, updated_at",
+      "id, display_name, username, avatar_url, course, study_icon, profile_color, access_status, access_granted_at, created_at, updated_at",
     )
     .single<Profile>();
 
@@ -64,4 +69,15 @@ export async function ensureProfile(
   }
 
   return data;
+}
+
+function makeUsername(email: string, userId: string) {
+  const prefix = email
+    .split("@")[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 24);
+
+  return `${prefix || "mac"}_${userId.slice(0, 6)}`;
 }
