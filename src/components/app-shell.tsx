@@ -96,6 +96,30 @@ export function AppShell({
   }, [pathname]);
 
   useEffect(() => {
+    const viewport = window.visualViewport;
+
+    function syncViewportHeight() {
+      const height = viewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty(
+        "--app-viewport-height",
+        `${Math.round(height)}px`,
+      );
+    }
+
+    syncViewportHeight();
+    viewport?.addEventListener("resize", syncViewportHeight);
+    window.addEventListener("resize", syncViewportHeight);
+    window.addEventListener("orientationchange", syncViewportHeight);
+
+    return () => {
+      viewport?.removeEventListener("resize", syncViewportHeight);
+      window.removeEventListener("resize", syncViewportHeight);
+      window.removeEventListener("orientationchange", syncViewportHeight);
+      document.documentElement.style.removeProperty("--app-viewport-height");
+    };
+  }, []);
+
+  useEffect(() => {
     function prefetchAll() {
       navItems.forEach((item) => {
         router.prefetch(item.href);
@@ -203,7 +227,7 @@ export function AppShell({
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
+    <div className="fixed inset-x-0 top-0 flex h-[var(--app-viewport-height)] flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
       <div
         className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:min-h-dvh lg:gap-5 lg:overflow-visible lg:px-6"
         ref={scrollContainerRef}
@@ -258,7 +282,7 @@ export function AppShell({
             </div>
           </header>
 
-          <div className="px-4 pb-8 pt-5 sm:px-6 lg:px-0 lg:pt-0">
+          <div className="px-4 pb-[calc(var(--mobile-nav-height)+1.5rem)] pt-5 sm:px-6 lg:px-0 lg:pb-8 lg:pt-0">
             <AppWorkspace
               activePathname={displayPathname}
               authState={authState}
@@ -268,7 +292,7 @@ export function AppShell({
         </main>
       </div>
 
-      <nav className="z-30 h-[var(--mobile-nav-height)] shrink-0 bg-[rgb(23_23_23/0.97)] px-2 pb-[max(0.55rem,var(--safe-area-bottom))] pt-2 shadow-[0_-16px_36px_rgb(0_0_0/0.28)] backdrop-blur lg:hidden">
+      <nav className="absolute inset-x-0 bottom-0 z-30 h-[var(--mobile-nav-height)] bg-[rgb(23_23_23/0.97)] px-2 pb-[max(0.55rem,var(--safe-area-bottom))] pt-2 shadow-[0_-16px_36px_rgb(0_0_0/0.28)] backdrop-blur lg:hidden">
         <div className="mx-auto grid h-full max-w-lg grid-cols-5 gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;

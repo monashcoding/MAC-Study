@@ -21,8 +21,8 @@ export function PwaLaunchScreen() {
       return () => window.cancelAnimationFrame(frame);
     }
 
-    const leaveTimeout = window.setTimeout(() => setPhase("leaving"), 560);
-    const removeTimeout = window.setTimeout(() => setPhase("hidden"), 780);
+    const leaveTimeout = window.setTimeout(() => setPhase("leaving"), 1050);
+    const removeTimeout = window.setTimeout(() => setPhase("hidden"), 1500);
 
     return () => {
       window.clearTimeout(leaveTimeout);
@@ -38,13 +38,13 @@ export function PwaLaunchScreen() {
     <div
       aria-hidden
       className={cn(
-        "mac-pwa-launch fixed inset-0 z-[100] items-center justify-center bg-black transition-opacity duration-200",
+        "mac-pwa-launch fixed inset-0 z-[100] items-center justify-center bg-black transition-opacity duration-[420ms] ease-out",
         phase === "leaving" && "opacity-0",
       )}
     >
       <Image
         alt=""
-        className="h-24 w-24 rounded-full"
+        className="mac-pwa-launch-logo h-24 w-24 rounded-full"
         height={96}
         priority
         src="/icons/mac-square.png"
