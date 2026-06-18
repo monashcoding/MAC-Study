@@ -54,6 +54,30 @@ export type RemoteNudgeNotification = {
   createdAt: string;
 };
 
+export type RemoteNudgeDelivery = {
+  sent: number;
+  skipped?:
+    | "no_subscriptions"
+    | "push_not_configured"
+    | "subscriptions_unavailable";
+};
+
+export function getNudgeDeliveryMessage(delivery: RemoteNudgeDelivery) {
+  if (delivery.sent > 0) {
+    return "Nudge delivered.";
+  }
+
+  if (delivery.skipped === "no_subscriptions") {
+    return "They need to enable nudge notifications.";
+  }
+
+  if (delivery.skipped === "push_not_configured") {
+    return "Push notifications are not configured.";
+  }
+
+  return "Push delivery is unavailable.";
+}
+
 type ProfileRow = {
   id: string;
   display_name: string | null;
@@ -511,13 +535,16 @@ export async function sendRemoteNudge({
     method: "POST",
   });
 
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      message?: string;
-    } | null;
+  const body = (await response.json().catch(() => null)) as {
+    message?: string;
+    push?: RemoteNudgeDelivery;
+  } | null;
 
+  if (!response.ok) {
     throw new Error(body?.message ?? "Nudge failed.");
   }
+
+  return body?.push ?? { sent: 0, skipped: "subscriptions_unavailable" };
 }
 
 export function subscribeToRemoteNudges(

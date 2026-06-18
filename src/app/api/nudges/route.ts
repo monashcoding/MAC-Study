@@ -115,7 +115,7 @@ async function sendPushNotifications(nudge: NudgeRow) {
 
   webpush.setVapidDetails(
     pushEnv.VAPID_SUBJECT,
-    pushEnv.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+    pushEnv.VAPID_PUBLIC_KEY,
     pushEnv.VAPID_PRIVATE_KEY,
   );
 
@@ -158,9 +158,16 @@ async function sendPushNotifications(nudge: NudgeRow) {
       .in("endpoint", revokedEndpoints);
   }
 
-  return {
-    sent: results.filter((result) => result.status === "fulfilled").length,
-  };
+  const sent = results.filter((result) => result.status === "fulfilled").length;
+
+  if (sent > 0) {
+    await admin
+      .from("nudges")
+      .update({ delivered_at: new Date().toISOString() })
+      .eq("id", nudge.id);
+  }
+
+  return { sent };
 }
 
 function isExpiredPushSubscription(error: unknown) {

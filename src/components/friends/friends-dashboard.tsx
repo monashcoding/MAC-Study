@@ -19,6 +19,7 @@ import {
 import {
   addRemoteFriend,
   fetchRemoteSocialSnapshot,
+  getNudgeDeliveryMessage,
   inviteRemoteFriendToGroup,
   removeRemoteFriend,
   sendRemoteNudge,
@@ -259,8 +260,8 @@ export function FriendsDashboard() {
     setNudgeFeedback(null);
 
     try {
-      await sendRemoteNudge({ recipientId: friendId });
-      setNudgeFeedback("Nudge sent.");
+      const delivery = await sendRemoteNudge({ recipientId: friendId });
+      setNudgeFeedback(getNudgeDeliveryMessage(delivery));
     } catch (error) {
       setNudgeFeedback(getNudgeErrorMessage(error));
     } finally {

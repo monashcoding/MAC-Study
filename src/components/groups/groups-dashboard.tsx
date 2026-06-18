@@ -42,6 +42,7 @@ import {
   createRemoteGroup,
   fetchRemoteTimerState,
   fetchRemoteSocialSnapshot,
+  getNudgeDeliveryMessage,
   inviteRemoteFriendToGroup,
   sendRemoteNudge,
   startRemoteStudySession,
@@ -479,8 +480,11 @@ export function GroupsDashboard() {
     setNudgeFeedback(null);
 
     try {
-      await sendRemoteNudge({ groupId, recipientId: memberId });
-      setNudgeFeedback("Nudge sent.");
+      const delivery = await sendRemoteNudge({
+        groupId,
+        recipientId: memberId,
+      });
+      setNudgeFeedback(getNudgeDeliveryMessage(delivery));
     } catch (error) {
       setNudgeFeedback(getNudgeErrorMessage(error));
     } finally {

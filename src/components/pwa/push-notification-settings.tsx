@@ -10,28 +10,70 @@ type PushStatus = {
   state: PushState;
 };
 
-const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-
 export function PushNotificationSettings() {
-  const [pushStatus, setPushStatus] =
-    useState<PushStatus>(getInitialPushStatus);
+  const [pushStatus, setPushStatus] = useState<PushStatus>({
+    message: "Checking this device",
+    state: "checking",
+  });
+  const [vapidPublicKey, setVapidPublicKey] = useState<string | null>(null);
   const { message, state: pushState } = pushStatus;
 
   useEffect(() => {
-    if (pushState !== "checking" || !supportsPush() || !vapidPublicKey) {
-      return;
-    }
-
     let cancelled = false;
 
-    void navigator.serviceWorker.ready
-      .then((registration) => registration.pushManager.getSubscription())
-      .then((subscription) => {
+    async function checkPushStatus() {
+      await Promise.resolve();
+
+      if (!supportsPush()) {
+        if (!cancelled) {
+          setPushStatus({
+            message: "Not available on this browser",
+            state: "unsupported",
+          });
+        }
+        return;
+      }
+
+      if (Notification.permission === "denied") {
+        if (!cancelled) {
+          setPushStatus({
+            message: "Blocked in browser settings",
+            state: "blocked",
+          });
+        }
+        return;
+      }
+
+      try {
+        const keyResponse = await fetch("/api/push/public-key", {
+          cache: "no-store",
+        });
+
+        if (!keyResponse.ok) {
+          throw new Error("Push key unavailable.");
+        }
+
+        const keyBody = (await keyResponse.json()) as { publicKey?: string };
+
+        if (!keyBody.publicKey) {
+          throw new Error("Push key unavailable.");
+        }
+
+        const registration = await navigator.serviceWorker.getRegistration();
+        const subscription = registration
+          ? await registration.pushManager.getSubscription()
+          : null;
+
         if (cancelled) {
           return;
         }
 
-        if (subscription) {
+        setVapidPublicKey(keyBody.publicKey);
+
+        if (
+          subscription &&
+          pushSubscriptionUsesKey(subscription, keyBody.publicKey)
+        ) {
           setPushStatus({
             message: "Lock-screen nudges enabled",
             state: "enabled",
@@ -40,23 +82,27 @@ export function PushNotificationSettings() {
         }
 
         setPushStatus({
-          message: "Enable lock-screen nudges",
+          message: subscription
+            ? "Push key changed - enable again"
+            : "Enable lock-screen nudges",
           state: "ready",
         });
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) {
           setPushStatus({
-            message: "Enable lock-screen nudges",
-            state: "ready",
+            message: "Push keys are not configured",
+            state: "unsupported",
           });
         }
-      });
+      }
+    }
+
+    void checkPushStatus();
 
     return () => {
       cancelled = true;
     };
-  }, [pushState]);
+  }, []);
 
   async function enablePush() {
     if (!supportsPush() || !vapidPublicKey) {
@@ -80,8 +126,17 @@ export function PushNotificationSettings() {
 
     try {
       const registration = await navigator.serviceWorker.register("/sw.js");
-      const existingSubscription =
+      let existingSubscription =
         await registration.pushManager.getSubscription();
+
+      if (
+        existingSubscription &&
+        !pushSubscriptionUsesKey(existingSubscription, vapidPublicKey)
+      ) {
+        await existingSubscription.unsubscribe();
+        existingSubscription = null;
+      }
+
       const subscription =
         existingSubscription ??
         (await registration.pushManager.subscribe({
@@ -159,34 +214,6 @@ function supportsPush() {
   );
 }
 
-function getInitialPushStatus(): PushStatus {
-  if (!supportsPush()) {
-    return {
-      message: "Not available on this browser",
-      state: "unsupported",
-    };
-  }
-
-  if (Notification.permission === "denied") {
-    return {
-      message: "Blocked in browser settings",
-      state: "blocked",
-    };
-  }
-
-  if (!vapidPublicKey) {
-    return {
-      message: "Missing VAPID public key",
-      state: "unsupported",
-    };
-  }
-
-  return {
-    message: "Checking this device",
-    state: "checking",
-  };
-}
-
 function urlBase64ToUint8Array(value: string) {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
   const base64 = `${value}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
@@ -194,5 +221,24 @@ function urlBase64ToUint8Array(value: string) {
 
   return Uint8Array.from(
     [...rawData].map((character) => character.charCodeAt(0)),
+  );
+}
+
+function pushSubscriptionUsesKey(
+  subscription: PushSubscription,
+  publicKey: string,
+) {
+  const subscriptionKey = subscription.options.applicationServerKey;
+
+  if (!subscriptionKey) {
+    return false;
+  }
+
+  const expectedKey = urlBase64ToUint8Array(publicKey);
+  const currentKey = new Uint8Array(subscriptionKey);
+
+  return (
+    currentKey.length === expectedKey.length &&
+    currentKey.every((value, index) => value === expectedKey[index])
   );
 }
