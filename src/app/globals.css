@@ -44,6 +44,41 @@ body {
     sans-serif;
 }
 
+.mac-pwa-launch {
+  display: none;
+}
+
+@media (display-mode: standalone) {
+  .mac-pwa-launch {
+    display: flex;
+  }
+}
+
+@keyframes mac-view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mac-view-enter {
+  animation: mac-view-enter 120ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mac-view-enter {
+    animation: none;
+  }
+
+  .mac-pwa-launch {
+    transition: none;
+  }
+}
+
 button,
 input,
 select,

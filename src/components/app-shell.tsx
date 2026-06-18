@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
-import { useEffect, useOptimistic, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   BarChart3,
   House,
@@ -23,6 +23,7 @@ import {
   fetchRemoteTimerState,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { AppWorkspace } from "@/components/app-workspace";
 import { NudgeNotifications } from "@/components/social/nudge-notifications";
 import { cn } from "@/lib/utils";
 
@@ -74,10 +75,25 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [optimisticPathname, setOptimisticPathname] = useOptimistic(pathname);
+  const [displayPathname, setDisplayPathname] = useState(pathname);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollPositionsRef = useRef<Record<string, number>>({});
   const currentNav =
-    navItems.find((item) => isActive(optimisticPathname, item.href)) ??
+    navItems.find((item) => isActive(displayPathname, item.href)) ??
     navItems[0];
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setDisplayPathname(pathname);
+      const container = scrollContainerRef.current;
+
+      if (container) {
+        container.scrollTop = scrollPositionsRef.current[pathname] ?? 0;
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [pathname]);
 
   useEffect(() => {
     function prefetchAll() {
@@ -152,23 +168,46 @@ export function AppShell({
       return;
     }
 
-    if (href === pathname) {
+    if (href === displayPathname) {
       event.preventDefault();
       return;
     }
 
     event.preventDefault();
     warmRoute(href);
+    rememberScroll(displayPathname);
+    setDisplayPathname(href);
+    restoreScroll(href);
 
     startTransition(() => {
-      setOptimisticPathname(href);
       router.push(href);
+    });
+  }
+
+  function rememberScroll(path: string) {
+    const container = scrollContainerRef.current;
+
+    if (container) {
+      scrollPositionsRef.current[path] = container.scrollTop;
+    }
+  }
+
+  function restoreScroll(path: string) {
+    window.requestAnimationFrame(() => {
+      const container = scrollContainerRef.current;
+
+      if (container) {
+        container.scrollTop = scrollPositionsRef.current[path] ?? 0;
+      }
     });
   }
 
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
-      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:min-h-dvh lg:gap-5 lg:overflow-visible lg:px-6">
+      <div
+        className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:min-h-dvh lg:gap-5 lg:overflow-visible lg:px-6"
+        ref={scrollContainerRef}
+      >
         <aside className="hidden w-64 shrink-0 py-6 lg:block">
           <div className="sticky top-6">
             <Brand />
@@ -177,7 +216,7 @@ export function AppShell({
                 <NavLink
                   href={item.href}
                   icon={item.icon}
-                  isActive={isActive(optimisticPathname, item.href)}
+                  isActive={isActive(displayPathname, item.href)}
                   key={item.href}
                   label={item.label}
                   onIntent={warmRoute}
@@ -220,7 +259,11 @@ export function AppShell({
           </header>
 
           <div className="px-4 pb-8 pt-5 sm:px-6 lg:px-0 lg:pt-0">
-            {children}
+            <AppWorkspace
+              activePathname={displayPathname}
+              authState={authState}
+              fallback={children}
+            />
           </div>
         </main>
       </div>
@@ -229,7 +272,7 @@ export function AppShell({
         <div className="mx-auto grid h-full max-w-lg grid-cols-5 gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active = isActive(optimisticPathname, item.href);
+            const active = isActive(displayPathname, item.href);
 
             return (
               <Link

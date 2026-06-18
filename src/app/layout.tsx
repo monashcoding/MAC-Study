@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { PwaLaunchScreen } from "@/components/pwa/pwa-launch-screen";
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import "./globals.css";
 
@@ -31,7 +32,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#171717",
+  themeColor: "#000000",
 };
 
 export default function RootLayout({
@@ -42,6 +43,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
+        <PwaLaunchScreen />
         <ServiceWorkerRegister />
         {children}
       </body>
