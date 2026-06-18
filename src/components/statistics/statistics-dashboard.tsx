@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, CalendarDays, Clock, PieChart } from "lucide-react";
+import { BarChart3, CalendarDays } from "lucide-react";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   cacheRemoteTimerState,
@@ -9,12 +9,7 @@ import {
 } from "@/lib/client-cache";
 import { fetchRemoteTimerState } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import {
-  formatDuration,
-  getElapsedSeconds,
-  getLocalDateKey,
-  getSessionSeconds,
-} from "@/lib/timer";
+import { getElapsedSeconds, getSessionSeconds } from "@/lib/timer";
 
 const TIMER_STORAGE_KEY = "mac-study-demo-state";
 
@@ -44,6 +39,23 @@ type StoredTimerState = {
   subjects?: Partial<StudySubject>[];
 };
 
+type StatsPeriod = "week" | "month" | "annual";
+type ChartView = "column" | "pie";
+
+type StudyEntry = {
+  date: Date;
+  seconds: number;
+  subjectId: string | null;
+};
+
+type ChartBucket = {
+  label: string;
+  shortLabel?: string;
+  seconds: number;
+  start: Date;
+  end: Date;
+};
+
 const fallbackSubjects = defaultSubjects.map((subject) => ({
   id: subject.id,
   name: subject.code,
@@ -56,6 +68,17 @@ const fallbackSubjectTotals: Record<string, number> = {
   fit2004: 52 * 60,
 };
 
+const periodOptions = [
+  { id: "week", label: "Week" },
+  { id: "month", label: "Month" },
+  { id: "annual", label: "Year" },
+] satisfies { id: StatsPeriod; label: string }[];
+
+const chartOptions = [
+  { id: "column", label: "Column graph" },
+  { id: "pie", label: "Pie chart" },
+] satisfies { id: ChartView; label: string }[];
+
 export function StatisticsDashboard() {
   const [subjects, setSubjects] = useState<StudySubject[]>(fallbackSubjects);
   const [sessions, setSessions] = useState<StoredSession[]>([]);
@@ -64,6 +87,8 @@ export function StatisticsDashboard() {
   );
   const [now, setNow] = useState(() => new Date());
   const [isLoaded, setIsLoaded] = useState(false);
+  const [selectedPeriod, setSelectedPeriod] = useState<StatsPeriod>("week");
+  const [chartView, setChartView] = useState<ChartView>("column");
 
   useEffect(() => {
     let cancelled = false;
@@ -124,25 +149,26 @@ export function StatisticsDashboard() {
     return () => window.clearInterval(interval);
   }, []);
 
-  const stats = useMemo(
-    () => buildStats({ activeSession, now, sessions }),
-    [activeSession, now, sessions],
-  );
   const hasTimerData = isLoaded && (sessions.length > 0 || activeSession);
+  const stats = useMemo(
+    () =>
+      buildPeriodStats({
+        activeSession,
+        now,
+        period: selectedPeriod,
+        sessions,
+      }),
+    [activeSession, now, selectedPeriod, sessions],
+  );
   const subjectTotals = hasTimerData
     ? stats.subjectTotals
     : fallbackSubjectTotals;
-  const summary = hasTimerData
-    ? stats.summary
-    : {
-        today: 84 * 60,
-        week: 9 * 60 * 60 + 20 * 60,
-        month: 34 * 60 * 60 + 10 * 60,
-        allTime: Object.values(fallbackSubjectTotals).reduce(
-          (total, seconds) => total + seconds,
-          0,
-        ),
-      };
+  const totalSeconds = hasTimerData
+    ? stats.totalSeconds
+    : Object.values(fallbackSubjectTotals).reduce(
+        (total, seconds) => total + seconds,
+        0,
+      );
   const subjectRows = subjects
     .map((subject) => ({
       ...subject,
@@ -156,91 +182,147 @@ export function StatisticsDashboard() {
   );
   const topSubject = subjectRows[0];
   const pieGradient = makePieGradient(subjectRows, subjectTotal);
+  const average = getAverageStat(selectedPeriod, totalSeconds, stats.buckets);
+  const periodLabel =
+    periodOptions.find((period) => period.id === selectedPeriod)?.label ??
+    "Week";
 
   return (
     <div className="space-y-6 pt-1">
-      <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <SummaryTile
-          icon={Clock}
-          label="Today"
-          value={formatDuration(summary.today)}
-        />
-        <SummaryTile
-          icon={CalendarDays}
-          label="Week"
-          value={formatDuration(summary.week)}
-        />
-        <SummaryTile
-          icon={BarChart3}
-          label="Month"
-          value={formatDuration(summary.month)}
-        />
-        <SummaryTile
-          icon={PieChart}
-          label="All time"
-          value={formatDuration(summary.allTime)}
-        />
-      </section>
+      <section className="rounded-md bg-[rgb(255_255_255/0.04)] p-3">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <label className="block">
+            <span className="sr-only">Statistics period</span>
+            <select
+              className="mac-focus h-9 w-full rounded-md border border-[rgb(255_255_255/0.10)] bg-[rgb(255_255_255/0.045)] px-3 text-sm font-semibold text-[var(--color-text)] outline-none"
+              onChange={(event) =>
+                setSelectedPeriod(event.target.value as StatsPeriod)
+              }
+              value={selectedPeriod}
+            >
+              {periodOptions.map((period) => (
+                <option key={period.id} value={period.id}>
+                  {period.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
-      <section className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <div className="flex items-center justify-center py-2">
-          <div
-            aria-label="Subject study split"
-            className="relative h-52 w-52 rounded-full shadow-[0_18px_42px_rgb(0_0_0/0.28)]"
-            role="img"
-            style={{ background: pieGradient }}
-          >
-            <div className="absolute inset-12 flex flex-col items-center justify-center rounded-full bg-[var(--color-background)] text-center">
-              <p className="font-mono text-lg font-semibold tabular-nums">
-                {formatDuration(subjectTotal)}
-              </p>
-              <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
-                subject time
-              </p>
-            </div>
+          <div className="grid grid-cols-2 rounded-md bg-[rgb(255_255_255/0.045)] p-1 sm:w-64">
+            {chartOptions.map((option) => (
+              <button
+                className={`mac-focus h-8 rounded text-[11px] font-semibold transition sm:text-xs ${
+                  chartView === option.id
+                    ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                    : "text-[var(--color-text-muted)]"
+                }`}
+                key={option.id}
+                onClick={() => setChartView(option.id)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="space-y-3">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="text-2xl font-semibold">Subject split</h2>
-              <p className="mt-1 text-sm font-medium text-[var(--color-text-muted)]">
-                {topSubject ? `${topSubject.name} is leading.` : "No time yet."}
-              </p>
-            </div>
+        <div className="mt-3">
+          <div>
+            <p className="text-sm font-semibold text-[var(--color-mac-yellow)]">
+              {periodLabel}
+            </p>
+            <h2 className="mt-1 text-4xl font-semibold leading-none tracking-normal">
+              {formatRoundedStudyTime(totalSeconds)}
+            </h2>
+            <p className="mt-2 text-sm font-medium text-[var(--color-text-muted)]">
+              Avg {average.label}: {formatRoundedStudyTime(average.seconds)}
+            </p>
           </div>
+        </div>
+      </section>
 
-          <div className="grid gap-2">
-            {subjectRows.length ? (
-              subjectRows.map((subject) => {
-                const percent = subjectTotal
-                  ? (subject.seconds / subjectTotal) * 100
-                  : 0;
+      {chartView === "column" ? (
+        <ColumnChart
+          buckets={stats.buckets}
+          icon={selectedPeriod === "week" ? CalendarDays : BarChart3}
+          title={getChartTitle(selectedPeriod)}
+        />
+      ) : (
+        <SubjectSplit
+          pieGradient={pieGradient}
+          subjectRows={subjectRows}
+          subjectTotal={subjectTotal}
+          topSubject={topSubject}
+        />
+      )}
+    </div>
+  );
+}
 
-                return (
-                  <div
-                    className="rounded-md bg-[rgb(255_255_255/0.035)] p-3"
-                    key={subject.id}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: subject.color }}
-                        />
-                        <p className="truncate font-semibold">{subject.name}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-mono text-sm font-semibold tabular-nums">
-                          {formatDuration(subject.seconds)}
-                        </p>
-                        <p className="text-xs font-medium text-[var(--color-text-muted)]">
-                          {Math.round(percent)}%
-                        </p>
-                      </div>
+function SubjectSplit({
+  pieGradient,
+  subjectRows,
+  subjectTotal,
+  topSubject,
+}: {
+  pieGradient: string;
+  subjectRows: (StudySubject & { seconds: number })[];
+  subjectTotal: number;
+  topSubject?: StudySubject & { seconds: number };
+}) {
+  return (
+    <section className="grid gap-5 rounded-md bg-[rgb(255_255_255/0.035)] p-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <div className="flex items-center justify-center">
+        <div
+          aria-label="Subject study split"
+          className="relative h-44 w-44 rounded-full shadow-[0_18px_42px_rgb(0_0_0/0.28)]"
+          role="img"
+          style={{ background: pieGradient }}
+        >
+          <div className="absolute inset-10 flex flex-col items-center justify-center rounded-full bg-[var(--color-background)] text-center">
+            <p className="text-base font-semibold">
+              {formatRoundedStudyTime(subjectTotal)}
+            </p>
+            <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
+              subject time
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Subject split</h2>
+            <p className="mt-1 text-sm font-medium text-[var(--color-text-muted)]">
+              {topSubject ? `${topSubject.name} leads.` : "No time yet."}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-1.5">
+          {subjectRows.length ? (
+            subjectRows.map((subject) => {
+              const percent = subjectTotal
+                ? (subject.seconds / subjectTotal) * 100
+                : 0;
+
+              return (
+                <div
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-2.5 py-2"
+                  key={subject.id}
+                >
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: subject.color }}
+                      />
+                      <p className="truncate text-sm font-semibold">
+                        {subject.name}
+                      </p>
                     </div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--color-surface)]">
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-[var(--color-surface)]">
                       <div
                         className="h-full rounded-full"
                         style={{
@@ -250,32 +332,25 @@ export function StatisticsDashboard() {
                       />
                     </div>
                   </div>
-                );
-              })
-            ) : (
-              <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
-                Start a session to fill your study split.
-              </p>
-            )}
-          </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold">
+                      {formatRoundedStudyTime(subject.seconds)}
+                    </p>
+                    <p className="text-xs font-medium text-[var(--color-text-muted)]">
+                      {Math.round(percent)}%
+                    </p>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
+              Start a session to fill your study split.
+            </p>
+          )}
         </div>
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-3">
-        <InsightTile
-          label="Daily average"
-          value={formatDuration(Math.floor(summary.week / 7))}
-        />
-        <InsightTile
-          label="Month pace"
-          value={formatDuration(Math.floor(summary.month / 4))}
-        />
-        <InsightTile
-          label="Focus"
-          value={topSubject ? topSubject.name : "None"}
-        />
-      </section>
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -293,42 +368,180 @@ function loadLocalTimerState() {
   }
 }
 
-function SummaryTile({
+function ColumnChart({
+  buckets,
   icon: Icon,
-  label,
-  value,
+  title,
 }: {
+  buckets: ChartBucket[];
   icon: React.ComponentType<{ size?: number; "aria-hidden"?: boolean }>;
-  label: string;
-  value: string;
+  title: string;
 }) {
+  const maxSeconds = Math.max(...buckets.map((bucket) => bucket.seconds), 1);
+  const scaleMaxSeconds = getNiceScaleMax(maxSeconds);
+  const yTicks = [scaleMaxSeconds, scaleMaxSeconds / 2, 0];
+
   return (
-    <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-4">
-      <div className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414]">
-        <Icon aria-hidden size={17} />
+    <section className="rounded-md bg-[rgb(255_255_255/0.035)] p-3">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]">
+          <Icon aria-hidden size={15} />
+        </span>
+        <h2 className="text-lg font-semibold">{title}</h2>
       </div>
-      <p className="font-mono text-base font-semibold tabular-nums sm:text-lg">
-        {value}
-      </p>
-      <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
-        {label}
-      </p>
-    </div>
+
+      <div className="mt-3 grid grid-cols-[2rem_minmax(0,1fr)] gap-1.5 sm:grid-cols-[2.35rem_minmax(0,1fr)]">
+        <div className="relative h-32">
+          {yTicks.map((tick) => (
+            <p
+              className="absolute right-0 translate-y-1/2 text-right text-[10px] font-medium leading-none text-[var(--color-text-muted)]"
+              key={tick}
+              style={{ bottom: `${(tick / scaleMaxSeconds) * 100}%` }}
+            >
+              {formatAxisTick(tick)}
+            </p>
+          ))}
+        </div>
+
+        <div className="min-w-0">
+          <div className="relative h-32">
+            {yTicks.map((tick) => (
+              <div
+                aria-hidden
+                className="absolute left-0 right-0 border-t border-[rgb(255_255_255/0.08)]"
+                key={tick}
+                style={{ bottom: `${(tick / scaleMaxSeconds) * 100}%` }}
+              />
+            ))}
+
+            <div className="absolute inset-0 flex items-end gap-1.5">
+              {buckets.map((bucket) => {
+                const height = bucket.seconds
+                  ? Math.max(3, (bucket.seconds / scaleMaxSeconds) * 100)
+                  : 0;
+
+                return (
+                  <div
+                    className="flex min-w-0 flex-1 flex-col justify-end"
+                    key={`${bucket.label}-${bucket.start.toISOString()}`}
+                  >
+                    <div
+                      aria-label={`${bucket.label}: ${formatRoundedStudyTime(bucket.seconds)}`}
+                      className="w-full rounded-t bg-[var(--color-mac-yellow)]"
+                      style={{ height: `${height}%` }}
+                      title={formatRoundedStudyTime(bucket.seconds)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-2 flex gap-1.5">
+            {buckets.map((bucket) => (
+              <div
+                className="min-w-0 flex-1"
+                key={`${bucket.label}-${bucket.start.toISOString()}-label`}
+              >
+                <p className="text-center text-[10px] font-medium leading-none text-[var(--color-text-muted)] sm:text-[11px]">
+                  <span className="sm:hidden">
+                    {bucket.shortLabel ?? bucket.label}
+                  </span>
+                  <span className="hidden sm:inline">{bucket.label}</span>
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
-function InsightTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md bg-[rgb(255_255_255/0.035)] p-3">
-      <p className="truncate text-lg font-semibold">{value}</p>
-      <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
-        {label}
-      </p>
-    </div>
-  );
+function formatRoundedStudyTime(totalSeconds: number) {
+  const minutes = Math.round(totalSeconds / 60);
+
+  if (minutes <= 0) {
+    return "0 min";
+  }
+
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
 
-function buildStats({
+function formatAxisTick(totalSeconds: number) {
+  if (totalSeconds <= 0) {
+    return "0";
+  }
+
+  const minutes = Math.round(totalSeconds / 60);
+
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours = minutes / 60;
+
+  return Number.isInteger(hours) ? `${hours}h` : `${hours.toFixed(1)}h`;
+}
+
+function getNiceScaleMax(maxSeconds: number) {
+  const maxMinutes = Math.max(15, Math.ceil(maxSeconds / 60));
+  const candidates = [
+    15, 30, 60, 90, 120, 180, 240, 300, 360, 480, 600, 720, 960, 1200, 1440,
+  ];
+  const candidate = candidates.find((value) => value >= maxMinutes);
+
+  return (candidate ?? Math.ceil(maxMinutes / 240) * 240) * 60;
+}
+
+function buildPeriodStats({
+  activeSession,
+  now,
+  period,
+  sessions,
+}: {
+  activeSession: ActiveSession | null;
+  now: Date;
+  period: StatsPeriod;
+  sessions: StoredSession[];
+}) {
+  const { end, start } = getPeriodRange(period, now);
+  const entries = getStudyEntries({ activeSession, now, sessions }).filter(
+    (entry) => entry.date >= start && entry.date < end,
+  );
+  const buckets = buildBuckets(period, now);
+  const totalSeconds = entries.reduce(
+    (total, entry) => total + entry.seconds,
+    0,
+  );
+  const subjectTotals: Record<string, number> = {};
+
+  for (const entry of entries) {
+    if (entry.subjectId) {
+      subjectTotals[entry.subjectId] =
+        (subjectTotals[entry.subjectId] ?? 0) + entry.seconds;
+    }
+
+    const bucket = buckets.find(
+      (item) => entry.date >= item.start && entry.date < item.end,
+    );
+
+    if (bucket) {
+      bucket.seconds += entry.seconds;
+    }
+  }
+
+  return { buckets, subjectTotals, totalSeconds };
+}
+
+function getStudyEntries({
   activeSession,
   now,
   sessions,
@@ -337,69 +550,173 @@ function buildStats({
   now: Date;
   sessions: StoredSession[];
 }) {
-  const todayKey = getLocalDateKey(now);
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - 6);
-  weekStart.setHours(0, 0, 0, 0);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  const summary = {
-    today: 0,
-    week: 0,
-    month: 0,
-    allTime: 0,
-  };
-  const subjectTotals: Record<string, number> = {};
-
-  for (const session of sessions) {
-    const endedAt = new Date(session.endedAt);
-    const seconds = getSessionSeconds(session);
-
-    summary.allTime += seconds;
-
-    if (session.subjectId) {
-      subjectTotals[session.subjectId] =
-        (subjectTotals[session.subjectId] ?? 0) + seconds;
-    }
-
-    if (getLocalDateKey(endedAt) === todayKey) {
-      summary.today += seconds;
-    }
-
-    if (endedAt >= weekStart) {
-      summary.week += seconds;
-    }
-
-    if (endedAt >= monthStart) {
-      summary.month += seconds;
-    }
-  }
+  const entries: StudyEntry[] = sessions.map((session) => ({
+    date: new Date(session.endedAt),
+    seconds: getSessionSeconds(session),
+    subjectId: session.subjectId,
+  }));
 
   if (activeSession) {
-    const startedAt = new Date(activeSession.startedAt);
-    const activeSeconds = getElapsedSeconds(activeSession.startedAt, now);
-
-    summary.allTime += activeSeconds;
-
-    if (activeSession.subjectId) {
-      subjectTotals[activeSession.subjectId] =
-        (subjectTotals[activeSession.subjectId] ?? 0) + activeSeconds;
-    }
-
-    if (getLocalDateKey(startedAt) === todayKey) {
-      summary.today += activeSeconds;
-    }
-
-    if (startedAt >= weekStart) {
-      summary.week += activeSeconds;
-    }
-
-    if (startedAt >= monthStart) {
-      summary.month += activeSeconds;
-    }
+    entries.push({
+      date: new Date(activeSession.startedAt),
+      seconds: getElapsedSeconds(activeSession.startedAt, now),
+      subjectId: activeSession.subjectId,
+    });
   }
 
-  return { subjectTotals, summary };
+  return entries;
+}
+
+function getPeriodRange(period: StatsPeriod, now: Date) {
+  if (period === "week") {
+    const start = startOfDay(now);
+    start.setDate(now.getDate() - 6);
+
+    return { start, end: addDays(startOfDay(now), 1) };
+  }
+
+  if (period === "month") {
+    return {
+      start: new Date(now.getFullYear(), now.getMonth(), 1),
+      end: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+    };
+  }
+
+  if (period === "annual") {
+    return {
+      start: new Date(now.getFullYear(), 0, 1),
+      end: new Date(now.getFullYear() + 1, 0, 1),
+    };
+  }
+
+  return {
+    start: new Date(now.getFullYear(), 0, 1),
+    end: new Date(now.getFullYear() + 1, 0, 1),
+  };
+}
+
+function buildBuckets(period: StatsPeriod, now: Date): ChartBucket[] {
+  if (period === "week") {
+    const { start } = getPeriodRange(period, now);
+
+    return Array.from({ length: 7 }, (_, index) => {
+      const bucketStart = addDays(start, index);
+
+      return {
+        label: bucketStart.toLocaleDateString(undefined, { weekday: "short" }),
+        shortLabel: bucketStart.toLocaleDateString(undefined, {
+          weekday: "narrow",
+        }),
+        seconds: 0,
+        start: bucketStart,
+        end: addDays(bucketStart, 1),
+      };
+    });
+  }
+
+  if (period === "month") {
+    const { end, start } = getPeriodRange(period, now);
+    const buckets: ChartBucket[] = [];
+    let cursor = new Date(start);
+    let week = 1;
+
+    while (cursor < end) {
+      const bucketStart = new Date(cursor);
+      const bucketEnd = minDate(addDays(bucketStart, 7), end);
+
+      buckets.push({
+        label: `W${week}`,
+        shortLabel: `${week}`,
+        seconds: 0,
+        start: bucketStart,
+        end: bucketEnd,
+      });
+
+      cursor = bucketEnd;
+      week += 1;
+    }
+
+    return buckets;
+  }
+
+  if (period === "annual") {
+    return Array.from({ length: 12 }, (_, month) => {
+      const bucketStart = new Date(now.getFullYear(), month, 1);
+
+      return {
+        label: bucketStart.toLocaleDateString(undefined, { month: "short" }),
+        shortLabel: bucketStart.toLocaleDateString(undefined, {
+          month: "narrow",
+        }),
+        seconds: 0,
+        start: bucketStart,
+        end: new Date(now.getFullYear(), month + 1, 1),
+      };
+    });
+  }
+
+  return Array.from({ length: 12 }, (_, month) => {
+    const bucketStart = new Date(now.getFullYear(), month, 1);
+
+    return {
+      label: bucketStart.toLocaleDateString(undefined, { month: "short" }),
+      shortLabel: bucketStart.toLocaleDateString(undefined, {
+        month: "narrow",
+      }),
+      seconds: 0,
+      start: bucketStart,
+      end: new Date(now.getFullYear(), month + 1, 1),
+    };
+  });
+}
+
+function getAverageStat(
+  period: StatsPeriod,
+  totalSeconds: number,
+  buckets: ChartBucket[],
+) {
+  if (period === "month") {
+    return {
+      label: "per week",
+      seconds: Math.floor(totalSeconds / Math.max(1, buckets.length)),
+    };
+  }
+
+  if (period === "annual") {
+    return { label: "per month", seconds: Math.floor(totalSeconds / 12) };
+  }
+
+  return { label: "per day", seconds: Math.floor(totalSeconds / 7) };
+}
+
+function getChartTitle(period: StatsPeriod) {
+  if (period === "month") {
+    return "Weekly breakdown";
+  }
+
+  if (period === "annual") {
+    return "Monthly breakdown";
+  }
+
+  return "Daily breakdown";
+}
+
+function startOfDay(date: Date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+
+  return start;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(date.getDate() + days);
+
+  return next;
+}
+
+function minDate(first: Date, second: Date) {
+  return first < second ? first : second;
 }
 
 function normalizeSubjects(value: StoredTimerState["subjects"]) {

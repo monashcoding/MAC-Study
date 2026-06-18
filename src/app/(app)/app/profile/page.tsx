@@ -1,5 +1,6 @@
-import { Bell, LogOut, ShieldCheck, UserRound } from "lucide-react";
+import { LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { getAppAuthState } from "@/lib/auth/app-auth";
+import { PushNotificationSettings } from "@/components/pwa/push-notification-settings";
 
 export default async function ProfilePage() {
   const authState = await getAppAuthState("/app/profile");
@@ -39,11 +40,7 @@ export default async function ProfilePage() {
             App access and notification defaults
           </p>
         </div>
-        <SettingRow
-          icon={<Bell aria-hidden size={19} />}
-          title="Nudges"
-          value="Group defaults"
-        />
+        <PushNotificationSettings />
         <SettingRow
           icon={<ShieldCheck aria-hidden size={19} />}
           title="MAC access"

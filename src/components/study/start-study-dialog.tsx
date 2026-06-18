@@ -41,11 +41,11 @@ export function StartStudyDialog({
 
         <div className="grid gap-2 p-4">
           <button
-            className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.045)] px-3 py-3 text-left transition active:scale-[0.99]"
+            className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.045)] px-3 py-2.5 text-left transition active:scale-[0.99]"
             onClick={() => onStart(null)}
             type="button"
           >
-            <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414]">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414]">
               <Play aria-hidden size={18} />
             </span>
             <span className="min-w-0">
@@ -65,13 +65,13 @@ export function StartStudyDialog({
 
           {subjects.map((subject) => (
             <button
-              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition active:scale-[0.99]"
+              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2.5 text-left transition active:scale-[0.99]"
               key={subject.id}
               onClick={() => onStart(subject.id)}
               type="button"
             >
               <span
-                className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[#141414]"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#141414]"
                 style={{ backgroundColor: subject.color }}
               >
                 <Play aria-hidden size={18} />

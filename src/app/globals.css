@@ -13,7 +13,7 @@
   --color-success: #42d392;
   --color-danger: #ff6b6b;
   --color-info: #6cb6ff;
-  --mobile-nav-height: calc(4.7rem + var(--safe-area-bottom));
+  --mobile-nav-height: calc(4.35rem + var(--safe-area-bottom));
   --shadow-soft: 0 1px 0 rgb(255 255 255 / 0.04);
 }
 

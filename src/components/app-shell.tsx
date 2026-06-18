@@ -23,6 +23,7 @@ import {
   fetchRemoteTimerState,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { NudgeNotifications } from "@/components/social/nudge-notifications";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -166,8 +167,8 @@ export function AppShell({
   }
 
   return (
-    <div className="min-h-dvh bg-[var(--color-background)]">
-      <div className="mx-auto flex h-[calc(100dvh-var(--mobile-nav-height))] w-full max-w-6xl overflow-y-auto lg:h-auto lg:min-h-dvh lg:gap-5 lg:overflow-visible lg:px-6">
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
+      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:min-h-dvh lg:gap-5 lg:overflow-visible lg:px-6">
         <aside className="hidden w-64 shrink-0 py-6 lg:block">
           <div className="sticky top-6">
             <Brand />
@@ -224,7 +225,7 @@ export function AppShell({
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 h-[var(--mobile-nav-height)] bg-[rgb(23_23_23/0.97)] px-2 pb-[max(0.55rem,var(--safe-area-bottom))] pt-2 shadow-[0_-16px_36px_rgb(0_0_0/0.28)] backdrop-blur lg:hidden">
+      <nav className="z-30 h-[var(--mobile-nav-height)] shrink-0 bg-[rgb(23_23_23/0.97)] px-2 pb-[max(0.55rem,var(--safe-area-bottom))] pt-2 shadow-[0_-16px_36px_rgb(0_0_0/0.28)] backdrop-blur lg:hidden">
         <div className="mx-auto grid h-full max-w-lg grid-cols-5 gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -234,7 +235,7 @@ export function AppShell({
               <Link
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "mac-focus flex h-13 touch-manipulation flex-col items-center justify-center gap-1 rounded-md border text-xs font-medium transition active:scale-[0.98]",
+                  "mac-focus flex h-12 touch-manipulation flex-col items-center justify-center gap-1 rounded-md border text-xs font-medium transition active:scale-[0.98]",
                   active
                     ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
                     : "border-transparent text-[var(--color-text-muted)]",
@@ -254,6 +255,10 @@ export function AppShell({
           })}
         </div>
       </nav>
+
+      {authState.mode === "authenticated" ? (
+        <NudgeNotifications userId={authState.user.id} />
+      ) : null}
     </div>
   );
 }
@@ -316,7 +321,7 @@ function NavLink({
     <Link
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "mac-focus flex min-h-13 items-center gap-3 rounded-md border px-3 py-2 text-sm font-medium transition",
+        "mac-focus flex min-h-11 items-center gap-3 rounded-md border px-3 py-2 text-sm font-medium transition",
         isActive
           ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
           : "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]",

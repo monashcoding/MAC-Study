@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
-import { getOptionalSupabasePublicEnv } from "./env";
+import {
+  getOptionalSupabaseAdminEnv,
+  getOptionalSupabasePublicEnv,
+} from "./env";
 
 export async function createSupabaseServerClient() {
   const env = getOptionalSupabasePublicEnv();
@@ -29,6 +33,25 @@ export async function createSupabaseServerClient() {
             // Route Handlers refresh auth cookies for navigations that need it.
           }
         },
+      },
+    },
+  );
+}
+
+export function createSupabaseAdminClient() {
+  const env = getOptionalSupabaseAdminEnv();
+
+  if (!env) {
+    return null;
+  }
+
+  return createClient(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
       },
     },
   );

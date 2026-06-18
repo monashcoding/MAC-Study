@@ -46,6 +46,14 @@ export type RemoteSocialSnapshot = {
   currentUserId: string;
 };
 
+export type RemoteNudgeNotification = {
+  id: string;
+  groupId: string | null;
+  message: string;
+  senderId: string;
+  createdAt: string;
+};
+
 type ProfileRow = {
   id: string;
   display_name: string | null;
@@ -89,6 +97,15 @@ type SessionRow = {
   status: "active" | "completed" | "needs_confirmation" | "voided";
   source: "timer" | "manual_adjustment";
   duration_seconds: number | null;
+};
+
+type NudgeRow = {
+  id: string;
+  group_id: string | null;
+  sender_id: string;
+  recipient_id: string;
+  message: string | null;
+  created_at: string;
 };
 
 export async function getRemoteUserId(supabase: SupabaseClient) {
@@ -481,6 +498,56 @@ export async function inviteRemoteFriendToGroup({
   }
 }
 
+export async function sendRemoteNudge({
+  groupId = null,
+  recipientId,
+}: {
+  groupId?: string | null;
+  recipientId: string;
+}) {
+  const response = await fetch("/api/nudges", {
+    body: JSON.stringify({ groupId, recipientId }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      message?: string;
+    } | null;
+
+    throw new Error(body?.message ?? "Nudge failed.");
+  }
+}
+
+export function subscribeToRemoteNudges(
+  supabase: SupabaseClient,
+  recipientId: string,
+  onNudge: (nudge: RemoteNudgeNotification) => void,
+) {
+  const channel = supabase
+    .channel(
+      `mac-study-nudges-${recipientId}-${Math.random().toString(36).slice(2)}`,
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        filter: `recipient_id=eq.${recipientId}`,
+        schema: "public",
+        table: "nudges",
+      },
+      (payload) => {
+        onNudge(nudgeFromRow(payload.new as NudgeRow));
+      },
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}
+
 export function subscribeToRemoteAppChanges(
   supabase: SupabaseClient,
   onChange: () => void,
@@ -510,6 +577,11 @@ export function subscribeToRemoteAppChanges(
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "profiles" },
+      onChange,
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "nudges" },
       onChange,
     )
     .subscribe();
@@ -558,6 +630,16 @@ function subjectFromRow(row: SubjectRow): RemoteSubject {
     id: row.id,
     name: row.name || row.code,
     color: row.color || "#FFE330",
+  };
+}
+
+function nudgeFromRow(row: NudgeRow): RemoteNudgeNotification {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    groupId: row.group_id,
+    message: row.message || "Someone woke you up!",
+    senderId: row.sender_id,
   };
 }
 

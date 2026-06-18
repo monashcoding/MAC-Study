@@ -21,9 +21,11 @@ import {
   fetchRemoteSocialSnapshot,
   inviteRemoteFriendToGroup,
   removeRemoteFriend,
+  sendRemoteNudge,
   subscribeToRemoteAppChanges,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { NudgePill } from "@/components/social/nudge-pill";
 import { formatDuration } from "@/lib/timer";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +43,8 @@ export function FriendsDashboard() {
   const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [availableFriends, setAvailableFriends] = useState<SocialFriend[]>([]);
+  const [nudgingFriendId, setNudgingFriendId] = useState<string | null>(null);
+  const [nudgeFeedback, setNudgeFeedback] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
@@ -245,6 +249,25 @@ export function FriendsDashboard() {
     }));
   }
 
+  async function nudgeFriend(friendId: string) {
+    if (!remoteClient) {
+      setNudgeFeedback("Sign in to send lock-screen nudges.");
+      return;
+    }
+
+    setNudgingFriendId(friendId);
+    setNudgeFeedback(null);
+
+    try {
+      await sendRemoteNudge({ recipientId: friendId });
+      setNudgeFeedback("Nudge sent.");
+    } catch (error) {
+      setNudgeFeedback(getNudgeErrorMessage(error));
+    } finally {
+      setNudgingFriendId(null);
+    }
+  }
+
   if (selectedFriend) {
     const selectedGroup = socialState.groups.find(
       (group) => group.id === inviteGroupId,
@@ -274,6 +297,18 @@ export function FriendsDashboard() {
               <p className="mt-1 truncate text-sm font-medium text-[var(--color-text-muted)]">
                 {selectedFriend.handle}
               </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <NudgePill
+                  disabled={!remoteClient}
+                  isSending={nudgingFriendId === selectedFriend.id}
+                  onClick={() => void nudgeFriend(selectedFriend.id)}
+                />
+                {nudgeFeedback ? (
+                  <p className="text-xs font-medium text-[var(--color-text-muted)]">
+                    {nudgeFeedback}
+                  </p>
+                ) : null}
+              </div>
             </div>
           </div>
         </section>
@@ -309,7 +344,7 @@ export function FriendsDashboard() {
           <h3 className="text-lg font-semibold">Groups</h3>
           <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
             <select
-              className="mac-focus h-11 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
+              className="mac-focus h-10 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
               onChange={(event) => setInviteGroupId(event.target.value)}
               value={inviteGroupId}
             >
@@ -321,7 +356,7 @@ export function FriendsDashboard() {
               ))}
             </select>
             <button
-              className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
+              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
               disabled={!inviteGroupId || alreadyInSelectedGroup}
               onClick={() => void inviteFriendToGroup(selectedFriend.id)}
               type="button"
@@ -337,7 +372,7 @@ export function FriendsDashboard() {
         </section>
 
         <button
-          className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[rgb(255_107_107/0.45)] px-4 text-sm font-semibold text-[var(--color-danger)]"
+          className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[rgb(255_107_107/0.45)] px-3 text-sm font-semibold text-[var(--color-danger)]"
           onClick={() => void removeFriend(selectedFriend.id)}
           type="button"
         >
@@ -360,7 +395,7 @@ export function FriendsDashboard() {
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-2xl font-semibold">Friends</h2>
           <button
-            className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414]"
             onClick={() => setIsAdding(true)}
             type="button"
           >
@@ -375,6 +410,7 @@ export function FriendsDashboard() {
               className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition active:scale-[0.99]"
               key={friend.id}
               onClick={() => {
+                setNudgeFeedback(null);
                 setSelectedFriendId(friend.id);
                 setInviteGroupId("");
               }}
@@ -496,7 +532,7 @@ function AddFriendDialog({
               <label className="block text-sm font-medium">
                 Name
                 <input
-                  className="mac-focus mt-2 h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
+                  className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
                   onChange={(event) => onNameChange(event.target.value)}
                   placeholder="Friend name"
                   value={name}
@@ -506,7 +542,7 @@ function AddFriendDialog({
               <label className="block text-sm font-medium">
                 Handle
                 <input
-                  className="mac-focus mt-2 h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
+                  className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
                   onChange={(event) => onHandleChange(event.target.value)}
                   placeholder="@friend"
                   value={handle}
@@ -537,7 +573,7 @@ function AddFriendDialog({
 
             <div className="p-4">
               <button
-                className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
+                className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
                 disabled={!name.trim()}
                 onClick={onAdd}
                 type="button"
@@ -620,6 +656,18 @@ function normalizeHandle(value: string) {
   }
 
   return handle.startsWith("@") ? handle : `@${handle}`;
+}
+
+function getNudgeErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    if (error.message.includes("send_nudge")) {
+      return "Run the nudge migration first.";
+    }
+
+    return error.message;
+  }
+
+  return "Could not send nudge.";
 }
 
 function uniqueIds(ids: string[]) {

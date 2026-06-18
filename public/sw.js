@@ -45,6 +45,8 @@ self.addEventListener("push", (event) => {
       body,
       icon: "/icons/icon-512.png",
       badge: "/icons/icon-maskable-512.png",
+      renotify: true,
+      tag: data.tag ?? "mac-study-nudge",
       data: {
         url: data.url ?? "/app",
       },

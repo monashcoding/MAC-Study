@@ -379,7 +379,7 @@ export function TimerDashboard() {
         </p>
         <button
           className={cn(
-            "mac-focus mt-5 inline-flex h-12 min-w-40 items-center justify-center gap-2 rounded-md px-5 text-sm font-semibold transition active:scale-[0.99]",
+            "mac-focus mt-5 inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition active:scale-[0.99]",
             activeSession
               ? "bg-[var(--color-danger)] text-white"
               : "bg-[var(--color-mac-yellow)] text-[#141414]",
@@ -400,7 +400,7 @@ export function TimerDashboard() {
 
       <section className="space-y-3">
         <button
-          className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+          className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414]"
           onClick={() => {
             setDraftSubjects(subjects);
             setInitialEditingSubjectId(null);
@@ -604,7 +604,7 @@ function SubjectEditor({
             </div>
 
             <button
-              className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[rgb(255_107_107/0.45)] px-4 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-35"
+              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[rgb(255_107_107/0.45)] px-3 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-35"
               disabled={draftSubjects.length <= 1}
               onClick={() => deleteSubject(editingSubject.id)}
               type="button"
@@ -641,17 +641,24 @@ function SubjectEditor({
           </div>
         )}
 
-        <div className="sticky bottom-0 flex flex-col gap-2 border-t border-[var(--color-border)] bg-[var(--color-background)] p-4 sm:flex-row sm:justify-between">
+        <div
+          className={cn(
+            "sticky bottom-0 flex flex-col gap-2 border-t border-[var(--color-border)] bg-[var(--color-background)] p-4 sm:flex-row",
+            editingSubject ? "sm:justify-end" : "sm:justify-between",
+          )}
+        >
+          {editingSubject ? null : (
+            <button
+              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)]"
+              onClick={addAndEditSubject}
+              type="button"
+            >
+              <Plus aria-hidden size={17} />
+              Add subject
+            </button>
+          )}
           <button
-            className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-4 font-semibold text-[var(--color-text)]"
-            onClick={addAndEditSubject}
-            type="button"
-          >
-            <Plus aria-hidden size={17} />
-            Add subject
-          </button>
-          <button
-            className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414]"
+            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414]"
             onClick={onSave}
             type="button"
           >

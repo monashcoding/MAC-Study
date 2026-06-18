@@ -43,6 +43,7 @@ import {
   fetchRemoteTimerState,
   fetchRemoteSocialSnapshot,
   inviteRemoteFriendToGroup,
+  sendRemoteNudge,
   startRemoteStudySession,
   stopRemoteStudySession,
   subscribeToRemoteAppChanges,
@@ -52,6 +53,7 @@ import {
   updateRemoteStudyIcon,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { NudgePill } from "@/components/social/nudge-pill";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
 import { formatDuration, isLongSession } from "@/lib/timer";
 import { cn } from "@/lib/utils";
@@ -108,14 +110,18 @@ export function GroupsDashboard() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isChoosingStudy, setIsChoosingStudy] = useState(false);
-  const [isEditingMemberIcons, setIsEditingMemberIcons] = useState(false);
+  const [isGroupSettingsOpen, setIsGroupSettingsOpen] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [groupView, setGroupView] = useState<"class" | "rankings">("class");
   const [rankingWindow, setRankingWindow] = useState<RankingWindow>("day");
   const [groupName, setGroupName] = useState("");
   const [groupIcon, setGroupIcon] = useState<GroupIconKey>("users");
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [nudgingUserId, setNudgingUserId] = useState<string | null>(null);
+  const [nudgeFeedback, setNudgeFeedback] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
@@ -463,6 +469,25 @@ export function GroupsDashboard() {
     }));
   }
 
+  async function nudgeMember(memberId: string, groupId: string) {
+    if (!remoteClient) {
+      setNudgeFeedback("Sign in to send lock-screen nudges.");
+      return;
+    }
+
+    setNudgingUserId(memberId);
+    setNudgeFeedback(null);
+
+    try {
+      await sendRemoteNudge({ groupId, recipientId: memberId });
+      setNudgeFeedback("Nudge sent.");
+    } catch (error) {
+      setNudgeFeedback(getNudgeErrorMessage(error));
+    } finally {
+      setNudgingUserId(null);
+    }
+  }
+
   if (selectedGroup) {
     const members = getGroupMembers(selectedGroup, friendsById).sort(
       (first, second) =>
@@ -480,116 +505,153 @@ export function GroupsDashboard() {
     const isStudyingElsewhere = Boolean(
       activeStudySession && !activeInSelectedGroup,
     );
+    const selectedMember =
+      members.find((member) => member.id === selectedMemberId) ?? null;
 
     return (
-      <div className="space-y-5 pt-1">
+      <div className="space-y-5 pb-24 pt-1 lg:pb-0">
         <section className="space-y-4">
           <button
             className="mac-focus inline-flex h-10 items-center gap-2 rounded-md text-sm font-semibold text-[var(--color-text-muted)]"
-            onClick={() => setSelectedGroupId(null)}
+            onClick={() => {
+              setSelectedGroupId(null);
+              setSelectedMemberId(null);
+              setGroupView("class");
+            }}
             type="button"
           >
             <ArrowLeft aria-hidden size={17} />
             Groups
           </button>
 
-          <div className="flex min-w-0 items-center gap-4">
-            <p className="shrink-0 text-2xl font-semibold tabular-nums">
-              <span className="text-[#ff7a00]">{activeNow}</span>
-              <span className="text-[var(--color-text-muted)]">
-                /{members.length}
-              </span>
-            </p>
-            <h2 className="min-w-0 truncate text-2xl font-semibold">
-              {selectedGroup.name}
-            </h2>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-3">
+                <GroupIconBadge icon={selectedGroup.icon} />
+                <div className="min-w-0">
+                  <h2 className="truncate text-2xl font-semibold">
+                    {selectedGroup.name}
+                  </h2>
+                  <p className="mt-1 text-sm font-medium text-[var(--color-text-muted)]">
+                    <span className="text-[#ff7a00]">{activeNow}</span>
+                    <span> active / {members.length} members</span>
+                  </p>
+                </div>
+              </div>
+            </div>
             <button
-              className={cn(
-                "mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45",
-                activeInSelectedGroup
-                  ? "bg-[var(--color-danger)] text-white"
-                  : "bg-[var(--color-mac-yellow)] text-[#141414]",
-              )}
-              disabled={isStudyingElsewhere}
-              onClick={() =>
-                void (activeInSelectedGroup
-                  ? stopGroupStudy()
-                  : setIsChoosingStudy(true))
-              }
+              aria-label="Group settings"
+              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md bg-[rgb(255_255_255/0.045)] text-[var(--color-text)]"
+              onClick={() => setIsGroupSettingsOpen(true)}
               type="button"
             >
-              {activeInSelectedGroup ? (
-                <CircleStop aria-hidden size={16} />
-              ) : (
-                <Play aria-hidden size={16} />
-              )}
-              {activeInSelectedGroup
-                ? "Stop study"
-                : isStudyingElsewhere
-                  ? "Studying"
-                  : "Start study"}
+              <Settings2 aria-hidden size={18} />
             </button>
-            {GROUP_ICON_KEYS.map((icon) => (
+          </div>
+
+          <div className="grid grid-cols-2 rounded-md bg-[rgb(255_255_255/0.045)] p-1">
+            {[
+              { id: "class", label: "Class view" },
+              { id: "rankings", label: "Rankings" },
+            ].map((view) => (
               <button
-                aria-label={`Use ${groupIconLabels[icon]} icon`}
                 className={cn(
-                  "mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border transition",
-                  selectedGroup.icon === icon
-                    ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
-                    : "border-[var(--color-border)] text-[var(--color-text-muted)]",
+                  "mac-focus h-10 rounded text-sm font-semibold transition",
+                  groupView === view.id
+                    ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                    : "text-[var(--color-text-muted)]",
                 )}
-                key={icon}
-                onClick={() => void updateGroupIcon(icon)}
+                key={view.id}
+                onClick={() => setGroupView(view.id as "class" | "rankings")}
                 type="button"
               >
-                <GroupIconOnly icon={icon} size={17} />
+                {view.label}
               </button>
             ))}
-            <button
-              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)]"
-              onClick={() => setIsEditingMemberIcons(true)}
-              type="button"
-            >
-              <Settings2 aria-hidden size={16} />
-              {remoteClient && currentUserId ? "My icon" : "Icons"}
-            </button>
           </div>
+
+          {groupView === "rankings" ? (
+            <div className="grid grid-cols-3 rounded-md bg-[rgb(255_255_255/0.035)] p-1">
+              {rankingWindows.map((window) => (
+                <button
+                  className={cn(
+                    "mac-focus h-9 rounded px-3 text-xs font-semibold transition",
+                    rankingWindow === window.id
+                      ? "bg-[var(--color-surface-raised)] text-[var(--color-text)]"
+                      : "text-[var(--color-text-muted)]",
+                  )}
+                  key={window.id}
+                  onClick={() => setRankingWindow(window.id)}
+                  type="button"
+                >
+                  {window.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </section>
 
-        <section>
-          <div className="grid grid-cols-4 gap-x-2 gap-y-8 py-2">
-            {members.map((member) => (
-              <div
-                className={cn(
-                  "min-w-0 text-center transition",
-                  member.studying
-                    ? "text-[#ff7a00]"
-                    : "text-[#555b6e] opacity-80",
-                )}
-                key={member.id}
-              >
-                <StudyPersonIcon
-                  active={member.studying}
-                  icon={member.personIcon}
-                />
-                <p className="mt-2 truncate text-sm font-semibold">
-                  {member.name}
-                </p>
-                <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums">
-                  {formatDuration(getLiveRankingSeconds(member, "day", now))}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
+        {groupView === "class" ? (
+          <section>
+            <div className="grid grid-cols-4 gap-x-2 gap-y-8 py-2">
+              {members.map((member) => (
+                <button
+                  className={cn(
+                    "mac-focus min-w-0 rounded-md text-center transition active:scale-[0.98]",
+                    member.studying
+                      ? "text-[#ff7a00]"
+                      : "text-[#555b6e] opacity-80",
+                  )}
+                  key={member.id}
+                  onClick={() => {
+                    setNudgeFeedback(null);
+                    setSelectedMemberId(member.id);
+                  }}
+                  type="button"
+                >
+                  <StudyPersonIcon
+                    active={member.studying}
+                    icon={member.personIcon}
+                  />
+                  <p className="mt-2 truncate text-sm font-semibold">
+                    {member.name}
+                  </p>
+                  <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums">
+                    {formatDuration(getLiveRankingSeconds(member, "day", now))}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-        {isEditingMemberIcons ? (
-          <MemberIconDialog
+        {selectedMember ? (
+          <GroupMemberDialog
+            canNudge={
+              selectedMember.id !== (currentUserId ?? "you") &&
+              selectedMember.id !== "you"
+            }
+            group={selectedGroup}
+            isNudging={nudgingUserId === selectedMember.id}
+            member={selectedMember}
+            nudgeFeedback={nudgeFeedback}
+            now={now}
+            onClose={() => {
+              setSelectedMemberId(null);
+              setNudgeFeedback(null);
+            }}
+            onNudge={() =>
+              void nudgeMember(selectedMember.id, selectedGroup.id)
+            }
+          />
+        ) : null}
+
+        {isGroupSettingsOpen ? (
+          <GroupSettingsDialog
             members={members}
-            onClose={() => setIsEditingMemberIcons(false)}
+            onClose={() => setIsGroupSettingsOpen(false)}
+            selectedGroup={selectedGroup}
+            onGroupIconUpdate={updateGroupIcon}
             remoteCurrentUserId={remoteClient ? currentUserId : null}
             onUpdate={updateFriendIcon}
           />
@@ -604,52 +666,67 @@ export function GroupsDashboard() {
           />
         ) : null}
 
-        <section className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold">Rankings</h3>
-            <div className="grid grid-cols-3 rounded-md border border-[var(--color-border)] p-1">
-              {rankingWindows.map((window) => (
+        {groupView === "rankings" ? (
+          <section className="space-y-3">
+            <div className="grid gap-2">
+              {ranking.map((member, index) => (
                 <button
-                  className={cn(
-                    "mac-focus h-8 rounded px-3 text-xs font-semibold transition",
-                    rankingWindow === window.id
-                      ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-                      : "text-[var(--color-text-muted)]",
-                  )}
-                  key={window.id}
-                  onClick={() => setRankingWindow(window.id)}
+                  className="mac-focus grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2.5 text-left transition active:scale-[0.99]"
+                  key={member.id}
+                  onClick={() => {
+                    setNudgeFeedback(null);
+                    setSelectedMemberId(member.id);
+                  }}
                   type="button"
                 >
-                  {window.label}
+                  <span className="font-mono text-sm font-semibold text-[var(--color-text-muted)]">
+                    #{index + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{member.name}</p>
+                    <p className="truncate text-xs font-medium text-[var(--color-text-muted)]">
+                      {member.handle}
+                    </p>
+                  </div>
+                  <p className="font-mono text-sm font-semibold tabular-nums">
+                    {formatDuration(
+                      getLiveRankingSeconds(member, rankingWindow, now),
+                    )}
+                  </p>
                 </button>
               ))}
             </div>
-          </div>
+          </section>
+        ) : null}
 
-          <div className="grid gap-2">
-            {ranking.map((member, index) => (
-              <div
-                className="grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2.5"
-                key={member.id}
-              >
-                <span className="font-mono text-sm font-semibold text-[var(--color-text-muted)]">
-                  #{index + 1}
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate font-semibold">{member.name}</p>
-                  <p className="truncate text-xs font-medium text-[var(--color-text-muted)]">
-                    {member.handle}
-                  </p>
-                </div>
-                <p className="font-mono text-sm font-semibold tabular-nums">
-                  {formatDuration(
-                    getLiveRankingSeconds(member, rankingWindow, now),
-                  )}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
+        <div className="fixed inset-x-4 bottom-[calc(var(--mobile-nav-height)+0.75rem)] z-20 mx-auto max-w-lg lg:sticky lg:inset-x-auto lg:bottom-4 lg:max-w-none lg:pt-2">
+          <button
+            className={cn(
+              "mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold shadow-[0_16px_34px_rgb(0_0_0/0.32)] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-55",
+              activeInSelectedGroup
+                ? "bg-[var(--color-danger)] text-white"
+                : "bg-[var(--color-mac-yellow)] text-[#141414]",
+            )}
+            disabled={isStudyingElsewhere}
+            onClick={() =>
+              void (activeInSelectedGroup
+                ? stopGroupStudy()
+                : setIsChoosingStudy(true))
+            }
+            type="button"
+          >
+            {activeInSelectedGroup ? (
+              <CircleStop aria-hidden size={18} />
+            ) : (
+              <Play aria-hidden size={18} />
+            )}
+            {activeInSelectedGroup
+              ? "Stop study"
+              : isStudyingElsewhere
+                ? "Studying in another session"
+                : "Start study"}
+          </button>
+        </div>
       </div>
     );
   }
@@ -666,7 +743,7 @@ export function GroupsDashboard() {
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-2xl font-semibold">Groups</h2>
           <button
-            className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414]"
             onClick={() => setIsCreating(true)}
             type="button"
           >
@@ -678,9 +755,12 @@ export function GroupsDashboard() {
         <div className="grid gap-2">
           {groupSummaries.map(({ group, activeNow, memberCount }) => (
             <button
-              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-4 text-left transition active:scale-[0.99]"
+              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition active:scale-[0.99]"
               key={group.id}
-              onClick={() => setSelectedGroupId(group.id)}
+              onClick={() => {
+                setGroupView("class");
+                setSelectedGroupId(group.id);
+              }}
               type="button"
             >
               <GroupIconBadge icon={group.icon} />
@@ -771,7 +851,7 @@ function CreateGroupDialog({
           <label className="block text-sm font-medium">
             Name
             <input
-              className="mac-focus mt-2 h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
+              className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
               onChange={(event) => onNameChange(event.target.value)}
               placeholder="Study group"
               value={groupName}
@@ -785,7 +865,7 @@ function CreateGroupDialog({
                 <button
                   aria-label={`Use ${groupIconLabels[icon]} icon`}
                   className={cn(
-                    "mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border transition",
+                    "mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border transition",
                     groupIcon === icon
                       ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
                       : "border-[var(--color-border)] text-[var(--color-text-muted)]",
@@ -839,7 +919,7 @@ function CreateGroupDialog({
 
         <div className="sticky bottom-0 bg-[var(--color-background)] p-4">
           <button
-            className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
+            className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
             disabled={!groupName.trim()}
             onClick={onCreate}
             type="button"
@@ -894,16 +974,110 @@ function ProfileBadge({ friend }: { friend: SocialFriend }) {
   );
 }
 
-function MemberIconDialog({
+function GroupMemberDialog({
+  canNudge,
+  group,
+  isNudging,
+  member,
+  now,
+  nudgeFeedback,
+  onClose,
+  onNudge,
+}: {
+  canNudge: boolean;
+  group: SocialGroup;
+  isNudging: boolean;
+  member: SocialFriend;
+  now: Date;
+  nudgeFeedback: string | null;
+  onClose: () => void;
+  onNudge: () => void;
+}) {
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-end bg-black/58 px-3 pb-[max(0.75rem,var(--safe-area-bottom))] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm sm:items-center sm:justify-center"
+      role="dialog"
+    >
+      <div className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <ProfileBadge friend={member} />
+            <div className="min-w-0">
+              <h2 className="truncate text-xl font-semibold">{member.name}</h2>
+              <p className="truncate text-sm text-[var(--color-text-muted)]">
+                {member.handle}
+              </p>
+            </div>
+          </div>
+          <button
+            className="mac-focus inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)]"
+            onClick={onClose}
+            type="button"
+          >
+            <X aria-hidden size={17} />
+            <span className="sr-only">Close member details</span>
+          </button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <NudgePill
+            disabled={!canNudge}
+            isSending={isNudging}
+            onClick={onNudge}
+          />
+          <p className="text-xs font-medium text-[var(--color-text-muted)]">
+            {nudgeFeedback ??
+              (canNudge
+                ? `Send from ${group.name}`
+                : "You cannot nudge yourself.")}
+          </p>
+        </div>
+
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <MemberStat
+            label="Today"
+            value={formatDuration(getLiveRankingSeconds(member, "day", now))}
+          />
+          <MemberStat
+            label="Week"
+            value={formatDuration(getLiveRankingSeconds(member, "week", now))}
+          />
+          <MemberStat
+            label="Month"
+            value={formatDuration(getLiveRankingSeconds(member, "month", now))}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MemberStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-2 py-2.5 text-center">
+      <p className="font-mono text-sm font-semibold tabular-nums">{value}</p>
+      <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function GroupSettingsDialog({
   members,
   onClose,
+  onGroupIconUpdate,
   onUpdate,
   remoteCurrentUserId,
+  selectedGroup,
 }: {
   members: SocialFriend[];
   onClose: () => void;
+  onGroupIconUpdate: (icon: GroupIconKey) => void | Promise<void>;
   onUpdate: (friendId: string, icon: PersonIconKey) => void | Promise<void>;
   remoteCurrentUserId: string | null;
+  selectedGroup: SocialGroup;
 }) {
   const editableMembers = remoteCurrentUserId
     ? members.filter((member) => member.id === remoteCurrentUserId)
@@ -917,7 +1091,7 @@ function MemberIconDialog({
     >
       <div className="max-h-[min(88dvh,680px)] w-full max-w-xl overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-[var(--color-background)] p-4">
-          <h2 className="text-lg font-semibold">Member icons</h2>
+          <h2 className="text-lg font-semibold">Group settings</h2>
           <button
             className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
             onClick={onClose}
@@ -928,42 +1102,74 @@ function MemberIconDialog({
           </button>
         </div>
 
-        <div className="grid gap-3 p-4">
-          {editableMembers.map((member) => (
-            <div
-              className="space-y-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
-              key={member.id}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="truncate font-semibold">{member.name}</p>
-                <p className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">
-                  {formatDuration(member.daySeconds)}
-                </p>
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                {PERSON_ICON_KEYS.map((icon) => {
-                  const selected = member.personIcon === icon;
-
-                  return (
-                    <button
-                      aria-label={`Use ${personIconLabels[icon]} icon for ${member.name}`}
-                      className={cn(
-                        "mac-focus flex h-20 items-center justify-center rounded-md border transition",
-                        selected
-                          ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.1)]"
-                          : "border-[var(--color-border)]",
-                      )}
-                      key={icon}
-                      onClick={() => void onUpdate(member.id, icon)}
-                      type="button"
-                    >
-                      <StudyPersonIcon active={member.studying} icon={icon} />
-                    </button>
-                  );
-                })}
-              </div>
+        <div className="grid gap-5 p-4">
+          <section>
+            <p className="text-sm font-semibold">Group icon</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {GROUP_ICON_KEYS.map((icon) => (
+                <button
+                  aria-label={`Use ${groupIconLabels[icon]} icon`}
+                  className={cn(
+                    "mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border transition",
+                    selectedGroup.icon === icon
+                      ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
+                      : "border-[var(--color-border)] text-[var(--color-text-muted)]",
+                  )}
+                  key={icon}
+                  onClick={() => void onGroupIconUpdate(icon)}
+                  type="button"
+                >
+                  <GroupIconOnly icon={icon} size={18} />
+                </button>
+              ))}
             </div>
-          ))}
+          </section>
+
+          <section className="space-y-3">
+            <div>
+              <p className="text-sm font-semibold">
+                {remoteCurrentUserId ? "My class icon" : "Member icons"}
+              </p>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Choose how you appear in class view.
+              </p>
+            </div>
+            {editableMembers.map((member) => (
+              <div
+                className="space-y-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
+                key={member.id}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="truncate font-semibold">{member.name}</p>
+                  <p className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">
+                    {formatDuration(member.daySeconds)}
+                  </p>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {PERSON_ICON_KEYS.map((icon) => {
+                    const selected = member.personIcon === icon;
+
+                    return (
+                      <button
+                        aria-label={`Use ${personIconLabels[icon]} icon for ${member.name}`}
+                        className={cn(
+                          "mac-focus flex h-20 items-center justify-center rounded-md border transition",
+                          selected
+                            ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.1)]"
+                            : "border-[var(--color-border)]",
+                        )}
+                        key={icon}
+                        onClick={() => void onUpdate(member.id, icon)}
+                        type="button"
+                      >
+                        <StudyPersonIcon active={member.studying} icon={icon} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </section>
         </div>
       </div>
     </div>
@@ -1044,6 +1250,18 @@ function getGroupMembers(
   return group.memberIds
     .map((friendId) => friendsById.get(friendId))
     .filter((friend): friend is SocialFriend => Boolean(friend));
+}
+
+function getNudgeErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    if (error.message.includes("send_nudge")) {
+      return "Run the nudge migration first.";
+    }
+
+    return error.message;
+  }
+
+  return "Could not send nudge.";
 }
 
 function uniqueIds(ids: string[]) {
