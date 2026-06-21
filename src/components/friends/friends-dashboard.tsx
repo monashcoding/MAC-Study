@@ -19,14 +19,13 @@ import {
 import {
   addRemoteFriend,
   fetchRemoteSocialSnapshot,
-  getNudgeDeliveryMessage,
   inviteRemoteFriendToGroup,
   removeRemoteFriend,
-  sendRemoteNudge,
   subscribeToRemoteAppChanges,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { NudgePill } from "@/components/social/nudge-pill";
+import { useNudgeQueue } from "@/components/social/use-nudge-queue";
 import { formatDuration } from "@/lib/timer";
 import { cn } from "@/lib/utils";
 
@@ -44,9 +43,8 @@ export function FriendsDashboard() {
   const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [availableFriends, setAvailableFriends] = useState<SocialFriend[]>([]);
-  const [nudgingFriendId, setNudgingFriendId] = useState<string | null>(null);
-  const [nudgeFeedback, setNudgeFeedback] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const nudgeQueue = useNudgeQueue(Boolean(remoteClient));
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
     const snapshot = await fetchRemoteSocialSnapshot(supabase);
@@ -250,26 +248,15 @@ export function FriendsDashboard() {
     }));
   }
 
-  async function nudgeFriend(friendId: string) {
-    if (!remoteClient) {
-      setNudgeFeedback("Sign in to send lock-screen nudges.");
-      return;
-    }
-
-    setNudgingFriendId(friendId);
-    setNudgeFeedback(null);
-
-    try {
-      const delivery = await sendRemoteNudge({ recipientId: friendId });
-      setNudgeFeedback(getNudgeDeliveryMessage(delivery));
-    } catch (error) {
-      setNudgeFeedback(getNudgeErrorMessage(error));
-    } finally {
-      setNudgingFriendId(null);
-    }
+  function nudgeFriend(friendId: string) {
+    nudgeQueue.enqueue({
+      key: friendId,
+      recipientId: friendId,
+    });
   }
 
   if (selectedFriend) {
+    const nudgeState = nudgeQueue.getState(selectedFriend.id);
     const selectedGroup = socialState.groups.find(
       (group) => group.id === inviteGroupId,
     );
@@ -301,12 +288,12 @@ export function FriendsDashboard() {
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <NudgePill
                   disabled={!remoteClient}
-                  isSending={nudgingFriendId === selectedFriend.id}
-                  onClick={() => void nudgeFriend(selectedFriend.id)}
+                  onClick={() => nudgeFriend(selectedFriend.id)}
+                  pendingCount={nudgeState.pending}
                 />
-                {nudgeFeedback ? (
+                {nudgeState.feedback ? (
                   <p className="text-xs font-medium text-[var(--color-text-muted)]">
-                    {nudgeFeedback}
+                    {nudgeState.feedback}
                   </p>
                 ) : null}
               </div>
@@ -411,7 +398,6 @@ export function FriendsDashboard() {
               className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
               key={friend.id}
               onClick={() => {
-                setNudgeFeedback(null);
                 setSelectedFriendId(friend.id);
                 setInviteGroupId("");
               }}
@@ -657,18 +643,6 @@ function normalizeHandle(value: string) {
   }
 
   return handle.startsWith("@") ? handle : `@${handle}`;
-}
-
-function getNudgeErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message) {
-    if (error.message.includes("send_nudge")) {
-      return "Run the nudge migration first.";
-    }
-
-    return error.message;
-  }
-
-  return "Could not send nudge.";
 }
 
 function uniqueIds(ids: string[]) {

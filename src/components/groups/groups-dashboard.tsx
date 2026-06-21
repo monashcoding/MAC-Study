@@ -42,9 +42,7 @@ import {
   createRemoteGroup,
   fetchRemoteTimerState,
   fetchRemoteSocialSnapshot,
-  getNudgeDeliveryMessage,
   inviteRemoteFriendToGroup,
-  sendRemoteNudge,
   startRemoteStudySession,
   stopRemoteStudySession,
   subscribeToRemoteAppChanges,
@@ -55,6 +53,7 @@ import {
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { NudgePill } from "@/components/social/nudge-pill";
+import { useNudgeQueue } from "@/components/social/use-nudge-queue";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
 import { formatDuration, isLongSession } from "@/lib/timer";
 import { cn } from "@/lib/utils";
@@ -121,9 +120,8 @@ export function GroupsDashboard() {
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [nudgingUserId, setNudgingUserId] = useState<string | null>(null);
-  const [nudgeFeedback, setNudgeFeedback] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const nudgeQueue = useNudgeQueue(Boolean(remoteClient));
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
     const snapshot = await fetchRemoteSocialSnapshot(supabase);
@@ -470,26 +468,12 @@ export function GroupsDashboard() {
     }));
   }
 
-  async function nudgeMember(memberId: string, groupId: string) {
-    if (!remoteClient) {
-      setNudgeFeedback("Sign in to send lock-screen nudges.");
-      return;
-    }
-
-    setNudgingUserId(memberId);
-    setNudgeFeedback(null);
-
-    try {
-      const delivery = await sendRemoteNudge({
-        groupId,
-        recipientId: memberId,
-      });
-      setNudgeFeedback(getNudgeDeliveryMessage(delivery));
-    } catch (error) {
-      setNudgeFeedback(getNudgeErrorMessage(error));
-    } finally {
-      setNudgingUserId(null);
-    }
+  function nudgeMember(memberId: string, groupId: string) {
+    nudgeQueue.enqueue({
+      groupId,
+      key: `${groupId}:${memberId}`,
+      recipientId: memberId,
+    });
   }
 
   if (selectedGroup) {
@@ -511,6 +495,9 @@ export function GroupsDashboard() {
     );
     const selectedMember =
       members.find((member) => member.id === selectedMemberId) ?? null;
+    const selectedMemberNudgeState = selectedMember
+      ? nudgeQueue.getState(`${selectedGroup.id}:${selectedMember.id}`)
+      : null;
 
     return (
       <div className="space-y-5 pb-24 pt-1 lg:space-y-6 lg:pb-0 lg:pt-0">
@@ -608,7 +595,6 @@ export function GroupsDashboard() {
                   )}
                   key={member.id}
                   onClick={() => {
-                    setNudgeFeedback(null);
                     setSelectedMemberId(member.id);
                   }}
                   type="button"
@@ -636,17 +622,14 @@ export function GroupsDashboard() {
               selectedMember.id !== "you"
             }
             group={selectedGroup}
-            isNudging={nudgingUserId === selectedMember.id}
             member={selectedMember}
-            nudgeFeedback={nudgeFeedback}
+            nudgeFeedback={selectedMemberNudgeState?.feedback ?? null}
             now={now}
             onClose={() => {
               setSelectedMemberId(null);
-              setNudgeFeedback(null);
             }}
-            onNudge={() =>
-              void nudgeMember(selectedMember.id, selectedGroup.id)
-            }
+            onNudge={() => nudgeMember(selectedMember.id, selectedGroup.id)}
+            pendingNudges={selectedMemberNudgeState?.pending ?? 0}
           />
         ) : null}
 
@@ -678,7 +661,6 @@ export function GroupsDashboard() {
                   className="mac-focus grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2.5 text-left transition active:scale-[0.99]"
                   key={member.id}
                   onClick={() => {
-                    setNudgeFeedback(null);
                     setSelectedMemberId(member.id);
                   }}
                   type="button"
@@ -981,21 +963,21 @@ function ProfileBadge({ friend }: { friend: SocialFriend }) {
 function GroupMemberDialog({
   canNudge,
   group,
-  isNudging,
   member,
   now,
   nudgeFeedback,
   onClose,
   onNudge,
+  pendingNudges,
 }: {
   canNudge: boolean;
   group: SocialGroup;
-  isNudging: boolean;
   member: SocialFriend;
   now: Date;
   nudgeFeedback: string | null;
   onClose: () => void;
   onNudge: () => void;
+  pendingNudges: number;
 }) {
   return (
     <div
@@ -1027,8 +1009,8 @@ function GroupMemberDialog({
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <NudgePill
             disabled={!canNudge}
-            isSending={isNudging}
             onClick={onNudge}
+            pendingCount={pendingNudges}
           />
           <p className="text-xs font-medium text-[var(--color-text-muted)]">
             {nudgeFeedback ??
@@ -1254,18 +1236,6 @@ function getGroupMembers(
   return group.memberIds
     .map((friendId) => friendsById.get(friendId))
     .filter((friend): friend is SocialFriend => Boolean(friend));
-}
-
-function getNudgeErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message) {
-    if (error.message.includes("send_nudge")) {
-      return "Run the nudge migration first.";
-    }
-
-    return error.message;
-  }
-
-  return "Could not send nudge.";
 }
 
 function uniqueIds(ids: string[]) {

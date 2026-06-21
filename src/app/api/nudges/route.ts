@@ -68,6 +68,28 @@ export async function POST(request: Request) {
   );
 
   if (nudgeError) {
+    if (nudgeError.message.includes("NUDGE_DAILY_LIMIT")) {
+      return NextResponse.json(
+        { message: "250 nudges today. The bit is complete." },
+        { status: 429 },
+      );
+    }
+
+    const retryAfterSeconds = getNudgeRetryAfterSeconds(nudgeError.message);
+
+    if (retryAfterSeconds !== null) {
+      return NextResponse.json(
+        {
+          message: `That is 10 nudges in a minute. Give them ${retryAfterSeconds}s to recover.`,
+          retryAfterSeconds,
+        },
+        {
+          headers: { "Retry-After": `${retryAfterSeconds}` },
+          status: 429,
+        },
+      );
+    }
+
     return NextResponse.json({ message: nudgeError.message }, { status: 400 });
   }
 
@@ -178,4 +200,14 @@ function isExpiredPushSubscription(error: unknown) {
     ((error as { statusCode?: number }).statusCode === 404 ||
       (error as { statusCode?: number }).statusCode === 410)
   );
+}
+
+function getNudgeRetryAfterSeconds(message: string) {
+  const match = message.match(/NUDGE_RATE_LIMIT:(\d+)/);
+
+  if (!match) {
+    return null;
+  }
+
+  return Math.max(1, Number.parseInt(match[1], 10));
 }

@@ -380,9 +380,6 @@ export function TimerDashboard() {
         <p className="mt-4 font-mono text-6xl font-semibold leading-none tabular-nums sm:text-7xl lg:text-[5.4rem] xl:text-[clamp(4rem,5vw,6rem)]">
           {formatDuration(totalToday)}
         </p>
-        <p className="mt-4 max-w-xs text-sm leading-6 text-[var(--color-text-muted)]">
-          Pick a subject and keep the momentum moving.
-        </p>
         <button
           className={cn(
             "mac-focus mt-6 inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition hover:brightness-105 active:scale-[0.99] lg:h-12 lg:min-w-44",
@@ -408,9 +405,6 @@ export function TimerDashboard() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold">Subjects</h2>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Start directly or manage your list.
-            </p>
           </div>
           <button
             className="mac-focus inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)]"
