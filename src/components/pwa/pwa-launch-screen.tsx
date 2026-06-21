@@ -21,8 +21,8 @@ export function PwaLaunchScreen() {
       return () => window.cancelAnimationFrame(frame);
     }
 
-    const leaveTimeout = window.setTimeout(() => setPhase("leaving"), 1050);
-    const removeTimeout = window.setTimeout(() => setPhase("hidden"), 1500);
+    const leaveTimeout = window.setTimeout(() => setPhase("leaving"), 1800);
+    const removeTimeout = window.setTimeout(() => setPhase("hidden"), 2250);
 
     return () => {
       window.clearTimeout(leaveTimeout);
@@ -48,6 +48,7 @@ export function PwaLaunchScreen() {
         height={96}
         priority
         src="/icons/mac-square.png"
+        unoptimized
         width={96}
       />
     </div>
