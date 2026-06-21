@@ -12,18 +12,20 @@ export function ProfileDashboard({
   const initials = getInitials(displayName);
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-md bg-[rgb(255_255_255/0.035)] p-4">
+    <div className="space-y-6 lg:grid lg:grid-cols-[minmax(17rem,0.75fr)_minmax(0,1.25fr)] lg:items-start lg:gap-6 lg:space-y-0">
+      <section className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 lg:border lg:border-[rgb(255_255_255/0.07)] lg:p-5">
         <div>
           <h2 className="font-semibold">Account</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             Signed-in MAC study profile
           </p>
         </div>
-        <div className="mt-4 flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414]">
+        <div className="mt-4 flex items-center gap-4 lg:mt-6 lg:flex-col lg:items-start">
+          <div className="flex h-14 w-14 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414] lg:h-20 lg:w-20">
             {initials ? (
-              <span className="text-lg font-semibold">{initials}</span>
+              <span className="text-lg font-semibold lg:text-2xl">
+                {initials}
+              </span>
             ) : (
               <UserRound aria-hidden size={28} />
             )}
@@ -35,8 +37,8 @@ export function ProfileDashboard({
         </div>
       </section>
 
-      <section className="space-y-2">
-        <div className="rounded-md bg-[rgb(255_255_255/0.035)] p-4">
+      <section className="space-y-2 lg:rounded-md lg:border lg:border-[rgb(255_255_255/0.07)] lg:bg-[rgb(18_18_18/0.3)] lg:p-3">
+        <div className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 lg:bg-transparent">
           <h2 className="font-semibold">Settings</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             App access and notification defaults
@@ -49,7 +51,7 @@ export function ProfileDashboard({
           value="Invite required"
         />
         <a
-          className="mac-focus flex items-center justify-between gap-4 rounded-md bg-[rgb(255_255_255/0.035)] p-4"
+          className="mac-focus flex items-center justify-between gap-4 rounded-md bg-[rgb(255_255_255/0.035)] p-4 transition hover:bg-[rgb(255_255_255/0.055)]"
           href="/auth/logout"
         >
           <span className="flex items-center gap-3">
@@ -86,7 +88,7 @@ function SettingRow({
   value: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md bg-[rgb(255_255_255/0.035)] p-4">
+    <div className="flex items-center justify-between gap-4 rounded-md bg-[rgb(255_255_255/0.035)] p-4 transition hover:bg-[rgb(255_255_255/0.05)]">
       <div className="flex items-center gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-surface-raised)] text-[var(--color-mac-yellow)]">
           {icon}

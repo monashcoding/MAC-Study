@@ -513,7 +513,7 @@ export function GroupsDashboard() {
       members.find((member) => member.id === selectedMemberId) ?? null;
 
     return (
-      <div className="space-y-5 pb-24 pt-1 lg:pb-0">
+      <div className="space-y-5 pb-24 pt-1 lg:space-y-6 lg:pb-0 lg:pt-0">
         <section className="space-y-4">
           <button
             className="mac-focus inline-flex h-10 items-center gap-2 rounded-md text-sm font-semibold text-[var(--color-text-muted)]"
@@ -553,7 +553,7 @@ export function GroupsDashboard() {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 rounded-md bg-[rgb(255_255_255/0.045)] p-1">
+          <div className="grid grid-cols-2 rounded-md bg-[rgb(255_255_255/0.045)] p-1 lg:max-w-md">
             {[
               { id: "class", label: "Class view" },
               { id: "rankings", label: "Rankings" },
@@ -575,7 +575,7 @@ export function GroupsDashboard() {
           </div>
 
           {groupView === "rankings" ? (
-            <div className="grid grid-cols-3 rounded-md bg-[rgb(255_255_255/0.035)] p-1">
+            <div className="grid grid-cols-3 rounded-md bg-[rgb(255_255_255/0.035)] p-1 lg:max-w-md">
               {rankingWindows.map((window) => (
                 <button
                   className={cn(
@@ -597,7 +597,7 @@ export function GroupsDashboard() {
 
         {groupView === "class" ? (
           <section>
-            <div className="grid grid-cols-4 gap-x-2 gap-y-8 py-2">
+            <div className="grid grid-cols-4 gap-x-2 gap-y-8 py-2 lg:grid-cols-6 lg:gap-x-4 xl:grid-cols-8">
               {members.map((member) => (
                 <button
                   className={cn(
@@ -672,7 +672,7 @@ export function GroupsDashboard() {
 
         {groupView === "rankings" ? (
           <section className="space-y-3">
-            <div className="grid gap-2">
+            <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
               {ranking.map((member, index) => (
                 <button
                   className="mac-focus grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2.5 text-left transition active:scale-[0.99]"
@@ -703,7 +703,7 @@ export function GroupsDashboard() {
           </section>
         ) : null}
 
-        <div className="fixed inset-x-4 bottom-[calc(var(--mobile-nav-height)+0.75rem)] z-20 mx-auto max-w-lg lg:sticky lg:inset-x-auto lg:bottom-4 lg:max-w-none lg:pt-2">
+        <div className="fixed inset-x-4 bottom-[calc(var(--mobile-nav-height)+0.75rem)] z-20 mx-auto max-w-lg lg:static lg:inset-x-auto lg:max-w-none lg:pt-2">
           <button
             className={cn(
               "mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold shadow-[0_16px_34px_rgb(0_0_0/0.32)] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-55",
@@ -736,8 +736,8 @@ export function GroupsDashboard() {
   }
 
   return (
-    <div className="space-y-5 pt-1">
-      <section className="grid grid-cols-3 gap-2">
+    <div className="space-y-5 pt-1 lg:space-y-6 lg:pt-0">
+      <section className="grid grid-cols-3 gap-2 lg:gap-4">
         <SummaryStat label="Groups" value={`${socialState.groups.length}`} />
         <SummaryStat label="Active" value={`${activeTotal}`} />
         <SummaryStat label="Members" value={`${uniqueMemberCount}`} />
@@ -756,10 +756,10 @@ export function GroupsDashboard() {
           </button>
         </div>
 
-        <div className="grid gap-2">
+        <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
           {groupSummaries.map(({ group, activeNow, memberCount }) => (
             <button
-              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition active:scale-[0.99]"
+              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
               key={group.id}
               onClick={() => {
                 setGroupView("class");
@@ -939,8 +939,8 @@ function CreateGroupDialog({
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center">
-      <p className="text-xl font-semibold tabular-nums">{value}</p>
+    <div className="rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center lg:border-[rgb(255_255_255/0.06)] lg:px-4 lg:py-4">
+      <p className="text-xl font-semibold tabular-nums lg:text-2xl">{value}</p>
       <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
         {label}
       </p>

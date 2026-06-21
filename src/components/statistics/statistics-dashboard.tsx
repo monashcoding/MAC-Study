@@ -188,8 +188,8 @@ export function StatisticsDashboard() {
     "Week";
 
   return (
-    <div className="space-y-6 pt-1">
-      <section className="rounded-md bg-[rgb(255_255_255/0.04)] p-3">
+    <div className="space-y-6 pt-1 lg:pt-0">
+      <section className="rounded-md bg-[rgb(255_255_255/0.04)] p-3 lg:border lg:border-[rgb(255_255_255/0.07)] lg:p-5">
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <label className="block">
             <span className="sr-only">Statistics period</span>
@@ -231,7 +231,7 @@ export function StatisticsDashboard() {
             <p className="text-sm font-semibold text-[var(--color-mac-yellow)]">
               {periodLabel}
             </p>
-            <h2 className="mt-1 text-4xl font-semibold leading-none tracking-normal">
+            <h2 className="mt-1 text-4xl font-semibold leading-none tracking-normal lg:text-5xl">
               {formatRoundedStudyTime(totalSeconds)}
             </h2>
             <p className="mt-2 text-sm font-medium text-[var(--color-text-muted)]">
@@ -271,15 +271,15 @@ function SubjectSplit({
   topSubject?: StudySubject & { seconds: number };
 }) {
   return (
-    <section className="grid gap-5 rounded-md bg-[rgb(255_255_255/0.035)] p-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+    <section className="grid gap-5 rounded-md bg-[rgb(255_255_255/0.035)] p-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:border lg:border-[rgb(255_255_255/0.07)] lg:p-6">
       <div className="flex items-center justify-center">
         <div
           aria-label="Subject study split"
-          className="relative h-44 w-44 rounded-full shadow-[0_18px_42px_rgb(0_0_0/0.28)]"
+          className="relative h-44 w-44 rounded-full shadow-[0_18px_42px_rgb(0_0_0/0.28)] lg:h-52 lg:w-52"
           role="img"
           style={{ background: pieGradient }}
         >
-          <div className="absolute inset-10 flex flex-col items-center justify-center rounded-full bg-[var(--color-background)] text-center">
+          <div className="absolute inset-10 flex flex-col items-center justify-center rounded-full bg-[var(--color-background)] text-center lg:inset-12">
             <p className="text-base font-semibold">
               {formatRoundedStudyTime(subjectTotal)}
             </p>
@@ -382,7 +382,7 @@ function ColumnChart({
   const yTicks = [scaleMaxSeconds, scaleMaxSeconds / 2, 0];
 
   return (
-    <section className="rounded-md bg-[rgb(255_255_255/0.035)] p-3">
+    <section className="rounded-md bg-[rgb(255_255_255/0.035)] p-3 lg:border lg:border-[rgb(255_255_255/0.07)] lg:p-5">
       <div className="flex items-center gap-2">
         <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]">
           <Icon aria-hidden size={15} />
@@ -391,7 +391,7 @@ function ColumnChart({
       </div>
 
       <div className="mt-3 grid grid-cols-[2rem_minmax(0,1fr)] gap-1.5 sm:grid-cols-[2.35rem_minmax(0,1fr)]">
-        <div className="relative h-32">
+        <div className="relative h-32 lg:h-52">
           {yTicks.map((tick) => (
             <p
               className="absolute right-0 translate-y-1/2 text-right text-[10px] font-medium leading-none text-[var(--color-text-muted)]"
@@ -404,7 +404,7 @@ function ColumnChart({
         </div>
 
         <div className="min-w-0">
-          <div className="relative h-32">
+          <div className="relative h-32 lg:h-52">
             {yTicks.map((tick) => (
               <div
                 aria-hidden

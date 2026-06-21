@@ -45,6 +45,28 @@ body {
     sans-serif;
 }
 
+@media (min-width: 64rem) {
+  .mac-desktop-shell {
+    background:
+      radial-gradient(
+        circle at 88% 4%,
+        rgb(255 227 48 / 0.055),
+        transparent 28rem
+      ),
+      radial-gradient(
+        circle at 54% 92%,
+        rgb(108 182 255 / 0.035),
+        transparent 34rem
+      ),
+      var(--color-background);
+  }
+
+  html {
+    scrollbar-color: var(--color-border) var(--color-background);
+    scrollbar-width: thin;
+  }
+}
+
 .mac-pwa-launch {
   display: none;
 }

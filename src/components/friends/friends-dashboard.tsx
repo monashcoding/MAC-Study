@@ -385,8 +385,8 @@ export function FriendsDashboard() {
   }
 
   return (
-    <div className="space-y-5 pt-1">
-      <section className="grid grid-cols-3 gap-2">
+    <div className="space-y-5 pt-1 lg:space-y-6 lg:pt-0">
+      <section className="grid grid-cols-3 gap-2 lg:gap-4">
         <SummaryStat label="Friends" value={`${friendList.length}`} />
         <SummaryStat label="Studying" value={`${studyingCount}`} />
         <SummaryStat label="Groups" value={`${socialState.groups.length}`} />
@@ -405,10 +405,10 @@ export function FriendsDashboard() {
           </button>
         </div>
 
-        <div className="grid gap-2">
+        <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
           {friendList.map((friend) => (
             <button
-              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition active:scale-[0.99]"
+              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
               key={friend.id}
               onClick={() => {
                 setNudgeFeedback(null);
@@ -592,8 +592,8 @@ function AddFriendDialog({
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center">
-      <p className="text-xl font-semibold tabular-nums">{value}</p>
+    <div className="rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center lg:border-[rgb(255_255_255/0.06)] lg:px-4 lg:py-4">
+      <p className="text-xl font-semibold tabular-nums lg:text-2xl">{value}</p>
       <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
         {label}
       </p>

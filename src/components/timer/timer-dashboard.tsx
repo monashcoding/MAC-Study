@@ -372,14 +372,20 @@ export function TimerDashboard() {
   }
 
   return (
-    <div className="space-y-5 pt-1">
-      <section className="py-5 text-center">
-        <p className="font-mono text-6xl font-semibold leading-none tabular-nums sm:text-7xl lg:text-8xl">
+    <div className="space-y-5 pt-1 lg:pt-0 xl:grid xl:grid-cols-[minmax(0,0.9fr)_minmax(25rem,1.1fr)] xl:items-stretch xl:gap-6 xl:space-y-0">
+      <section className="py-5 text-center lg:flex lg:min-h-[24rem] lg:flex-col lg:items-center lg:justify-center lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(18_18_18/0.52)] lg:px-6 lg:py-10 xl:min-h-[30rem]">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[var(--color-mac-yellow)]">
+          Studied today
+        </p>
+        <p className="mt-4 font-mono text-6xl font-semibold leading-none tabular-nums sm:text-7xl lg:text-[5.4rem] xl:text-[clamp(4rem,5vw,6rem)]">
           {formatDuration(totalToday)}
+        </p>
+        <p className="mt-4 max-w-xs text-sm leading-6 text-[var(--color-text-muted)]">
+          Pick a subject and keep the momentum moving.
         </p>
         <button
           className={cn(
-            "mac-focus mt-5 inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition active:scale-[0.99]",
+            "mac-focus mt-6 inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition hover:brightness-105 active:scale-[0.99] lg:h-12 lg:min-w-44",
             activeSession
               ? "bg-[var(--color-danger)] text-white"
               : "bg-[var(--color-mac-yellow)] text-[#141414]",
@@ -398,21 +404,29 @@ export function TimerDashboard() {
         </button>
       </section>
 
-      <section className="space-y-3">
-        <button
-          className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414]"
-          onClick={() => {
-            setDraftSubjects(subjects);
-            setInitialEditingSubjectId(null);
-            setIsEditingSubjects(true);
-          }}
-          type="button"
-        >
-          <Pencil aria-hidden size={16} />
-          Edit subjects
-        </button>
+      <section className="space-y-3 lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(18_18_18/0.36)] lg:p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold">Subjects</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Start directly or manage your list.
+            </p>
+          </div>
+          <button
+            className="mac-focus inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)]"
+            onClick={() => {
+              setDraftSubjects(subjects);
+              setInitialEditingSubjectId(null);
+              setIsEditingSubjects(true);
+            }}
+            type="button"
+          >
+            <Pencil aria-hidden size={16} />
+            Edit
+          </button>
+        </div>
 
-        <div className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
+        <div className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)] lg:mt-4 lg:rounded-md lg:border lg:bg-[rgb(255_255_255/0.02)] lg:px-3">
           {subjects.map((subject) => {
             const isActive = activeSession?.subjectId === subject.id;
             const subjectSeconds =
@@ -421,7 +435,7 @@ export function TimerDashboard() {
 
             return (
               <div
-                className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 py-2.5"
+                className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 py-2.5 lg:min-h-16"
                 key={subject.id}
               >
                 <button
