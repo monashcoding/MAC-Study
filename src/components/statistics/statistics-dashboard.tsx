@@ -69,14 +69,14 @@ const fallbackSubjectTotals: Record<string, number> = {
 };
 
 const periodOptions = [
-  { id: "week", label: "Week" },
-  { id: "month", label: "Month" },
-  { id: "annual", label: "Year" },
+  { id: "week", label: "Weekly" },
+  { id: "month", label: "Monthly" },
+  { id: "annual", label: "Annual" },
 ] satisfies { id: StatsPeriod; label: string }[];
 
 const chartOptions = [
-  { id: "column", label: "Column graph" },
-  { id: "pie", label: "Pie chart" },
+  { id: "column", label: "Columns" },
+  { id: "pie", label: "Pie" },
 ] satisfies { id: ChartView; label: string }[];
 
 export function StatisticsDashboard() {
@@ -185,62 +185,74 @@ export function StatisticsDashboard() {
   const average = getAverageStat(selectedPeriod, totalSeconds, stats.buckets);
   const periodLabel =
     periodOptions.find((period) => period.id === selectedPeriod)?.label ??
-    "Week";
+    "Weekly";
 
   return (
-    <div className="space-y-6 pt-1 lg:pt-0">
-      <section className="rounded-md bg-[rgb(255_255_255/0.04)] p-3 lg:border lg:border-[rgb(255_255_255/0.07)] lg:p-5">
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-          <label className="block">
-            <span className="sr-only">Statistics period</span>
-            <select
-              className="mac-focus h-9 w-full rounded-md border border-[rgb(255_255_255/0.10)] bg-[#2b2b2b] px-3 text-sm font-semibold text-[var(--color-text)] outline-none [color-scheme:dark]"
-              onChange={(event) =>
-                setSelectedPeriod(event.target.value as StatsPeriod)
-              }
-              value={selectedPeriod}
-            >
-              {periodOptions.map((period) => (
-                <option
-                  className="bg-[#2b2b2b] text-[#f7f7f2]"
-                  key={period.id}
-                  value={period.id}
-                >
-                  {period.label}
-                </option>
-              ))}
-            </select>
-          </label>
+    <div className="space-y-5 pt-1 lg:pt-0">
+      <section className="border-b border-[rgb(255_255_255/0.08)] pb-5">
+        <div
+          aria-label="Statistics period"
+          className="grid grid-cols-3 gap-2"
+          role="group"
+        >
+          {periodOptions.map((period) => {
+            const active = selectedPeriod === period.id;
 
-          <div className="grid grid-cols-2 rounded-md bg-[rgb(255_255_255/0.045)] p-1 sm:w-64">
-            {chartOptions.map((option) => (
+            return (
               <button
-                className={`mac-focus h-8 rounded text-[11px] font-semibold transition sm:text-xs ${
-                  chartView === option.id
-                    ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-                    : "text-[var(--color-text-muted)]"
+                aria-pressed={active}
+                className={`mac-focus h-11 rounded-md border text-xs font-semibold transition active:scale-[0.98] sm:text-sm ${
+                  active
+                    ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
+                    : "border-[rgb(255_255_255/0.1)] bg-transparent text-[var(--color-text-muted)] hover:border-[rgb(255_255_255/0.2)] hover:text-[var(--color-text)]"
                 }`}
-                key={option.id}
-                onClick={() => setChartView(option.id)}
+                key={period.id}
+                onClick={() => setSelectedPeriod(period.id)}
                 type="button"
               >
-                {option.label}
+                {period.label}
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
-        <div className="mt-3">
-          <div>
-            <p className="text-sm font-semibold text-[var(--color-mac-yellow)]">
+        <div className="mt-5 flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-mac-yellow)]">
               {periodLabel}
             </p>
-            <h2 className="mt-1 text-4xl font-semibold leading-none tracking-normal lg:text-5xl">
+            <h2 className="mt-1.5 text-4xl font-semibold leading-none tracking-[-0.025em] lg:text-5xl">
               {formatRoundedStudyTime(totalSeconds)}
             </h2>
-            <p className="mt-2 text-sm font-medium text-[var(--color-text-muted)]">
+            <p className="mt-2 text-xs font-medium text-[var(--color-text-muted)] sm:text-sm">
               Avg {average.label}: {formatRoundedStudyTime(average.seconds)}
             </p>
+          </div>
+
+          <div
+            aria-label="Chart type"
+            className="flex shrink-0 items-center gap-0.5"
+            role="group"
+          >
+            {chartOptions.map((option) => {
+              const active = chartView === option.id;
+
+              return (
+                <button
+                  aria-pressed={active}
+                  className={`mac-focus h-7 rounded-full px-2.5 text-[11px] font-semibold transition ${
+                    active
+                      ? "bg-[rgb(255_255_255/0.1)] text-[var(--color-text)]"
+                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                  }`}
+                  key={option.id}
+                  onClick={() => setChartView(option.id)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </section>

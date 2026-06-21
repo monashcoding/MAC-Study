@@ -26,6 +26,7 @@ import {
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { AppWorkspace } from "@/components/app-workspace";
+import { AppHeaderDetailProvider } from "@/components/app-header-detail";
 import { NudgeNotifications } from "@/components/social/nudge-notifications";
 import { cn } from "@/lib/utils";
 
@@ -86,6 +87,7 @@ export function AppShell({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [displayPathname, setDisplayPathname] = useState(pathname);
+  const [headerDetail, setHeaderDetail] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const currentNav =
@@ -247,133 +249,142 @@ export function AppShell({
   }
 
   return (
-    <div className="mac-desktop-shell fixed inset-x-0 top-0 flex h-[var(--app-viewport-height)] flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
-      <div
-        className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:grid lg:min-h-dvh lg:max-w-none lg:grid-cols-[17.5rem_minmax(0,1fr)] lg:overflow-visible"
-        ref={scrollContainerRef}
-      >
-        <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:border-r lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(17_17_17/0.94)] lg:p-5 lg:backdrop-blur-xl">
-          <div>
-            <Brand />
-            <p className="mb-2 mt-9 px-3 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-              Workspace
-            </p>
-            <nav aria-label="Primary navigation" className="grid gap-1.5">
-              {navItems.map((item) => (
-                <NavLink
-                  href={item.href}
-                  icon={item.icon}
-                  isActive={isActive(displayPathname, item.href)}
-                  key={item.href}
-                  label={item.label}
-                  onIntent={warmRoute}
-                  onNavigate={navigateTo}
-                />
-              ))}
-            </nav>
-          </div>
-
-          <DesktopAccount
-            handle={accountHandle}
-            mode={authState.mode}
-            name={accountName}
-          />
-        </aside>
-
-        <main className="min-w-0 flex-1 lg:min-h-dvh">
-          <header className="sticky top-0 z-20 bg-[rgb(23_23_23/0.94)] px-4 pb-3 pt-[calc(var(--safe-area-top)+0.85rem)] backdrop-blur lg:z-30 lg:border-b lg:border-[rgb(255_255_255/0.07)] lg:bg-[rgb(23_23_23/0.84)] lg:px-8 lg:py-5 xl:px-12">
-            <div className="mx-auto flex max-w-[80rem] items-center justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-3 lg:hidden">
-                <LogoMark size="sm" />
-                <h1 className="min-w-0 truncate text-xl font-semibold">
-                  {currentNav.title}
-                </h1>
-              </div>
-              <div className="hidden lg:block">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-mac-yellow)]">
-                  MAC Study / {currentNav.label}
-                </p>
-                <h1 className="mt-1.5 text-3xl font-semibold tracking-[-0.025em]">
-                  {currentNav.title}
-                </h1>
-                <p className="mt-1.5 max-w-xl text-sm text-[var(--color-text-muted)]">
-                  {currentNav.subtitle}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="hidden h-10 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] px-3 text-xs font-semibold text-[var(--color-text-muted)] xl:inline-flex">
-                  <span
-                    className={cn(
-                      "h-2 w-2 rounded-full",
-                      authState.mode === "authenticated"
-                        ? "bg-[var(--color-success)]"
-                        : "bg-[var(--color-mac-yellow)]",
-                    )}
+    <AppHeaderDetailProvider onChange={setHeaderDetail}>
+      <div className="mac-desktop-shell fixed inset-x-0 top-0 flex h-[var(--app-viewport-height)] flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
+        <div
+          className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:grid lg:min-h-dvh lg:max-w-none lg:grid-cols-[17.5rem_minmax(0,1fr)] lg:overflow-visible"
+          ref={scrollContainerRef}
+        >
+          <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:border-r lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(17_17_17/0.94)] lg:p-5 lg:backdrop-blur-xl">
+            <div>
+              <Brand />
+              <p className="mb-2 mt-9 px-3 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                Workspace
+              </p>
+              <nav aria-label="Primary navigation" className="grid gap-1.5">
+                {navItems.map((item) => (
+                  <NavLink
+                    href={item.href}
+                    icon={item.icon}
+                    isActive={isActive(displayPathname, item.href)}
+                    key={item.href}
+                    label={item.label}
+                    onIntent={warmRoute}
+                    onNavigate={navigateTo}
                   />
-                  {authState.mode === "authenticated" ? "Synced" : "Demo mode"}
-                </span>
-                {authState.mode === "authenticated" ? (
-                  <a
-                    className="mac-focus hidden h-10 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-muted)] transition hover:border-[rgb(255_255_255/0.2)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)] lg:inline-flex"
-                    href="/auth/logout"
-                  >
-                    <LogOut aria-hidden size={17} />
-                    <span>Sign out</span>
-                  </a>
-                ) : null}
+                ))}
+              </nav>
+            </div>
+
+            <DesktopAccount
+              handle={accountHandle}
+              mode={authState.mode}
+              name={accountName}
+            />
+          </aside>
+
+          <main className="min-w-0 flex-1 lg:min-h-dvh">
+            <header className="sticky top-0 z-20 bg-[rgb(23_23_23/0.94)] px-4 pb-3 pt-[calc(var(--safe-area-top)+0.85rem)] backdrop-blur lg:z-30 lg:border-b lg:border-[rgb(255_255_255/0.07)] lg:bg-[rgb(23_23_23/0.84)] lg:px-8 lg:py-5 xl:px-12">
+              <div className="mx-auto flex max-w-[80rem] items-center justify-between gap-4">
+                <div className="flex min-w-0 items-center gap-3 lg:hidden">
+                  <LogoMark size="sm" />
+                  <h1 className="min-w-0 truncate text-xl font-semibold">
+                    {currentNav.title}
+                  </h1>
+                </div>
+                <div className="hidden lg:block">
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-mac-yellow)]">
+                    MAC Study / {currentNav.label}
+                  </p>
+                  <h1 className="mt-1.5 text-3xl font-semibold tracking-[-0.025em]">
+                    {currentNav.title}
+                  </h1>
+                  <p className="mt-1.5 max-w-xl text-sm text-[var(--color-text-muted)]">
+                    {currentNav.subtitle}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isActive(displayPathname, "/app/units") && headerDetail ? (
+                    <span className="max-w-28 truncate font-mono text-sm font-semibold text-[var(--color-mac-yellow)] lg:hidden">
+                      {headerDetail}
+                    </span>
+                  ) : null}
+                  <span className="hidden h-10 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] px-3 text-xs font-semibold text-[var(--color-text-muted)] xl:inline-flex">
+                    <span
+                      className={cn(
+                        "h-2 w-2 rounded-full",
+                        authState.mode === "authenticated"
+                          ? "bg-[var(--color-success)]"
+                          : "bg-[var(--color-mac-yellow)]",
+                      )}
+                    />
+                    {authState.mode === "authenticated"
+                      ? "Synced"
+                      : "Demo mode"}
+                  </span>
+                  {authState.mode === "authenticated" ? (
+                    <a
+                      className="mac-focus hidden h-10 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-muted)] transition hover:border-[rgb(255_255_255/0.2)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)] lg:inline-flex"
+                      href="/auth/logout"
+                    >
+                      <LogOut aria-hidden size={17} />
+                      <span>Sign out</span>
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            </header>
+
+            <div className="px-4 pb-[calc(var(--mobile-nav-height)+1.5rem)] pt-5 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10">
+              <div className="lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.065)] lg:bg-[rgb(20_20_20/0.5)] lg:p-6 lg:shadow-[0_28px_80px_rgb(0_0_0/0.28)] xl:p-8">
+                <AppWorkspace
+                  activePathname={displayPathname}
+                  authState={authState}
+                  fallback={children}
+                />
               </div>
             </div>
-          </header>
-
-          <div className="px-4 pb-[calc(var(--mobile-nav-height)+1.5rem)] pt-5 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10">
-            <div className="lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(28_28_28/0.78)] lg:p-6 lg:shadow-[0_28px_80px_rgb(0_0_0/0.28)] xl:p-8">
-              <AppWorkspace
-                activePathname={displayPathname}
-                authState={authState}
-                fallback={children}
-              />
-            </div>
-          </div>
-        </main>
-      </div>
-
-      <nav className="fixed inset-x-0 bottom-0 z-30 h-[var(--mobile-nav-height)] bg-[rgb(23_23_23/0.97)] px-2 pb-[max(0.55rem,var(--safe-area-bottom))] pt-2 shadow-[0_-16px_36px_rgb(0_0_0/0.28)] backdrop-blur lg:hidden">
-        <div className="mx-auto grid h-full max-w-lg grid-cols-6 gap-0.5">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(displayPathname, item.href);
-
-            return (
-              <Link
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "mac-focus flex h-12 min-w-0 touch-manipulation flex-col items-center justify-center gap-1 rounded-md border text-[0.625rem] font-medium transition active:scale-[0.98] sm:text-xs",
-                  active
-                    ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
-                    : "border-transparent text-[var(--color-text-muted)]",
-                )}
-                href={item.href}
-                key={item.href}
-                onClick={(event) => navigateTo(item.href, event)}
-                onFocus={() => warmRoute(item.href)}
-                onPointerDown={() => warmRoute(item.href)}
-                onPointerEnter={() => warmRoute(item.href)}
-                prefetch
-              >
-                <Icon aria-hidden size={18} />
-                <span className="max-w-full truncate px-0.5">
-                  {"mobileLabel" in item ? item.mobileLabel : item.label}
-                </span>
-              </Link>
-            );
-          })}
+          </main>
         </div>
-      </nav>
 
-      {authState.mode === "authenticated" ? (
-        <NudgeNotifications userId={authState.user.id} />
-      ) : null}
-    </div>
+        <nav className="fixed inset-x-0 bottom-0 z-30 h-[var(--mobile-nav-height)] bg-[rgb(23_23_23/0.97)] px-2 pb-[max(0.55rem,var(--safe-area-bottom))] pt-2 shadow-[0_-16px_36px_rgb(0_0_0/0.28)] backdrop-blur lg:hidden">
+          <div className="mx-auto grid h-full max-w-lg grid-cols-6 gap-0.5">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(displayPathname, item.href);
+
+              return (
+                <Link
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "mac-focus flex h-12 min-w-0 touch-manipulation flex-col items-center justify-center gap-1 rounded-md border text-[0.625rem] font-medium transition active:scale-[0.98] sm:text-xs",
+                    active
+                      ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
+                      : "border-transparent text-[var(--color-text-muted)]",
+                  )}
+                  href={item.href}
+                  key={item.href}
+                  onClick={(event) => navigateTo(item.href, event)}
+                  onFocus={() => warmRoute(item.href)}
+                  onPointerDown={() => warmRoute(item.href)}
+                  onPointerEnter={() => warmRoute(item.href)}
+                  prefetch
+                >
+                  <Icon aria-hidden size={18} />
+                  <span className="max-w-full truncate px-0.5">
+                    {"mobileLabel" in item ? item.mobileLabel : item.label}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+
+        {authState.mode === "authenticated" ? (
+          <NudgeNotifications userId={authState.user.id} />
+        ) : null}
+      </div>
+    </AppHeaderDetailProvider>
   );
 }
 
@@ -407,7 +418,7 @@ function LogoMark({ size = "md" }: { size?: "sm" | "md" }) {
     <Image
       alt=""
       aria-hidden
-      className="shrink-0 rounded-md"
+      className="shrink-0 rounded-full"
       height={pixels}
       priority={size === "md"}
       src="/icons/mac-square.png"

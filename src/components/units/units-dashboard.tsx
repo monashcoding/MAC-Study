@@ -23,6 +23,7 @@ import {
   type RemoteUnitState,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { useAppHeaderDetail } from "@/components/app-header-detail";
 import {
   defaultSocialState,
   type SocialGroup,
@@ -44,7 +45,7 @@ import {
 } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
-type CohortScope = "all" | "friends" | "groups";
+type CohortScope = "all" | "friends";
 
 const demoEnrollments: UnitEnrollment[] = [
   {
@@ -95,7 +96,6 @@ export function UnitsDashboard() {
   const [isAdding, setIsAdding] = useState(false);
   const [search, setSearch] = useState("");
   const [scope, setScope] = useState<CohortScope>("all");
-  const [groupFilter, setGroupFilter] = useState("all");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -154,6 +154,7 @@ export function UnitsDashboard() {
   const selectedEnrollment = unitState.enrollments.find(
     (enrollment) => enrollment.offeringId === selectedOfferingId,
   );
+  useAppHeaderDetail(selectedEnrollment?.code ?? null);
 
   useEffect(() => {
     if (!selectedOfferingId) {
@@ -205,18 +206,13 @@ export function UnitsDashboard() {
           member.displayName.toLowerCase().includes(query) ||
           member.handle.toLowerCase().includes(query),
       )
-      .filter((member) => {
-        if (scope === "friends") return member.isFriend;
-        if (scope !== "groups") return true;
-        if (groupFilter === "all") return member.sharedGroupIds.length > 0;
-        return member.sharedGroupIds.includes(groupFilter);
-      })
+      .filter((member) => (scope === "friends" ? member.isFriend : true))
       .sort(
         (first, second) =>
           Number(second.isFriend) - Number(first.isFriend) ||
           first.displayName.localeCompare(second.displayName),
       );
-  }, [cohort, groupFilter, scope, search]);
+  }, [cohort, scope, search]);
 
   async function addEnrollment(input: {
     code: string;
@@ -357,7 +353,6 @@ export function UnitsDashboard() {
         cohortLoading={cohortLoading}
         enrollment={selectedEnrollment}
         feedback={feedback}
-        groupFilter={groupFilter}
         manageableGroups={manageableGroups}
         onAddFriend={(memberId) => void addFriend(memberId)}
         onAddToGroup={(memberId, groupId) => void addToGroup(memberId, groupId)}
@@ -367,7 +362,6 @@ export function UnitsDashboard() {
           setSearch("");
           setScope("all");
         }}
-        onGroupFilterChange={setGroupFilter}
         onLeave={() => void leaveEnrollment(selectedEnrollment)}
         onScopeChange={setScope}
         onSearchChange={setSearch}
@@ -502,12 +496,10 @@ function OfferingDetail({
   cohortLoading,
   enrollment,
   feedback,
-  groupFilter,
   manageableGroups,
   onAddFriend,
   onAddToGroup,
   onBack,
-  onGroupFilterChange,
   onLeave,
   onScopeChange,
   onSearchChange,
@@ -520,105 +512,94 @@ function OfferingDetail({
   cohortLoading: boolean;
   enrollment: UnitEnrollment;
   feedback: string | null;
-  groupFilter: string;
   manageableGroups: SocialGroup[];
   onAddFriend: (memberId: string) => void;
   onAddToGroup: (memberId: string, groupId: string) => void;
   onBack: () => void;
-  onGroupFilterChange: (value: string) => void;
   onLeave: () => void;
   onScopeChange: (scope: CohortScope) => void;
   onSearchChange: (value: string) => void;
   scope: CohortScope;
   search: string;
 }) {
-  return (
-    <div className="space-y-5">
-      <button
-        className="mac-focus inline-flex h-10 items-center gap-2 rounded-md text-sm font-semibold text-[var(--color-text-muted)]"
-        onClick={onBack}
-        type="button"
-      >
-        <ArrowLeft aria-hidden size={17} />
-        Your units
-      </button>
+  const unitTitle = enrollment.nickname?.trim() || "Unit cohort";
 
-      <section className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="font-mono text-sm font-semibold text-[var(--color-mac-yellow)]">
-            {getCohortLabel(enrollment)}
-          </p>
-          <h2 className="mt-1 text-3xl font-semibold">{enrollment.code}</h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            {enrollment.nickname || "Your unit cohort"} · {enrollment.year} ·{" "}
-            {getTeachingPeriodLabel(enrollment.period)}
-          </p>
+  return (
+    <div className="space-y-4">
+      <section className="border-b border-[rgb(255_255_255/0.08)] pb-4">
+        <div className="flex h-9 items-center gap-3">
+          <button
+            className="mac-focus -ml-1 inline-flex h-9 items-center gap-1.5 rounded-md px-1 text-sm font-medium text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+            onClick={onBack}
+            type="button"
+          >
+            <ArrowLeft aria-hidden size={16} />
+            Units
+          </button>
         </div>
-        <button
-          className="mac-focus inline-flex h-10 items-center rounded-md border border-[rgb(255_107_107/0.45)] px-3 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
-          disabled={busyKey === `leave:${enrollment.offeringId}`}
-          onClick={onLeave}
-          type="button"
-        >
-          Leave cohort
-        </button>
+
+        <div className="mt-2 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-[var(--color-text-muted)]">
+              {unitTitle}
+            </p>
+            <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+              {enrollment.year} · {getTeachingPeriodLabel(enrollment.period)}
+            </p>
+          </div>
+          <button
+            className="mac-focus inline-flex h-8 shrink-0 items-center rounded-md border border-[rgb(255_107_107/0.42)] bg-[rgb(255_107_107/0.06)] px-2.5 text-[11px] font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.12)] disabled:opacity-45"
+            disabled={busyKey === `leave:${enrollment.offeringId}`}
+            onClick={onLeave}
+            type="button"
+          >
+            Leave
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <label className="flex h-9 items-center gap-2 rounded-lg border border-[rgb(255_255_255/0.12)] bg-[rgb(255_255_255/0.018)] px-3 transition focus-within:border-[var(--color-mac-yellow)] focus-within:bg-[rgb(255_255_255/0.025)]">
+            <Search
+              aria-hidden
+              className="text-[var(--color-text-muted)]"
+              size={15}
+            />
+            <input
+              aria-label="Search people in this unit"
+              className="mac-focus min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--color-text-muted)]"
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search people"
+              type="search"
+              value={search}
+            />
+          </label>
+          <div className="flex items-center gap-0.5 overflow-x-auto">
+            {(["all", "friends"] as const).map((item) => (
+              <button
+                className={cn(
+                  "mac-focus h-7 shrink-0 rounded-full px-2.5 text-[11px] font-semibold capitalize transition",
+                  scope === item
+                    ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                    : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]",
+                )}
+                key={item}
+                onClick={() => onScopeChange(item)}
+                type="button"
+              >
+                {item === "all" ? "All MAC" : item}
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
 
       {feedback ? <Feedback message={feedback} /> : null}
 
-      <section className="grid gap-3 rounded-md bg-[rgb(255_255_255/0.03)] p-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-        <label className="flex h-10 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3">
-          <Search
-            aria-hidden
-            className="text-[var(--color-text-muted)]"
-            size={16}
-          />
-          <input
-            className="mac-focus min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--color-text-muted)]"
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search names or @usernames"
-            value={search}
-          />
-        </label>
-        <div className="grid grid-cols-3 rounded-md bg-[rgb(255_255_255/0.045)] p-1">
-          {(["all", "friends", "groups"] as const).map((item) => (
-            <button
-              className={cn(
-                "mac-focus h-8 rounded px-3 text-xs font-semibold capitalize",
-                scope === item
-                  ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-                  : "text-[var(--color-text-muted)]",
-              )}
-              key={item}
-              onClick={() => onScopeChange(item)}
-              type="button"
-            >
-              {item === "all" ? "All MAC" : item}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {scope === "groups" && allGroups.length ? (
-        <select
-          className="mac-focus h-10 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-semibold sm:max-w-xs"
-          onChange={(event) => onGroupFilterChange(event.target.value)}
-          value={groupFilter}
-        >
-          <option value="all">Any shared group</option>
-          {allGroups.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name}
-            </option>
-          ))}
-        </select>
-      ) : null}
-
-      <section className="space-y-3">
+      <section className="space-y-2">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold">People in this unit</h3>
-          <span className="text-sm text-[var(--color-text-muted)]">
-            {cohort.length} shown
+          <h3 className="text-base font-semibold">People in this unit</h3>
+          <span className="text-xs text-[var(--color-text-muted)]">
+            {cohort.length} {cohort.length === 1 ? "person" : "people"}
           </span>
         </div>
         {cohortLoading ? (
@@ -626,7 +607,7 @@ function OfferingDetail({
             Loading cohort…
           </p>
         ) : cohort.length ? (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid lg:grid-cols-2 lg:gap-x-6">
             {cohort.map((member) => (
               <CohortMemberCard
                 allGroups={allGroups}
@@ -640,7 +621,7 @@ function OfferingDetail({
             ))}
           </div>
         ) : (
-          <p className="rounded-md border border-dashed border-[var(--color-border)] p-5 text-sm text-[var(--color-text-muted)]">
+          <p className="border-y border-dashed border-[var(--color-border)] py-5 text-sm text-[var(--color-text-muted)]">
             No MAC members match this view yet.
           </p>
         )}
@@ -667,80 +648,87 @@ function CohortMemberCard({
   const availableGroups = manageableGroups.filter(
     (group) => !member.sharedGroupIds.includes(group.id),
   );
+  const sharedGroupNames = member.sharedGroupIds
+    .map((groupId) => allGroups.find((group) => group.id === groupId)?.name)
+    .filter((name): name is string => Boolean(name));
 
   return (
-    <article className="rounded-md border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.035)] p-4">
-      <div className="flex items-center gap-3">
-        <span
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-[#141414]"
-          style={{ backgroundColor: member.color }}
-        >
-          {getInitials(member.displayName)}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold">{member.displayName}</p>
-          <p className="truncate text-sm text-[var(--color-text-muted)]">
-            {member.handle}
-          </p>
-        </div>
-        {member.isFriend ? (
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-success)]">
-            <Check aria-hidden size={14} /> Friend
-          </span>
-        ) : null}
-      </div>
-
-      {member.sharedGroupIds.length ? (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {member.sharedGroupIds.map((groupId) => (
+    <article className="grid min-h-16 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-2.5 border-b border-[rgb(255_255_255/0.08)] py-2.5">
+      <span
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-[#141414]"
+        style={{ backgroundColor: member.color }}
+      >
+        {getInitials(member.displayName)}
+      </span>
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p className="truncate text-sm font-semibold">{member.displayName}</p>
+          {member.isFriend ? (
             <span
-              className="rounded-full bg-[rgb(255_255_255/0.06)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-muted)]"
-              key={groupId}
+              aria-label="Friend"
+              className="shrink-0 text-[var(--color-success)]"
+              title="Friend"
             >
-              {allGroups.find((group) => group.id === groupId)?.name ||
-                "Shared group"}
+              <Check aria-hidden size={13} />
             </span>
-          ))}
+          ) : null}
         </div>
-      ) : null}
-
-      <div className="mt-4">
-        {!member.isFriend ? (
-          <button
-            className="mac-focus inline-flex h-9 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] disabled:opacity-45"
-            disabled={busyKey === `friend:${member.id}`}
-            onClick={() => onAddFriend(member.id)}
-            type="button"
-          >
-            <UserPlus aria-hidden size={15} />
-            Add friend
-          </button>
-        ) : availableGroups.length ? (
-          <select
-            aria-label={`Add ${member.displayName} to a group`}
-            className="mac-focus h-9 max-w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs font-semibold"
-            disabled={busyKey === `group:${member.id}`}
-            onChange={(event) => {
-              onAddToGroup(member.id, event.target.value);
-              event.target.value = "";
-            }}
-            value=""
-          >
-            <option value="">Add to group…</option>
-            {availableGroups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <p className="text-xs text-[var(--color-text-muted)]">
-            {manageableGroups.length
-              ? "Already in your managed groups"
-              : "No managed groups"}
-          </p>
-        )}
+        <p className="flex min-w-0 items-center gap-1 truncate text-xs text-[var(--color-text-muted)]">
+          <span className="truncate">{member.handle}</span>
+          {sharedGroupNames.length ? (
+            <>
+              <span aria-hidden>·</span>
+              <span className="truncate">{sharedGroupNames.join(", ")}</span>
+            </>
+          ) : null}
+        </p>
       </div>
+      {!member.isFriend ? (
+        <button
+          className="mac-focus inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--color-mac-yellow)] px-2.5 text-[11px] font-semibold text-[#141414] disabled:opacity-45"
+          disabled={busyKey === `friend:${member.id}`}
+          onClick={() => onAddFriend(member.id)}
+          type="button"
+        >
+          <UserPlus aria-hidden size={13} />
+          Add friend
+        </button>
+      ) : availableGroups.length ? (
+        <select
+          aria-label={`Add ${member.displayName} to a group`}
+          className="mac-focus h-8 max-w-[8.5rem] rounded-md border border-[rgb(255_255_255/0.12)] bg-transparent px-2 text-[11px] font-semibold sm:max-w-[10rem]"
+          disabled={busyKey === `group:${member.id}`}
+          onChange={(event) => {
+            onAddToGroup(member.id, event.target.value);
+            event.target.value = "";
+          }}
+          value=""
+        >
+          <option value="">Add to group…</option>
+          {availableGroups.map((group) => (
+            <option key={group.id} value={group.id}>
+              {group.name}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span
+          className={cn(
+            "inline-flex h-8 items-center gap-1 text-[11px] font-medium",
+            manageableGroups.length
+              ? "text-[var(--color-success)]"
+              : "text-[var(--color-text-muted)]",
+          )}
+        >
+          {manageableGroups.length ? (
+            <>
+              <Check aria-hidden size={12} /> In your groups
+            </>
+          ) : (
+            "No groups to add"
+          )}
+        </span>
+      )}
     </article>
   );
 }

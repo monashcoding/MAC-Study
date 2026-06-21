@@ -476,20 +476,34 @@ export async function fetchRemoteUnitCohort({
   offeringId: string;
   supabase: SupabaseClient;
 }): Promise<UnitCohortMember[]> {
-  const { data, error } = await supabase.rpc("get_unit_cohort", {
-    input_offering_id: offeringId,
-  });
+  const userId = await getRemoteUserId(supabase);
 
-  if (error) {
-    throw error;
+  if (!userId) {
+    return [];
   }
 
-  return ((data ?? []) as UnitCohortRow[]).map((member) => ({
+  const [cohortResult, friendshipsResult] = await Promise.all([
+    supabase.rpc("get_unit_cohort", {
+      input_offering_id: offeringId,
+    }),
+    supabase.from("friendships").select("friend_id").eq("user_id", userId),
+  ]);
+
+  if (cohortResult.error) throw cohortResult.error;
+  if (friendshipsResult.error) throw friendshipsResult.error;
+
+  const friendIds = new Set(
+    ((friendshipsResult.data ?? []) as FriendshipRow[]).map(
+      (friendship) => friendship.friend_id,
+    ),
+  );
+
+  return ((cohortResult.data ?? []) as UnitCohortRow[]).map((member) => ({
     color: member.profile_color || "#FFE330",
     displayName: member.display_name || member.username || "MAC member",
     handle: member.username ? `@${member.username}` : "@mac_member",
     id: member.user_id,
-    isFriend: member.is_friend,
+    isFriend: member.is_friend || friendIds.has(member.user_id),
     sharedGroupIds: member.shared_group_ids ?? [],
     studyIcon: member.study_icon || "flame-desk",
   }));
