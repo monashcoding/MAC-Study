@@ -28,6 +28,7 @@ export const PERSON_ICON_KEYS = [
 
 export type GroupIconKey = (typeof GROUP_ICON_KEYS)[number];
 export type PersonIconKey = (typeof PERSON_ICON_KEYS)[number];
+export type GroupRole = "owner" | "admin" | "member";
 
 export type RankingWindow = "day" | "week" | "month";
 
@@ -54,6 +55,7 @@ export type SocialGroup = {
   name: string;
   icon: GroupIconKey;
   memberIds: string[];
+  currentUserRole?: GroupRole;
 };
 
 export type SocialState = {
@@ -165,12 +167,14 @@ export const defaultSocialState: SocialState = {
       name: "Exam Sprint",
       icon: "target",
       memberIds: ["you", "maya", "josh", "ari"],
+      currentUserRole: "owner",
     },
     {
       id: "lab-night",
       name: "Lab Night",
       icon: "book",
       memberIds: ["you", "josh", "lucy"],
+      currentUserRole: "admin",
     },
   ],
 };
@@ -272,6 +276,9 @@ function normalizeGroup(value: unknown) {
     memberIds: Array.isArray(value.memberIds)
       ? uniqueIds(value.memberIds.map(asString))
       : ["you"],
+    currentUserRole: isKnownGroupRole(asString(value.currentUserRole))
+      ? (asString(value.currentUserRole) as GroupRole)
+      : undefined,
   } satisfies SocialGroup;
 }
 
@@ -321,6 +328,10 @@ function isKnownColor(color: string) {
 
 function isKnownPersonIcon(icon: string) {
   return PERSON_ICON_KEYS.includes(icon as PersonIconKey);
+}
+
+function isKnownGroupRole(role: string) {
+  return role === "owner" || role === "admin" || role === "member";
 }
 
 function getInitials(value: string) {

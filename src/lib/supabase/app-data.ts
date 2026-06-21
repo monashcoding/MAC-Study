@@ -5,17 +5,32 @@ import {
   PERSON_ICON_KEYS,
   PROFILE_COLORS,
   type GroupIconKey,
+  type GroupRole,
   type PersonIconKey,
   type SocialFriend,
   type SocialGroup,
   type SocialState,
 } from "@/lib/social-state";
 import { getElapsedSeconds } from "@/lib/timer";
+import {
+  type TeachingPeriod,
+  type UnitCohortMember,
+  type UnitEnrollment,
+  type UnitSuggestion,
+  uniqueUnitSuggestions,
+} from "@/lib/units";
 
 export type RemoteSubject = {
   id: string;
   name: string;
   color: string;
+  canonicalCode?: string;
+  unitOfferingId?: string | null;
+};
+
+export type RemoteUnitState = {
+  enrollments: UnitEnrollment[];
+  suggestions: UnitSuggestion[];
 };
 
 export type RemoteActiveSession = {
@@ -92,6 +107,38 @@ type SubjectRow = {
   code: string;
   name: string | null;
   color: string | null;
+  unit_offering_id?: string | null;
+};
+
+type UnitEnrollmentRow = {
+  joined_at: string;
+  nickname: string | null;
+  offering_id: string;
+  unit_offerings:
+    | {
+        id: string;
+        study_year: number;
+        teaching_period: TeachingPeriod;
+        unit_id: string;
+        units: { code: string; id: string } | { code: string; id: string }[];
+      }
+    | {
+        id: string;
+        study_year: number;
+        teaching_period: TeachingPeriod;
+        unit_id: string;
+        units: { code: string; id: string } | { code: string; id: string }[];
+      }[];
+};
+
+type UnitCohortRow = {
+  display_name: string | null;
+  is_friend: boolean;
+  profile_color: string | null;
+  shared_group_ids: string[] | null;
+  study_icon: string | null;
+  user_id: string;
+  username: string | null;
 };
 
 type GroupRow = {
@@ -266,14 +313,16 @@ export async function saveRemoteSubjects({
       const { data, error } = await supabase
         .from("subjects")
         .update({
-          code: subject.name,
+          code: subject.unitOfferingId
+            ? (subject.canonicalCode ?? subject.name)
+            : subject.name,
           name: subject.name,
           color: subject.color,
           archived_at: null,
         })
         .eq("id", subject.id)
         .eq("user_id", userId)
-        .select("id, code, name, color")
+        .select("id, code, name, color, unit_offering_id")
         .single<SubjectRow>();
 
       if (error) {
@@ -290,7 +339,7 @@ export async function saveRemoteSubjects({
           name: subject.name,
           color: subject.color,
         })
-        .select("id, code, name, color")
+        .select("id, code, name, color, unit_offering_id")
         .single<SubjectRow>();
 
       if (error) {
@@ -316,6 +365,134 @@ export async function saveRemoteSubjects({
   }
 
   return savedSubjects;
+}
+
+export async function fetchRemoteUnitState(
+  supabase: SupabaseClient,
+): Promise<RemoteUnitState | null> {
+  const userId = await getRemoteUserId(supabase);
+
+  if (!userId) {
+    return null;
+  }
+
+  const [enrolmentsResult, unitsResult, subjectsResult] = await Promise.all([
+    supabase
+      .from("unit_enrolments")
+      .select(
+        "offering_id, nickname, joined_at, unit_offerings!inner(id, unit_id, study_year, teaching_period, units!inner(id, code))",
+      )
+      .eq("user_id", userId)
+      .is("left_at", null)
+      .order("joined_at", { ascending: false }),
+    supabase.from("units").select("id, code").order("code").limit(500),
+    supabase
+      .from("subjects")
+      .select("id, code, name, color, unit_offering_id")
+      .eq("user_id", userId)
+      .is("archived_at", null)
+      .order("created_at", { ascending: true }),
+  ]);
+
+  if (enrolmentsResult.error) throw enrolmentsResult.error;
+  if (unitsResult.error) throw unitsResult.error;
+  if (subjectsResult.error) throw subjectsResult.error;
+
+  const enrollments = ((enrolmentsResult.data ?? []) as UnitEnrollmentRow[])
+    .map(unitEnrollmentFromRow)
+    .filter((value): value is UnitEnrollment => Boolean(value));
+  const subjectSuggestions = ((subjectsResult.data ?? []) as SubjectRow[]).map(
+    (subject) => ({
+      code: subject.code,
+      nickname:
+        subject.name &&
+        subject.name.toUpperCase() !== subject.code.toUpperCase()
+          ? subject.name
+          : null,
+    }),
+  );
+  const catalogueSuggestions = (
+    (unitsResult.data ?? []) as { code: string }[]
+  ).map((unit) => ({ code: unit.code, nickname: null }));
+
+  return {
+    enrollments,
+    suggestions: uniqueUnitSuggestions([
+      ...subjectSuggestions,
+      ...catalogueSuggestions,
+    ]),
+  };
+}
+
+export async function upsertRemoteUnitEnrollment({
+  code,
+  nickname,
+  period,
+  supabase,
+  year,
+}: {
+  code: string;
+  nickname: string | null;
+  period: TeachingPeriod;
+  supabase: SupabaseClient;
+  year: number;
+}) {
+  const { data, error } = await supabase.rpc("upsert_unit_enrolment", {
+    input_nickname: nickname,
+    input_study_year: year,
+    input_teaching_period: period,
+    input_unit_code: code,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data as string;
+}
+
+export async function leaveRemoteUnitEnrollment({
+  offeringId,
+  supabase,
+}: {
+  offeringId: string;
+  supabase: SupabaseClient;
+}) {
+  const { data, error } = await supabase.rpc("leave_unit_enrolment", {
+    input_offering_id: offeringId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return Boolean(data);
+}
+
+export async function fetchRemoteUnitCohort({
+  offeringId,
+  supabase,
+}: {
+  offeringId: string;
+  supabase: SupabaseClient;
+}): Promise<UnitCohortMember[]> {
+  const { data, error } = await supabase.rpc("get_unit_cohort", {
+    input_offering_id: offeringId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return ((data ?? []) as UnitCohortRow[]).map((member) => ({
+    color: member.profile_color || "#FFE330",
+    displayName: member.display_name || member.username || "MAC member",
+    handle: member.username ? `@${member.username}` : "@mac_member",
+    id: member.user_id,
+    isFriend: member.is_friend,
+    sharedGroupIds: member.shared_group_ids ?? [],
+    studyIcon: member.study_icon || "flame-desk",
+  }));
 }
 
 export async function fetchRemoteSocialSnapshot(
@@ -391,6 +568,11 @@ export async function fetchRemoteSocialSnapshot(
       .filter((member) => member.group_id === group.id)
       .map((member) => member.user_id)
       .filter((id) => profileById.has(id)),
+    currentUserRole: normalizeGroupRole(
+      memberships.find(
+        (member) => member.group_id === group.id && member.user_id === userId,
+      )?.role,
+    ),
   }));
   const availableFriends = profiles
     .filter((profile) => profile.id !== userId && !friendIds.has(profile.id))
@@ -611,6 +793,16 @@ export function subscribeToRemoteAppChanges(
       { event: "*", schema: "public", table: "nudges" },
       onChange,
     )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "subjects" },
+      onChange,
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "unit_enrolments" },
+      onChange,
+    )
     .subscribe();
 
   return () => {
@@ -621,7 +813,7 @@ export function subscribeToRemoteAppChanges(
 async function ensureRemoteSubjects(supabase: SupabaseClient, userId: string) {
   const { data: existing, error: fetchError } = await supabase
     .from("subjects")
-    .select("id, code, name, color")
+    .select("id, code, name, color, unit_offering_id")
     .eq("user_id", userId)
     .is("archived_at", null)
     .order("created_at", { ascending: true });
@@ -643,7 +835,7 @@ async function ensureRemoteSubjects(supabase: SupabaseClient, userId: string) {
   const { data: inserted, error: insertError } = await supabase
     .from("subjects")
     .insert(seedRows)
-    .select("id, code, name, color");
+    .select("id, code, name, color, unit_offering_id");
 
   if (insertError) {
     throw insertError;
@@ -657,7 +849,32 @@ function subjectFromRow(row: SubjectRow): RemoteSubject {
     id: row.id,
     name: row.name || row.code,
     color: row.color || "#FFE330",
+    canonicalCode: row.unit_offering_id ? row.code : undefined,
+    unitOfferingId: row.unit_offering_id ?? null,
   };
+}
+
+function unitEnrollmentFromRow(row: UnitEnrollmentRow) {
+  const offering = firstRelation(row.unit_offerings);
+  const unit = offering ? firstRelation(offering.units) : null;
+
+  if (!offering || !unit) {
+    return null;
+  }
+
+  return {
+    code: unit.code,
+    joinedAt: row.joined_at,
+    nickname: row.nickname,
+    offeringId: offering.id,
+    period: offering.teaching_period,
+    unitId: offering.unit_id,
+    year: offering.study_year,
+  } satisfies UnitEnrollment;
+}
+
+function firstRelation<T>(value: T | T[]) {
+  return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
 function nudgeFromRow(row: NudgeRow): RemoteNudgeNotification {
@@ -746,6 +963,10 @@ function normalizeGroupIcon(icon: string | null | undefined): GroupIconKey {
   return GROUP_ICON_KEYS.includes(icon as GroupIconKey)
     ? (icon as GroupIconKey)
     : "users";
+}
+
+function normalizeGroupRole(role: string | null | undefined): GroupRole {
+  return role === "owner" || role === "admin" ? role : "member";
 }
 
 function normalizePersonIcon(icon: string | null | undefined): PersonIconKey {

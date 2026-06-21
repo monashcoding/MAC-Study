@@ -6,12 +6,14 @@ import { GroupsDashboard } from "@/components/groups/groups-dashboard";
 import { ProfileDashboard } from "@/components/profile/profile-dashboard";
 import { StatisticsDashboard } from "@/components/statistics/statistics-dashboard";
 import { TimerDashboard } from "@/components/timer/timer-dashboard";
+import { UnitsDashboard } from "@/components/units/units-dashboard";
 import { cn } from "@/lib/utils";
 
 const workspaceViews = [
   { href: "/app", id: "home" },
   { href: "/app/groups", id: "groups" },
   { href: "/app/friends", id: "friends" },
+  { href: "/app/units", id: "units" },
   { href: "/app/statistics", id: "statistics" },
   { href: "/app/profile", id: "profile" },
 ] as const;
@@ -49,6 +51,9 @@ export function AppWorkspace({
       </WorkspacePanel>
       <WorkspacePanel active={activeView === "friends"} id="friends">
         <FriendsDashboard />
+      </WorkspacePanel>
+      <WorkspacePanel active={activeView === "units"} id="units">
+        <UnitsDashboard />
       </WorkspacePanel>
       <WorkspacePanel active={activeView === "statistics"} id="statistics">
         <StatisticsDashboard />

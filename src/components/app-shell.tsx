@@ -7,6 +7,7 @@ import type { MouseEvent } from "react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import {
   BarChart3,
+  BookOpen,
   ChevronRight,
   House,
   LogOut,
@@ -51,8 +52,16 @@ const navItems = [
     icon: UserRound,
   },
   {
+    href: "/app/units",
+    label: "Units",
+    title: "Units",
+    subtitle: "Find MAC members taking the same units.",
+    icon: BookOpen,
+  },
+  {
     href: "/app/statistics",
     label: "Statistics",
+    mobileLabel: "Stats",
     title: "Statistics",
     subtitle: "Review time, streaks, and subject split.",
     icon: BarChart3,
@@ -329,7 +338,7 @@ export function AppShell({
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 h-[var(--mobile-nav-height)] bg-[rgb(23_23_23/0.97)] px-2 pb-[max(0.55rem,var(--safe-area-bottom))] pt-2 shadow-[0_-16px_36px_rgb(0_0_0/0.28)] backdrop-blur lg:hidden">
-        <div className="mx-auto grid h-full max-w-lg grid-cols-5 gap-1">
+        <div className="mx-auto grid h-full max-w-lg grid-cols-6 gap-0.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(displayPathname, item.href);
@@ -338,7 +347,7 @@ export function AppShell({
               <Link
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "mac-focus flex h-12 touch-manipulation flex-col items-center justify-center gap-1 rounded-md border text-xs font-medium transition active:scale-[0.98]",
+                  "mac-focus flex h-12 min-w-0 touch-manipulation flex-col items-center justify-center gap-1 rounded-md border text-[0.625rem] font-medium transition active:scale-[0.98] sm:text-xs",
                   active
                     ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
                     : "border-transparent text-[var(--color-text-muted)]",
@@ -351,8 +360,10 @@ export function AppShell({
                 onPointerEnter={() => warmRoute(item.href)}
                 prefetch
               >
-                <Icon aria-hidden size={19} />
-                <span>{item.label}</span>
+                <Icon aria-hidden size={18} />
+                <span className="max-w-full truncate px-0.5">
+                  {"mobileLabel" in item ? item.mobileLabel : item.label}
+                </span>
               </Link>
             );
           })}

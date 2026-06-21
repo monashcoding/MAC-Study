@@ -56,6 +56,8 @@ type StudySubject = {
   id: string;
   name: string;
   color: string;
+  canonicalCode?: string;
+  unitOfferingId?: string | null;
 };
 
 type StoredSubject = Partial<StudySubject> & {
@@ -575,15 +577,33 @@ function SubjectEditor({
               Subjects
             </button>
 
+            {editingSubject.unitOfferingId ? (
+              <div className="rounded-md border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] p-3">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+                  Canonical unit code
+                </p>
+                <p className="mt-1 font-mono font-semibold text-[var(--color-mac-yellow)]">
+                  {editingSubject.canonicalCode}
+                </p>
+              </div>
+            ) : null}
+
             <label className="block text-sm font-medium">
-              Name
+              {editingSubject.unitOfferingId ? "Personal name" : "Name"}
               <input
                 className="mac-focus mt-2 h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
+                maxLength={60}
                 onChange={(event) =>
                   onUpdate(editingSubject.id, { name: event.target.value })
                 }
                 value={editingSubject.name}
               />
+              {editingSubject.unitOfferingId ? (
+                <span className="mt-2 block text-xs leading-5 text-[var(--color-text-muted)]">
+                  This changes your timer label only. The shared unit code stays
+                  fixed.
+                </span>
+              ) : null}
             </label>
 
             <div>
@@ -685,6 +705,7 @@ function normalizeSubjects(subjects: StoredSubject[] | undefined) {
     : defaultStudySubjects;
   const cleaned = source
     .map((subject, index) => ({
+      ...subject,
       id: subject.id || makeSubjectId(),
       name:
         subject.name?.trim() ||
