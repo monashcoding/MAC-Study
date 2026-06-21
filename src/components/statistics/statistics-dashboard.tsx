@@ -194,14 +194,18 @@ export function StatisticsDashboard() {
           <label className="block">
             <span className="sr-only">Statistics period</span>
             <select
-              className="mac-focus h-9 w-full rounded-md border border-[rgb(255_255_255/0.10)] bg-[rgb(255_255_255/0.045)] px-3 text-sm font-semibold text-[var(--color-text)] outline-none"
+              className="mac-focus h-9 w-full rounded-md border border-[rgb(255_255_255/0.10)] bg-[#2b2b2b] px-3 text-sm font-semibold text-[var(--color-text)] outline-none [color-scheme:dark]"
               onChange={(event) =>
                 setSelectedPeriod(event.target.value as StatsPeriod)
               }
               value={selectedPeriod}
             >
               {periodOptions.map((period) => (
-                <option key={period.id} value={period.id}>
+                <option
+                  className="bg-[#2b2b2b] text-[#f7f7f2]"
+                  key={period.id}
+                  value={period.id}
+                >
                   {period.label}
                 </option>
               ))}
@@ -390,11 +394,11 @@ function ColumnChart({
         <h2 className="text-lg font-semibold">{title}</h2>
       </div>
 
-      <div className="mt-3 grid grid-cols-[2rem_minmax(0,1fr)] gap-1.5 sm:grid-cols-[2.35rem_minmax(0,1fr)]">
+      <div className="mt-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2rem_minmax(0,1fr)]">
         <div className="relative h-32 lg:h-52">
           {yTicks.map((tick) => (
             <p
-              className="absolute right-0 translate-y-1/2 text-right text-[10px] font-medium leading-none text-[var(--color-text-muted)]"
+              className="absolute left-0 translate-y-1/2 text-left text-[10px] font-medium leading-none text-[var(--color-text-muted)]"
               key={tick}
               style={{ bottom: `${(tick / scaleMaxSeconds) * 100}%` }}
             >
