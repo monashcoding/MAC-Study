@@ -14,7 +14,10 @@
   --color-success: #42d392;
   --color-danger: #ff6b6b;
   --color-info: #6cb6ff;
-  --mobile-nav-height: calc(4.35rem + var(--safe-area-bottom));
+  --mobile-nav-content-height: 5.5rem;
+  --mobile-nav-height: calc(
+    var(--mobile-nav-content-height) + var(--safe-area-bottom)
+  );
   --shadow-soft: 0 1px 0 rgb(255 255 255 / 0.04);
 }
 
@@ -37,8 +40,10 @@ html {
 }
 
 body {
+  min-height: 100%;
   min-height: 100dvh;
   margin: 0;
+  overflow-x: hidden;
   background: var(--color-background);
   color: var(--color-text);
   font-family:

@@ -250,7 +250,7 @@ export function AppShell({
 
   return (
     <AppHeaderDetailProvider onChange={setHeaderDetail}>
-      <div className="mac-desktop-shell fixed inset-x-0 top-0 flex h-[var(--app-viewport-height)] flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
+      <div className="mac-desktop-shell fixed inset-0 flex flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
         <div
           className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:grid lg:min-h-dvh lg:max-w-none lg:grid-cols-[17.5rem_minmax(0,1fr)] lg:overflow-visible"
           ref={scrollContainerRef}
@@ -347,8 +347,8 @@ export function AppShell({
           </main>
         </div>
 
-        <nav className="fixed inset-x-0 bottom-0 z-30 h-[var(--mobile-nav-height)] bg-[rgb(23_23_23/0.97)] px-2 pb-[max(0.55rem,var(--safe-area-bottom))] pt-2 shadow-[0_-16px_36px_rgb(0_0_0/0.28)] backdrop-blur lg:hidden">
-          <div className="mx-auto grid h-full max-w-lg grid-cols-6 gap-0.5">
+        <nav className="fixed inset-x-0 bottom-0 z-40 h-[var(--mobile-nav-height)] bg-[var(--color-background)] px-2 pb-[var(--safe-area-bottom)] shadow-[0_-16px_36px_rgb(0_0_0/0.28)] backdrop-blur lg:hidden">
+          <div className="mx-auto grid h-[var(--mobile-nav-content-height)] max-w-lg grid-cols-6 items-center gap-0.5">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(displayPathname, item.href);
