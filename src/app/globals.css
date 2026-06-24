@@ -14,7 +14,8 @@
   --color-success: #42d392;
   --color-danger: #ff6b6b;
   --color-info: #6cb6ff;
-  --mobile-nav-content-height: 4.5rem;
+  --mobile-nav-content-height: 4rem;
+  --mobile-nav-settle-offset: max(0px, calc(var(--safe-area-bottom) - 0.75rem));
   --mobile-nav-height: calc(
     var(--mobile-nav-content-height) + var(--safe-area-bottom)
   );
@@ -134,6 +135,45 @@ body {
   }
 }
 
+.mac-mobile-nav {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  height: var(--mobile-nav-height);
+  padding-inline: 0.5rem;
+  padding-bottom: var(--safe-area-bottom);
+  background: var(--color-background);
+  box-shadow: 0 -16px 36px rgb(0 0 0 / 0.28);
+  transform: translateY(
+    calc(var(--mobile-nav-settle-offset) + var(--mobile-nav-runtime-gap, 0px))
+  );
+  animation: mac-mobile-nav-settle 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.mac-mobile-nav-inner {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  align-items: center;
+  gap: 0.125rem;
+  height: var(--mobile-nav-content-height);
+  max-width: 32rem;
+  margin-inline: auto;
+}
+
+@keyframes mac-mobile-nav-settle {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(
+      calc(var(--mobile-nav-settle-offset) + var(--mobile-nav-runtime-gap, 0px))
+    );
+  }
+}
+
 @keyframes mac-view-enter {
   from {
     opacity: 0;
@@ -166,6 +206,10 @@ body {
     animation: none;
     transform: none;
     width: 100%;
+  }
+
+  .mac-mobile-nav {
+    animation: none;
   }
 }
 
