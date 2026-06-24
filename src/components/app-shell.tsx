@@ -89,7 +89,6 @@ export function AppShell({
   const [displayPathname, setDisplayPathname] = useState(pathname);
   const [headerDetail, setHeaderDetail] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const mobileNavRef = useRef<HTMLElement>(null);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const currentNav =
     navItems.find((item) => isActive(displayPathname, item.href)) ??
@@ -139,60 +138,6 @@ export function AppShell({
       window.removeEventListener("resize", syncViewportHeight);
       window.removeEventListener("orientationchange", syncViewportHeight);
       document.documentElement.style.removeProperty("--app-viewport-height");
-    };
-  }, []);
-
-  useEffect(() => {
-    const nav = mobileNavRef.current;
-    const viewport = window.visualViewport;
-    let frame = 0;
-    const timeouts: number[] = [];
-
-    function syncMobileNavGap() {
-      if (!nav) {
-        return;
-      }
-
-      window.cancelAnimationFrame(frame);
-      nav.style.setProperty("--mobile-nav-runtime-gap", "0px");
-
-      frame = window.requestAnimationFrame(() => {
-        const rect = nav.getBoundingClientRect();
-        const visualViewportBottom =
-          (viewport?.offsetTop ?? 0) + (viewport?.height ?? 0);
-        const viewportBottom = Math.max(
-          window.innerHeight,
-          document.documentElement.clientHeight,
-          visualViewportBottom,
-        );
-        const gap = Math.max(0, viewportBottom - rect.bottom);
-
-        nav.style.setProperty(
-          "--mobile-nav-runtime-gap",
-          `${Math.ceil(gap)}px`,
-        );
-      });
-    }
-
-    syncMobileNavGap();
-    timeouts.push(
-      window.setTimeout(syncMobileNavGap, 80),
-      window.setTimeout(syncMobileNavGap, 320),
-      window.setTimeout(syncMobileNavGap, 900),
-    );
-
-    viewport?.addEventListener("resize", syncMobileNavGap);
-    viewport?.addEventListener("scroll", syncMobileNavGap);
-    window.addEventListener("resize", syncMobileNavGap);
-    window.addEventListener("orientationchange", syncMobileNavGap);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      timeouts.forEach((timeout) => window.clearTimeout(timeout));
-      viewport?.removeEventListener("resize", syncMobileNavGap);
-      viewport?.removeEventListener("scroll", syncMobileNavGap);
-      window.removeEventListener("resize", syncMobileNavGap);
-      window.removeEventListener("orientationchange", syncMobileNavGap);
     };
   }, []);
 
@@ -308,7 +253,7 @@ export function AppShell({
       <>
         <div className="mac-desktop-shell fixed inset-0 flex flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
           <div
-            className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:grid lg:min-h-dvh lg:max-w-none lg:grid-cols-[17.5rem_minmax(0,1fr)] lg:overflow-visible"
+            className="mac-app-scroll mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:grid lg:min-h-dvh lg:max-w-none lg:grid-cols-[17.5rem_minmax(0,1fr)] lg:overflow-visible"
             ref={scrollContainerRef}
           >
             <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:border-r lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(17_17_17/0.94)] lg:p-5 lg:backdrop-blur-xl">
@@ -404,7 +349,7 @@ export function AppShell({
           </div>
         </div>
 
-        <nav className="mac-mobile-nav lg:hidden" ref={mobileNavRef}>
+        <nav className="mac-mobile-nav lg:hidden">
           <div className="mac-mobile-nav-inner">
             {navItems.map((item) => {
               const Icon = item.icon;

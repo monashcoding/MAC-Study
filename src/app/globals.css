@@ -15,7 +15,11 @@
   --color-danger: #ff6b6b;
   --color-info: #6cb6ff;
   --mobile-nav-content-height: 4rem;
-  --mobile-nav-settle-offset: max(0px, calc(var(--safe-area-bottom) - 0.75rem));
+  --mobile-nav-control-bottom: clamp(
+    0px,
+    calc(var(--safe-area-bottom) - 1.875rem),
+    0.5rem
+  );
   --mobile-nav-height: calc(
     var(--mobile-nav-content-height) + var(--safe-area-bottom)
   );
@@ -55,6 +59,11 @@ body {
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
+}
+
+.mac-app-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
 @media (min-width: 64rem) {
@@ -145,15 +154,14 @@ body {
   padding-bottom: var(--safe-area-bottom);
   background: var(--color-background);
   box-shadow: 0 -16px 36px rgb(0 0 0 / 0.28);
-  transform: translateY(
-    calc(var(--mobile-nav-settle-offset) + var(--mobile-nav-runtime-gap, 0px))
-  );
-  animation: mac-mobile-nav-settle 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
 
 .mac-mobile-nav-inner {
+  position: absolute;
+  inset-inline: 0.5rem;
+  bottom: var(--mobile-nav-control-bottom);
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   align-items: center;
@@ -161,17 +169,6 @@ body {
   height: var(--mobile-nav-content-height);
   max-width: 32rem;
   margin-inline: auto;
-}
-
-@keyframes mac-mobile-nav-settle {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(
-      calc(var(--mobile-nav-settle-offset) + var(--mobile-nav-runtime-gap, 0px))
-    );
-  }
 }
 
 @keyframes mac-view-enter {
@@ -206,10 +203,6 @@ body {
     animation: none;
     transform: none;
     width: 100%;
-  }
-
-  .mac-mobile-nav {
-    animation: none;
   }
 }
 
