@@ -147,6 +147,7 @@ export function AppShell({
         const currentCorrection = readRootPixelValue(
           "--mobile-nav-viewport-correction",
         );
+        const safeAreaBottom = readRootPixelValue("--safe-area-bottom");
         const layoutHeight =
           root.clientHeight || document.body.clientHeight || window.innerHeight;
         const visualBottom = (viewport?.offsetTop ?? 0) + height;
@@ -154,7 +155,11 @@ export function AppShell({
         const measuredGap =
           nav && navIsVisible ? height - nav.getBoundingClientRect().bottom : 0;
         const measuredCorrection = Math.max(0, currentCorrection + measuredGap);
-        const correctionLimit = Math.max(96, height * 0.2);
+        const navHeight = nav?.getBoundingClientRect().height ?? 0;
+        const correctionLimit = Math.max(
+          24,
+          Math.min(navHeight || 64, safeAreaBottom + 32),
+        );
         const nextCorrection = navIsVisible
           ? Math.min(correctionLimit, Math.max(layoutGap, measuredCorrection))
           : 0;
@@ -192,7 +197,6 @@ export function AppShell({
 
     syncAfterViewportSettle();
     viewport?.addEventListener("resize", syncAfterViewportSettle);
-    viewport?.addEventListener("scroll", syncViewportHeight);
     viewport?.addEventListener("scrollend", syncAfterViewportSettle);
     window.addEventListener("resize", syncAfterViewportSettle);
     window.addEventListener("orientationchange", syncAfterViewportSettle);
@@ -205,7 +209,6 @@ export function AppShell({
 
       clearSettleTimers();
       viewport?.removeEventListener("resize", syncAfterViewportSettle);
-      viewport?.removeEventListener("scroll", syncViewportHeight);
       viewport?.removeEventListener("scrollend", syncAfterViewportSettle);
       window.removeEventListener("resize", syncAfterViewportSettle);
       window.removeEventListener("orientationchange", syncAfterViewportSettle);

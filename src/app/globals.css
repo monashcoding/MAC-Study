@@ -24,6 +24,10 @@
     var(--mobile-nav-content-height) + var(--safe-area-bottom)
   );
   --mobile-nav-viewport-correction: 0px;
+  --mobile-nav-inner-correction: max(
+    0px,
+    calc(var(--mobile-nav-viewport-correction) - var(--safe-area-bottom))
+  );
   --shadow-soft: 0 1px 0 rgb(255 255 255 / 0.04);
 }
 
@@ -172,7 +176,9 @@ body {
   position: absolute;
   inset-inline: 0;
   bottom: 0;
-  height: calc(var(--safe-area-bottom) + 0.75rem);
+  height: calc(
+    var(--safe-area-bottom) + var(--mobile-nav-viewport-correction) + 0.75rem
+  );
   background: rgb(23 23 23 / 0.94);
   content: "";
   pointer-events: none;
@@ -181,7 +187,9 @@ body {
 .mac-mobile-nav-inner {
   position: absolute;
   inset-inline: 0.5rem;
-  bottom: var(--mobile-nav-control-bottom);
+  bottom: calc(
+    var(--mobile-nav-control-bottom) + var(--mobile-nav-inner-correction)
+  );
   z-index: 1;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
