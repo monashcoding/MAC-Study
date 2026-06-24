@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 type LaunchPhase = "visible" | "leaving" | "hidden";
+const LEAVE_DELAY_MS = 1100;
+const REMOVE_DELAY_MS = 1420;
 
 export function PwaLaunchScreen() {
   const [phase, setPhase] = useState<LaunchPhase>("visible");
@@ -21,8 +23,14 @@ export function PwaLaunchScreen() {
       return () => window.cancelAnimationFrame(frame);
     }
 
-    const leaveTimeout = window.setTimeout(() => setPhase("leaving"), 1800);
-    const removeTimeout = window.setTimeout(() => setPhase("hidden"), 2250);
+    const leaveTimeout = window.setTimeout(
+      () => setPhase("leaving"),
+      LEAVE_DELAY_MS,
+    );
+    const removeTimeout = window.setTimeout(
+      () => setPhase("hidden"),
+      REMOVE_DELAY_MS,
+    );
 
     return () => {
       window.clearTimeout(leaveTimeout);
@@ -38,19 +46,22 @@ export function PwaLaunchScreen() {
     <div
       aria-hidden
       className={cn(
-        "mac-pwa-launch fixed inset-0 z-[100] items-center justify-center bg-black transition-opacity duration-[420ms] ease-out",
+        "mac-pwa-launch fixed inset-0 z-[100] items-center justify-center bg-[var(--color-background)] transition-opacity duration-300 ease-out",
         phase === "leaving" && "opacity-0",
       )}
     >
-      <Image
-        alt=""
-        className="mac-pwa-launch-logo h-24 w-24 rounded-full"
-        height={96}
-        priority
-        src="/icons/mac-square.png"
-        unoptimized
-        width={96}
-      />
+      <div className="flex flex-col items-center gap-5">
+        <Image
+          alt=""
+          className="mac-pwa-launch-logo h-24 w-24 rounded-[1.35rem] shadow-[0_18px_52px_rgb(0_0_0/0.32)]"
+          height={96}
+          priority
+          src="/icons/mac-square.png"
+          unoptimized
+          width={96}
+        />
+        <div className="mac-pwa-launch-progress" />
+      </div>
     </div>
   );
 }

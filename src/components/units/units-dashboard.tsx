@@ -773,10 +773,10 @@ function AddUnitDialog({
   return (
     <div
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-end bg-black/60 px-3 pb-[max(0.75rem,var(--safe-area-bottom))] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm sm:items-center sm:justify-center"
+      className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] items-center justify-center bg-black/60 px-3 pb-[max(0.75rem,var(--safe-area-bottom))] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm"
       role="dialog"
     >
-      <div className="w-full max-w-lg rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
+      <div className="max-h-[calc(var(--app-viewport-height)-2rem)] w-full max-w-lg overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] p-4">
           <div>
             <h2 className="text-lg font-semibold">Add a unit</h2>
