@@ -89,6 +89,7 @@ export function AppShell({
   const [displayPathname, setDisplayPathname] = useState(pathname);
   const [headerDetail, setHeaderDetail] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const mobileNavRef = useRef<HTMLElement>(null);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const currentNav =
     navItems.find((item) => isActive(displayPathname, item.href)) ??
@@ -118,26 +119,99 @@ export function AppShell({
   }, [pathname]);
 
   useEffect(() => {
+    const root = document.documentElement;
     const viewport = window.visualViewport;
+    let frame = 0;
+    const settleTimers: number[] = [];
+
+    function readRootPixelValue(property: string) {
+      const value = window.getComputedStyle(root).getPropertyValue(property);
+      const parsed = Number.parseFloat(value);
+
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
 
     function syncViewportHeight() {
-      const height = viewport?.height ?? window.innerHeight;
-      document.documentElement.style.setProperty(
-        "--app-viewport-height",
-        `${Math.round(height)}px`,
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+
+        const height = viewport?.height ?? window.innerHeight;
+        const nav = mobileNavRef.current;
+        const navIsVisible = nav
+          ? window.getComputedStyle(nav).display !== "none"
+          : false;
+        const currentCorrection = readRootPixelValue(
+          "--mobile-nav-viewport-correction",
+        );
+        const layoutHeight =
+          root.clientHeight || document.body.clientHeight || window.innerHeight;
+        const visualBottom = (viewport?.offsetTop ?? 0) + height;
+        const layoutGap = Math.max(0, visualBottom - layoutHeight);
+        const measuredGap =
+          nav && navIsVisible ? height - nav.getBoundingClientRect().bottom : 0;
+        const measuredCorrection = Math.max(0, currentCorrection + measuredGap);
+        const correctionLimit = Math.max(96, height * 0.2);
+        const nextCorrection = navIsVisible
+          ? Math.min(correctionLimit, Math.max(layoutGap, measuredCorrection))
+          : 0;
+
+        root.style.setProperty(
+          "--app-viewport-height",
+          `${Math.round(height)}px`,
+        );
+        root.style.setProperty(
+          "--mobile-nav-viewport-correction",
+          `${Math.round(nextCorrection)}px`,
+        );
+      });
+    }
+
+    function clearSettleTimers() {
+      while (settleTimers.length > 0) {
+        const timer = settleTimers.pop();
+
+        if (timer) {
+          window.clearTimeout(timer);
+        }
+      }
+    }
+
+    function syncAfterViewportSettle() {
+      clearSettleTimers();
+      syncViewportHeight();
+      settleTimers.push(
+        window.setTimeout(syncViewportHeight, 80),
+        window.setTimeout(syncViewportHeight, 320),
+        window.setTimeout(syncViewportHeight, 900),
       );
     }
 
-    syncViewportHeight();
-    viewport?.addEventListener("resize", syncViewportHeight);
-    window.addEventListener("resize", syncViewportHeight);
-    window.addEventListener("orientationchange", syncViewportHeight);
+    syncAfterViewportSettle();
+    viewport?.addEventListener("resize", syncAfterViewportSettle);
+    viewport?.addEventListener("scroll", syncViewportHeight);
+    viewport?.addEventListener("scrollend", syncAfterViewportSettle);
+    window.addEventListener("resize", syncAfterViewportSettle);
+    window.addEventListener("orientationchange", syncAfterViewportSettle);
+    window.addEventListener("pageshow", syncAfterViewportSettle);
 
     return () => {
-      viewport?.removeEventListener("resize", syncViewportHeight);
-      window.removeEventListener("resize", syncViewportHeight);
-      window.removeEventListener("orientationchange", syncViewportHeight);
-      document.documentElement.style.removeProperty("--app-viewport-height");
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+
+      clearSettleTimers();
+      viewport?.removeEventListener("resize", syncAfterViewportSettle);
+      viewport?.removeEventListener("scroll", syncViewportHeight);
+      viewport?.removeEventListener("scrollend", syncAfterViewportSettle);
+      window.removeEventListener("resize", syncAfterViewportSettle);
+      window.removeEventListener("orientationchange", syncAfterViewportSettle);
+      window.removeEventListener("pageshow", syncAfterViewportSettle);
+      root.style.removeProperty("--app-viewport-height");
+      root.style.removeProperty("--mobile-nav-viewport-correction");
     };
   }, []);
 
@@ -349,7 +423,7 @@ export function AppShell({
           </div>
         </div>
 
-        <nav className="mac-mobile-nav lg:hidden">
+        <nav className="mac-mobile-nav lg:hidden" ref={mobileNavRef}>
           <div className="mac-mobile-nav-inner">
             {navItems.map((item) => {
               const Icon = item.icon;

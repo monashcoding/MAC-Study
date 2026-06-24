@@ -23,6 +23,7 @@
   --mobile-nav-height: calc(
     var(--mobile-nav-content-height) + var(--safe-area-bottom)
   );
+  --mobile-nav-viewport-correction: 0px;
   --shadow-soft: 0 1px 0 rgb(255 255 255 / 0.04);
 }
 
@@ -37,6 +38,7 @@
 }
 
 html {
+  height: 100%;
   min-height: 100%;
   background: var(--color-background);
   color-scheme: dark;
@@ -45,10 +47,12 @@ html {
 }
 
 body {
+  height: 100%;
   min-height: 100%;
   min-height: 100dvh;
   margin: 0;
   overflow-x: hidden;
+  overscroll-behavior-y: none;
   background: var(--color-background);
   color: var(--color-text);
   font-family:
@@ -64,6 +68,15 @@ body {
 .mac-app-scroll {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
+}
+
+@media (max-width: 63.999rem) {
+  .mac-desktop-shell {
+    bottom: calc(0px - var(--mobile-nav-viewport-correction));
+    min-height: calc(
+      var(--app-viewport-height) + var(--mobile-nav-viewport-correction)
+    );
+  }
 }
 
 @media (min-width: 64rem) {
@@ -147,7 +160,7 @@ body {
 .mac-mobile-nav {
   position: fixed;
   inset-inline: 0;
-  bottom: 0;
+  bottom: calc(0px - var(--mobile-nav-viewport-correction));
   z-index: 40;
   height: var(--mobile-nav-height);
   padding-inline: 0.5rem;
@@ -155,10 +168,21 @@ body {
   background: transparent;
 }
 
+.mac-mobile-nav::before {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: calc(var(--safe-area-bottom) + 0.75rem);
+  background: rgb(23 23 23 / 0.94);
+  content: "";
+  pointer-events: none;
+}
+
 .mac-mobile-nav-inner {
   position: absolute;
   inset-inline: 0.5rem;
   bottom: var(--mobile-nav-control-bottom);
+  z-index: 1;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   align-items: center;
