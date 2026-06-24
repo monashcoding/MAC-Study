@@ -89,7 +89,6 @@ export function AppShell({
   const [displayPathname, setDisplayPathname] = useState(pathname);
   const [headerDetail, setHeaderDetail] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const mobileNavRef = useRef<HTMLElement>(null);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const currentNav =
     navItems.find((item) => isActive(displayPathname, item.href)) ??
@@ -121,14 +120,17 @@ export function AppShell({
   useEffect(() => {
     const root = document.documentElement;
     const viewport = window.visualViewport;
+    const standaloneQuery = window.matchMedia("(display-mode: standalone)");
+    const navigatorWithStandalone = window.navigator as Navigator & {
+      standalone?: boolean;
+    };
     let frame = 0;
     const settleTimers: number[] = [];
 
-    function readRootPixelValue(property: string) {
-      const value = window.getComputedStyle(root).getPropertyValue(property);
-      const parsed = Number.parseFloat(value);
-
-      return Number.isFinite(parsed) ? parsed : 0;
+    function isStandaloneMode() {
+      return (
+        standaloneQuery.matches || navigatorWithStandalone.standalone === true
+      );
     }
 
     function syncViewportHeight() {
@@ -139,38 +141,14 @@ export function AppShell({
       frame = window.requestAnimationFrame(() => {
         frame = 0;
 
-        const height = viewport?.height ?? window.innerHeight;
-        const nav = mobileNavRef.current;
-        const navIsVisible = nav
-          ? window.getComputedStyle(nav).display !== "none"
-          : false;
-        const currentCorrection = readRootPixelValue(
-          "--mobile-nav-viewport-correction",
-        );
-        const safeAreaBottom = readRootPixelValue("--safe-area-bottom");
-        const layoutHeight =
-          root.clientHeight || document.body.clientHeight || window.innerHeight;
-        const visualBottom = (viewport?.offsetTop ?? 0) + height;
-        const layoutGap = Math.max(0, visualBottom - layoutHeight);
-        const measuredGap =
-          nav && navIsVisible ? height - nav.getBoundingClientRect().bottom : 0;
-        const measuredCorrection = Math.max(0, currentCorrection + measuredGap);
-        const navHeight = nav?.getBoundingClientRect().height ?? 0;
-        const correctionLimit = Math.max(
-          24,
-          Math.min(navHeight || 64, safeAreaBottom + 32),
-        );
-        const nextCorrection = navIsVisible
-          ? Math.min(correctionLimit, Math.max(layoutGap, measuredCorrection))
-          : 0;
+        const visualHeight = viewport?.height ?? window.innerHeight;
+        const height = isStandaloneMode()
+          ? Math.max(visualHeight, window.innerHeight)
+          : visualHeight;
 
         root.style.setProperty(
           "--app-viewport-height",
           `${Math.round(height)}px`,
-        );
-        root.style.setProperty(
-          "--mobile-nav-viewport-correction",
-          `${Math.round(nextCorrection)}px`,
         );
       });
     }
@@ -214,7 +192,6 @@ export function AppShell({
       window.removeEventListener("orientationchange", syncAfterViewportSettle);
       window.removeEventListener("pageshow", syncAfterViewportSettle);
       root.style.removeProperty("--app-viewport-height");
-      root.style.removeProperty("--mobile-nav-viewport-correction");
     };
   }, []);
 
@@ -413,7 +390,7 @@ export function AppShell({
                 </div>
               </header>
 
-              <div className="px-4 pb-[calc(var(--mobile-nav-height)+1.5rem)] pt-5 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10">
+              <div className="px-4 pb-5 pt-5 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10">
                 <div className="lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.065)] lg:bg-[rgb(20_20_20/0.5)] lg:p-6 lg:shadow-[0_28px_80px_rgb(0_0_0/0.28)] xl:p-8">
                   <AppWorkspace
                     activePathname={displayPathname}
@@ -424,40 +401,40 @@ export function AppShell({
               </div>
             </main>
           </div>
+
+          <nav className="mac-mobile-nav lg:hidden">
+            <div className="mac-mobile-nav-inner">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(displayPathname, item.href);
+
+                return (
+                  <Link
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "mac-focus flex h-10 min-w-0 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-md border text-[0.58rem] font-medium transition active:scale-[0.98] sm:text-[0.65rem]",
+                      active
+                        ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
+                        : "border-transparent text-[var(--color-text-muted)]",
+                    )}
+                    href={item.href}
+                    key={item.href}
+                    onClick={(event) => navigateTo(item.href, event)}
+                    onFocus={() => warmRoute(item.href)}
+                    onPointerDown={() => warmRoute(item.href)}
+                    onPointerEnter={() => warmRoute(item.href)}
+                    prefetch
+                  >
+                    <Icon aria-hidden size={17} />
+                    <span className="max-w-full truncate px-0.5">
+                      {"mobileLabel" in item ? item.mobileLabel : item.label}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
         </div>
-
-        <nav className="mac-mobile-nav lg:hidden" ref={mobileNavRef}>
-          <div className="mac-mobile-nav-inner">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(displayPathname, item.href);
-
-              return (
-                <Link
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "mac-focus flex h-10 min-w-0 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-md border text-[0.58rem] font-medium transition active:scale-[0.98] sm:text-[0.65rem]",
-                    active
-                      ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
-                      : "border-transparent text-[var(--color-text-muted)]",
-                  )}
-                  href={item.href}
-                  key={item.href}
-                  onClick={(event) => navigateTo(item.href, event)}
-                  onFocus={() => warmRoute(item.href)}
-                  onPointerDown={() => warmRoute(item.href)}
-                  onPointerEnter={() => warmRoute(item.href)}
-                  prefetch
-                >
-                  <Icon aria-hidden size={17} />
-                  <span className="max-w-full truncate px-0.5">
-                    {"mobileLabel" in item ? item.mobileLabel : item.label}
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
 
         {authState.mode === "authenticated" ? (
           <NudgeNotifications userId={authState.user.id} />
