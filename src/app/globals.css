@@ -32,14 +32,6 @@
   }
 }
 
-@supports (height: 100lvh) {
-  @media (display-mode: standalone) {
-    :root {
-      --app-viewport-height: 100lvh;
-    }
-  }
-}
-
 * {
   box-sizing: border-box;
 }
@@ -95,6 +87,16 @@ body {
     height: var(--app-viewport-height);
     max-height: var(--app-viewport-height);
     min-height: 0;
+  }
+}
+
+@supports (height: -webkit-fill-available) {
+  @media (max-width: 63.999rem) {
+    body.mac-app-shell-body,
+    .mac-desktop-shell {
+      height: -webkit-fill-available;
+      max-height: -webkit-fill-available;
+    }
   }
 }
 
@@ -177,9 +179,10 @@ body {
 }
 
 .mac-mobile-nav {
-  position: relative;
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
   z-index: 40;
-  flex: 0 0 var(--mobile-nav-height);
   width: 100%;
   height: var(--mobile-nav-height);
   padding-inline: 0.5rem;

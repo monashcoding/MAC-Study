@@ -126,94 +126,6 @@ export function AppShell({
   }, []);
 
   useEffect(() => {
-    const root = document.documentElement;
-    const viewport = window.visualViewport;
-    const standaloneQuery = window.matchMedia("(display-mode: standalone)");
-    const navigatorWithStandalone = window.navigator as Navigator & {
-      standalone?: boolean;
-    };
-    let frame = 0;
-    const settleTimers: number[] = [];
-
-    function isStandaloneMode() {
-      return (
-        standaloneQuery.matches || navigatorWithStandalone.standalone === true
-      );
-    }
-
-    function getScreenBlockSize() {
-      const screenWidth = window.screen?.width ?? 0;
-      const screenHeight = window.screen?.height ?? 0;
-      const portrait = window.matchMedia("(orientation: portrait)").matches;
-
-      return portrait
-        ? Math.max(screenWidth, screenHeight)
-        : Math.min(screenWidth, screenHeight);
-    }
-
-    function syncViewportHeight() {
-      if (frame) {
-        window.cancelAnimationFrame(frame);
-      }
-
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-
-        const visualHeight = viewport?.height ?? window.innerHeight;
-        const height = isStandaloneMode()
-          ? Math.max(visualHeight, window.innerHeight, getScreenBlockSize())
-          : visualHeight;
-
-        root.style.setProperty(
-          "--app-viewport-height",
-          `${Math.round(height)}px`,
-        );
-      });
-    }
-
-    function clearSettleTimers() {
-      while (settleTimers.length > 0) {
-        const timer = settleTimers.pop();
-
-        if (timer) {
-          window.clearTimeout(timer);
-        }
-      }
-    }
-
-    function syncAfterViewportSettle() {
-      clearSettleTimers();
-      syncViewportHeight();
-      settleTimers.push(
-        window.setTimeout(syncViewportHeight, 80),
-        window.setTimeout(syncViewportHeight, 320),
-        window.setTimeout(syncViewportHeight, 900),
-      );
-    }
-
-    syncAfterViewportSettle();
-    viewport?.addEventListener("resize", syncAfterViewportSettle);
-    viewport?.addEventListener("scrollend", syncAfterViewportSettle);
-    window.addEventListener("resize", syncAfterViewportSettle);
-    window.addEventListener("orientationchange", syncAfterViewportSettle);
-    window.addEventListener("pageshow", syncAfterViewportSettle);
-
-    return () => {
-      if (frame) {
-        window.cancelAnimationFrame(frame);
-      }
-
-      clearSettleTimers();
-      viewport?.removeEventListener("resize", syncAfterViewportSettle);
-      viewport?.removeEventListener("scrollend", syncAfterViewportSettle);
-      window.removeEventListener("resize", syncAfterViewportSettle);
-      window.removeEventListener("orientationchange", syncAfterViewportSettle);
-      window.removeEventListener("pageshow", syncAfterViewportSettle);
-      root.style.removeProperty("--app-viewport-height");
-    };
-  }, []);
-
-  useEffect(() => {
     function prefetchAll() {
       navItems.forEach((item) => {
         router.prefetch(item.href);
@@ -408,7 +320,7 @@ export function AppShell({
                 </div>
               </header>
 
-              <div className="px-4 pb-5 pt-5 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10">
+              <div className="px-4 pb-[calc(var(--mobile-nav-height)+1rem)] pt-5 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10">
                 <div className="lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.065)] lg:bg-[rgb(20_20_20/0.5)] lg:p-6 lg:shadow-[0_28px_80px_rgb(0_0_0/0.28)] xl:p-8">
                   <AppWorkspace
                     activePathname={displayPathname}
