@@ -118,6 +118,14 @@ export function AppShell({
   }, [pathname]);
 
   useEffect(() => {
+    document.body.classList.add("mac-app-shell-body");
+
+    return () => {
+      document.body.classList.remove("mac-app-shell-body");
+    };
+  }, []);
+
+  useEffect(() => {
     const root = document.documentElement;
     const viewport = window.visualViewport;
     const standaloneQuery = window.matchMedia("(display-mode: standalone)");
@@ -133,6 +141,16 @@ export function AppShell({
       );
     }
 
+    function getScreenBlockSize() {
+      const screenWidth = window.screen?.width ?? 0;
+      const screenHeight = window.screen?.height ?? 0;
+      const portrait = window.matchMedia("(orientation: portrait)").matches;
+
+      return portrait
+        ? Math.max(screenWidth, screenHeight)
+        : Math.min(screenWidth, screenHeight);
+    }
+
     function syncViewportHeight() {
       if (frame) {
         window.cancelAnimationFrame(frame);
@@ -143,7 +161,7 @@ export function AppShell({
 
         const visualHeight = viewport?.height ?? window.innerHeight;
         const height = isStandaloneMode()
-          ? Math.max(visualHeight, window.innerHeight)
+          ? Math.max(visualHeight, window.innerHeight, getScreenBlockSize())
           : visualHeight;
 
         root.style.setProperty(
