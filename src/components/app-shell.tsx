@@ -342,7 +342,7 @@ export function AppShell({
                   <Link
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "mac-focus flex h-10 min-w-0 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-md border text-[0.58rem] font-medium transition active:scale-[0.98] sm:text-[0.65rem]",
+                      "mac-focus flex h-full min-w-0 touch-manipulation flex-col items-center justify-center gap-1 rounded-md border text-[0.64rem] font-medium leading-none transition active:scale-[0.98] sm:text-[0.7rem]",
                       active
                         ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)] text-[#141414]"
                         : "border-transparent text-[var(--color-text-muted)]",
@@ -355,7 +355,7 @@ export function AppShell({
                     onPointerEnter={() => warmRoute(item.href)}
                     prefetch
                   >
-                    <Icon aria-hidden size={17} />
+                    <Icon aria-hidden size={22} strokeWidth={2.15} />
                     <span className="max-w-full truncate px-0.5">
                       {"mobileLabel" in item ? item.mobileLabel : item.label}
                     </span>

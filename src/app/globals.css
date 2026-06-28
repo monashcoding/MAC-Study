@@ -14,10 +14,10 @@
   --color-success: #42d392;
   --color-danger: #ff6b6b;
   --color-info: #6cb6ff;
-  --mobile-nav-content-height: 3rem;
+  --mobile-nav-content-height: 3.75rem;
   --mobile-nav-control-bottom: clamp(
     0px,
-    calc(var(--safe-area-bottom) - 1.875rem),
+    calc(var(--safe-area-bottom) - 2.25rem),
     0.5rem
   );
   --mobile-nav-height: calc(
