@@ -1,4 +1,4 @@
-import type { SupabaseClient, User } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type AccessStatus = "pending" | "active" | "blocked";
 
@@ -16,57 +16,21 @@ export type Profile = {
   updated_at: string;
 };
 
-function getDisplayName(user: User) {
-  const metadataName =
-    typeof user.user_metadata?.full_name === "string"
-      ? user.user_metadata.full_name
-      : null;
-
-  return metadataName ?? user.email?.split("@")[0] ?? "MAC member";
-}
-
 export function needsProfileSetup(profile: Profile | null) {
   return !profile?.display_name?.trim() || !profile.username?.trim();
 }
 
-export async function ensureProfile(
+export async function getProfileById(
   supabase: SupabaseClient,
-  user: User,
+  userId: string,
 ): Promise<Profile | null> {
-  const { data: existing, error: fetchError } = await supabase
-    .from("profiles")
-    .select(
-      "id, display_name, username, avatar_url, course, study_icon, profile_color, access_status, access_granted_at, created_at, updated_at",
-    )
-    .eq("id", user.id)
-    .maybeSingle<Profile>();
-
-  if (fetchError) {
-    throw fetchError;
-  }
-
-  if (existing) {
-    return existing;
-  }
-
   const { data, error } = await supabase
     .from("profiles")
-    .insert({
-      id: user.id,
-      display_name: getDisplayName(user),
-      avatar_url:
-        typeof user.user_metadata?.avatar_url === "string"
-          ? user.user_metadata.avatar_url
-          : null,
-      username: null,
-      study_icon: "flame-desk",
-      profile_color: "#FFE330",
-      access_status: "pending",
-    })
     .select(
       "id, display_name, username, avatar_url, course, study_icon, profile_color, access_status, access_granted_at, created_at, updated_at",
     )
-    .single<Profile>();
+    .eq("id", userId)
+    .maybeSingle<Profile>();
 
   if (error) {
     throw error;

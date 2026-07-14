@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import webpush from "web-push";
 import { z } from "zod";
+import { getServerStudySession } from "@/lib/auth/server-session";
 import { getOptionalWebPushEnv } from "@/lib/supabase/env";
 import {
   createSupabaseAdminClient,
@@ -37,12 +38,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
+  const session = await getServerStudySession();
 
-  if (userError || !user) {
+  if (!session) {
     return NextResponse.json(
       { message: "Sign in to send nudges." },
       { status: 401 },

@@ -1,10 +1,16 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { getSafeNextPath } from "@/lib/auth/safe-next-path";
+import { getServerStudySession } from "@/lib/auth/server-session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function saveProfileIdentity(formData: FormData) {
-  const next = getSafeNextPath(formData.get("next"));
+  const nextValue = formData.get("next");
+  const safeNext = getSafeNextPath(
+    typeof nextValue === "string" ? nextValue : undefined,
+  );
+  const next = safeNext.startsWith("/auth/profile") ? "/app" : safeNext;
   const displayName = `${formData.get("displayName") ?? ""}`
     .replace(/\s+/g, " ")
     .trim();
@@ -28,11 +34,9 @@ export async function saveProfileIdentity(formData: FormData) {
     redirect(next);
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getServerStudySession();
 
-  if (!user) {
+  if (!session) {
     redirect(`/auth/login?next=${encodeURIComponent(next)}`);
   }
 
@@ -42,7 +46,7 @@ export async function saveProfileIdentity(formData: FormData) {
       display_name: displayName,
       username,
     })
-    .eq("id", user.id);
+    .eq("id", session.sub);
 
   if (error?.code === "23505") {
     redirect(`/auth/profile?error=taken&next=${encodeURIComponent(next)}`);
@@ -62,18 +66,4 @@ function normalizeUsername(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, "")
     .slice(0, 24);
-}
-
-function getSafeNextPath(value: FormDataEntryValue | null) {
-  const next = typeof value === "string" ? value : "/app";
-
-  if (!next.startsWith("/") || next.startsWith("//")) {
-    return "/app";
-  }
-
-  if (next.startsWith("/auth/profile")) {
-    return "/app";
-  }
-
-  return next;
 }

@@ -25,14 +25,9 @@ features.
 
 ## Deploy And Test On Phone
 
-The PWA install flow needs HTTPS on a real phone. The quickest path is Vercel:
-
-```bash
-npm run build
-npx vercel
-```
-
-After Vercel gives you an HTTPS URL, open `/app` on your phone.
+The production app is deployed through Dokploy at
+`https://study.monashcoding.com`. The PWA install flow needs HTTPS on a real
+phone.
 
 iPhone:
 
@@ -55,36 +50,28 @@ belong in the later native extension.
 
 ## Auth Setup
 
-MVP auth is Google sign-in plus email magic links, followed by a MAC invite
-gate. The app stays in demo mode until Supabase env vars are configured.
+MAC Study uses the shared account system at `https://auth.monashcoding.com`.
+MAC Auth handles Google/Microsoft sign-in and MAC Study exchanges its verified
+token for a short-lived Supabase-compatible session. Supabase remains the data
+store and enforces Row Level Security.
 
 1. Create a Supabase project.
 2. Run the SQL migrations in `supabase/migrations` in filename order.
-3. Add these env vars locally and in Vercel:
+3. Import an ES256 private signing key into Supabase JWT Signing Keys and keep
+   the same private JWK only in the MAC Study server environment.
+4. Add these environment variables locally and in Dokploy:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_JWT_PRIVATE_JWK=
+NEXT_PUBLIC_SITE_URL=https://study.monashcoding.com
+NEXT_PUBLIC_MAC_AUTH_URL=https://auth.monashcoding.com
 ```
 
-4. In Supabase Auth, enable Google and Email OTP sign-in.
-5. Add these redirect URLs in Supabase Auth settings:
-
-```txt
-http://localhost:3000/auth/callback
-https://mac-study.vercel.app/auth/callback
-```
-
-6. Create an MVP invite code in the Supabase SQL editor:
-
-```sql
-insert into public.access_invites (code, note, max_uses)
-values ('MAC-FOUNDING', 'Initial MVP test invite', 50);
-```
-
-When Supabase is configured, `/app` requires a signed-in user with
-`profiles.access_status = 'active'`. New users start as `pending` until they
-redeem a valid invite code.
+The signing JWK is server-only. Never prefix it with `NEXT_PUBLIC_`, expose it
+to browser code, or commit it to Git.
 
 ## Scripts
 

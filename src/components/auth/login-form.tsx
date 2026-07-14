@@ -1,143 +1,120 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { Mail, Sparkles } from "lucide-react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { useEffect, useState, useTransition } from "react";
+import { LogIn, ShieldCheck } from "lucide-react";
+import {
+  completeMacSignIn,
+  MacSignInRequiredError,
+  type MacProvider,
+  startMacSignIn,
+} from "@/lib/auth/mac-auth-browser";
 
 export function LoginForm({
-  isConfigured,
+  autoComplete,
   nextPath,
+  returnedFromProvider,
 }: {
-  isConfigured: boolean;
+  autoComplete: boolean;
   nextPath: string;
+  returnedFromProvider: boolean;
 }) {
-  const [email, setEmail] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const redirectTo = useMemo(() => {
-    if (typeof window === "undefined") {
-      return "";
+
+  useEffect(() => {
+    if (!autoComplete) {
+      return;
     }
 
-    const callbackUrl = new URL("/auth/callback", window.location.origin);
-    callbackUrl.searchParams.set("next", nextPath);
+    let cancelled = false;
 
-    return callbackUrl.toString();
-  }, [nextPath]);
-
-  function signInWithGoogle() {
-    setError(null);
-    setMessage(null);
-
-    startTransition(async () => {
+    async function completeExistingMacSession() {
       try {
-        const supabase = createSupabaseBrowserClient();
-        const { error: signInError } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo,
-          },
-        });
+        await completeMacSignIn();
 
-        if (signInError) {
-          setError(signInError.message);
+        if (!cancelled) {
+          window.location.replace(nextPath);
         }
       } catch (caughtError) {
-        setError(getErrorMessage(caughtError));
-      }
-    });
-  }
-
-  function sendMagicLink(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    setMessage(null);
-
-    startTransition(async () => {
-      try {
-        const supabase = createSupabaseBrowserClient();
-        const { error: signInError } = await supabase.auth.signInWithOtp({
-          email,
-          options: {
-            emailRedirectTo: redirectTo,
-            shouldCreateUser: true,
-          },
-        });
-
-        if (signInError) {
-          setError(signInError.message);
+        if (cancelled) {
           return;
         }
 
-        setMessage("Check your email for a MAC Study sign-in link.");
+        if (caughtError instanceof MacSignInRequiredError) {
+          if (returnedFromProvider) {
+            setError("MAC sign-in did not complete. Please try again.");
+          }
+          return;
+        }
+
+        setError(getErrorMessage(caughtError));
+      }
+    }
+
+    void completeExistingMacSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [autoComplete, nextPath, returnedFromProvider]);
+
+  function signIn(provider: MacProvider) {
+    setError(null);
+
+    startTransition(async () => {
+      try {
+        // This completes immediately when another MAC app has already created
+        // the shared session; otherwise continue through the selected provider.
+        await completeMacSignIn();
+        window.location.replace(nextPath);
       } catch (caughtError) {
+        if (caughtError instanceof MacSignInRequiredError) {
+          try {
+            await startMacSignIn(provider, nextPath);
+          } catch (startError) {
+            setError(getErrorMessage(startError));
+          }
+          return;
+        }
+
         setError(getErrorMessage(caughtError));
       }
     });
   }
 
   return (
-    <div className="mt-6 space-y-4">
-      {!isConfigured ? (
-        <div className="rounded-md border border-[rgb(255_227_48/0.45)] bg-[rgb(255_227_48/0.08)] p-3 text-sm text-[var(--color-text)]">
-          Supabase is not configured yet. Add
-          <code className="mx-1 text-[var(--color-mac-yellow)]">
-            NEXT_PUBLIC_SUPABASE_URL
-          </code>
-          and
-          <code className="mx-1 text-[var(--color-mac-yellow)]">
-            NEXT_PUBLIC_SUPABASE_ANON_KEY
-          </code>
-          to enable real sign-in.
-        </div>
-      ) : null}
-
+    <div className="mt-6 space-y-3">
       <button
         className="mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-55"
-        disabled={!isConfigured || isPending}
-        onClick={signInWithGoogle}
+        disabled={isPending}
+        onClick={() => signIn("google")}
         type="button"
       >
-        <Sparkles aria-hidden size={18} />
-        Continue with Google
+        <LogIn aria-hidden size={18} />
+        Continue with Google via MAC
       </button>
 
-      <div className="flex items-center gap-3 text-xs uppercase tracking-normal text-[var(--color-text-muted)]">
-        <span className="h-px flex-1 bg-[var(--color-border)]" />
-        or
-        <span className="h-px flex-1 bg-[var(--color-border)]" />
+      <button
+        className="mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-4 font-semibold text-[var(--color-text)] disabled:opacity-55"
+        disabled={isPending}
+        onClick={() => signIn("microsoft")}
+        type="button"
+      >
+        <LogIn aria-hidden size={18} />
+        Continue with Microsoft via MAC
+      </button>
+
+      <div className="flex items-start gap-2 rounded-md border border-[rgb(66_211_146/0.3)] bg-[rgb(66_211_146/0.06)] p-3 text-sm text-[var(--color-text-muted)]">
+        <ShieldCheck
+          aria-hidden
+          className="mt-0.5 shrink-0 text-[var(--color-success)]"
+          size={17}
+        />
+        <span>
+          One MAC account signs you into participating MAC websites and apps.
+        </span>
       </div>
 
-      <form className="space-y-3" onSubmit={sendMagicLink}>
-        <label className="block text-sm font-medium" htmlFor="email">
-          Email magic link
-        </label>
-        <input
-          className="mac-focus h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
-          disabled={!isConfigured || isPending}
-          id="email"
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="you@example.com"
-          required
-          type="email"
-          value={email}
-        />
-        <button
-          className="mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-4 font-semibold text-[var(--color-text)] disabled:opacity-55"
-          disabled={!isConfigured || isPending}
-          type="submit"
-        >
-          <Mail aria-hidden size={18} />
-          Email me a link
-        </button>
-      </form>
-
-      {message ? (
-        <p className="rounded-md border border-[rgb(66_211_146/0.45)] bg-[rgb(66_211_146/0.08)] p-3 text-sm text-[var(--color-success)]">
-          {message}
-        </p>
-      ) : null}
       {error ? (
         <p className="rounded-md border border-[rgb(255_107_107/0.45)] bg-[rgb(255_107_107/0.08)] p-3 text-sm text-[var(--color-danger)]">
           {error}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getServerStudySession } from "@/lib/auth/server-session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -22,12 +23,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
+  const session = await getServerStudySession();
 
-  if (userError || !user) {
+  if (!session) {
     return NextResponse.json(
       { message: "Sign in to enable nudges." },
       { status: 401 },
@@ -51,7 +49,7 @@ export async function POST(request: Request) {
       p256dh: parsed.data.keys.p256dh,
       revoked_at: null,
       user_agent: request.headers.get("user-agent"),
-      user_id: user.id,
+      user_id: session.sub,
     },
     { onConflict: "endpoint" },
   );

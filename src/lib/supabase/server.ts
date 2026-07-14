@@ -1,6 +1,5 @@
-import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
+import { getServerStudyAccessToken } from "@/lib/auth/server-session";
 import {
   getOptionalSupabaseAdminEnv,
   getOptionalSupabasePublicEnv,
@@ -13,26 +12,17 @@ export async function createSupabaseServerClient() {
     return null;
   }
 
-  const cookieStore = await cookies();
+  const accessToken = await getServerStudyAccessToken();
 
-  return createServerClient(
+  return createClient(
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options);
-            });
-          } catch {
-            // Server Components cannot always mutate cookies. Middleware and
-            // Route Handlers refresh auth cookies for navigations that need it.
-          }
-        },
+      accessToken: async () => accessToken,
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
       },
     },
   );

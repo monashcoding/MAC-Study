@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LogOut, TicketCheck } from "lucide-react";
 import { getPendingAuthState } from "@/lib/auth/app-auth";
+import { getSafeNextPath } from "@/lib/auth/safe-next-path";
 import { redeemInvite } from "./actions";
 
 type AccessPageProps = {
@@ -102,12 +103,4 @@ export default async function AccessPage({ searchParams }: AccessPageProps) {
       </div>
     </main>
   );
-}
-
-function getSafeNextPath(next?: string) {
-  if (!next || !next.startsWith("/") || next.startsWith("//")) {
-    return "/app";
-  }
-
-  return next;
 }

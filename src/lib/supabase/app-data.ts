@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getCurrentStudyUserId } from "@/lib/auth/mac-auth-browser";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   GROUP_ICON_KEYS,
@@ -72,9 +73,7 @@ export type RemoteNudgeNotification = {
 export type RemoteNudgeDelivery = {
   sent: number;
   skipped?:
-    | "no_subscriptions"
-    | "push_not_configured"
-    | "subscriptions_unavailable";
+    "no_subscriptions" | "push_not_configured" | "subscriptions_unavailable";
 };
 
 export function getNudgeDeliveryMessage(delivery: RemoteNudgeDelivery) {
@@ -179,18 +178,18 @@ type NudgeRow = {
   created_at: string;
 };
 
-export async function getRemoteUserId(supabase: SupabaseClient) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  return user?.id ?? null;
+export async function getRemoteUserId() {
+  try {
+    return await getCurrentStudyUserId();
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchRemoteTimerState(
   supabase: SupabaseClient,
 ): Promise<RemoteTimerState | null> {
-  const userId = await getRemoteUserId(supabase);
+  const userId = await getRemoteUserId();
 
   if (!userId) {
     return null;
@@ -253,7 +252,7 @@ export async function startRemoteStudySession({
   subjectId: string | null;
   supabase: SupabaseClient;
 }) {
-  const userId = await getRemoteUserId(supabase);
+  const userId = await getRemoteUserId();
 
   if (!userId) {
     return;
@@ -274,7 +273,7 @@ export async function startRemoteStudySession({
 }
 
 export async function stopRemoteStudySession(supabase: SupabaseClient) {
-  const userId = await getRemoteUserId(supabase);
+  const userId = await getRemoteUserId();
 
   if (!userId) {
     return;
@@ -300,7 +299,7 @@ export async function saveRemoteSubjects({
   subjects: RemoteSubject[];
   supabase: SupabaseClient;
 }) {
-  const userId = await getRemoteUserId(supabase);
+  const userId = await getRemoteUserId();
 
   if (!userId) {
     return subjects;
@@ -370,7 +369,7 @@ export async function saveRemoteSubjects({
 export async function fetchRemoteUnitState(
   supabase: SupabaseClient,
 ): Promise<RemoteUnitState | null> {
-  const userId = await getRemoteUserId(supabase);
+  const userId = await getRemoteUserId();
 
   if (!userId) {
     return null;
@@ -476,7 +475,7 @@ export async function fetchRemoteUnitCohort({
   offeringId: string;
   supabase: SupabaseClient;
 }): Promise<UnitCohortMember[]> {
-  const userId = await getRemoteUserId(supabase);
+  const userId = await getRemoteUserId();
 
   if (!userId) {
     return [];
@@ -512,7 +511,7 @@ export async function fetchRemoteUnitCohort({
 export async function fetchRemoteSocialSnapshot(
   supabase: SupabaseClient,
 ): Promise<RemoteSocialSnapshot | null> {
-  const userId = await getRemoteUserId(supabase);
+  const userId = await getRemoteUserId();
 
   if (!userId) {
     return null;
@@ -651,7 +650,7 @@ export async function updateRemoteStudyIcon({
   supabase: SupabaseClient;
   userId: string;
 }) {
-  const currentUserId = await getRemoteUserId(supabase);
+  const currentUserId = await getRemoteUserId();
 
   if (!currentUserId || currentUserId !== userId) {
     return;
