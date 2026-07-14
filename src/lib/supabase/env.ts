@@ -12,6 +12,10 @@ const adminEnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 });
 
+const studySessionEnvSchema = z.object({
+  SUPABASE_JWT_PRIVATE_JWK: z.string().min(1),
+});
+
 const webPushEnvSchema = z.object({
   VAPID_PUBLIC_KEY: z.string().min(1),
   VAPID_PRIVATE_KEY: z.string().min(1),
@@ -22,6 +26,7 @@ const webPushEnvSchema = z.object({
 });
 
 export type SupabaseAdminEnv = z.infer<typeof adminEnvSchema>;
+export type StudySessionEnv = z.infer<typeof studySessionEnvSchema>;
 export type WebPushEnv = z.infer<typeof webPushEnvSchema>;
 
 function readRawEnv() {
@@ -31,6 +36,7 @@ function readRawEnv() {
     VAPID_PUBLIC_KEY:
       process.env.VAPID_PUBLIC_KEY ?? process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    SUPABASE_JWT_PRIVATE_JWK: process.env.SUPABASE_JWT_PRIVATE_JWK,
     VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,
     VAPID_SUBJECT: process.env.VAPID_SUBJECT,
   };
@@ -48,6 +54,12 @@ export function getOptionalSupabasePublicEnv() {
 
 export function getOptionalSupabaseAdminEnv() {
   const parsed = adminEnvSchema.safeParse(readRawEnv());
+
+  return parsed.success ? parsed.data : null;
+}
+
+export function getOptionalStudySessionEnv() {
+  const parsed = studySessionEnvSchema.safeParse(readRawEnv());
 
   return parsed.success ? parsed.data : null;
 }

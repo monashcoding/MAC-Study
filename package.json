@@ -11,11 +11,11 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
     "class-variance-authority": "latest",
     "clsx": "latest",
     "date-fns": "latest",
+    "jose": "^6.2.3",
     "lucide-react": "latest",
     "next": "latest",
     "react": "latest",

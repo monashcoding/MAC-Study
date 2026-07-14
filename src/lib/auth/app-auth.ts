@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
 import {
-  ensureProfile,
+  getProfileById,
   needsProfileSetup,
   type Profile,
 } from "@/lib/supabase/profile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getServerStudySession } from "./server-session";
 
 export type AppAuthState =
   | {
@@ -34,15 +35,13 @@ export async function getAppAuthState(
     };
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getServerStudySession();
 
-  if (!user) {
+  if (!session) {
     redirect(`/auth/login?next=${encodeURIComponent(nextPath)}`);
   }
 
-  const profile = await ensureProfile(supabase, user);
+  const profile = await getProfileById(supabase, session.sub);
 
   if (needsProfileSetup(profile)) {
     redirect(`/auth/profile?next=${encodeURIComponent(nextPath)}`);
@@ -55,8 +54,8 @@ export async function getAppAuthState(
   return {
     mode: "authenticated",
     user: {
-      id: user.id,
-      email: user.email ?? null,
+      id: session.sub,
+      email: session.email,
     },
     profile,
   };
@@ -73,15 +72,13 @@ export async function getPendingAuthState(nextPath = "/app") {
     };
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getServerStudySession();
 
-  if (!user) {
+  if (!session) {
     redirect(`/auth/login?next=${encodeURIComponent(nextPath)}`);
   }
 
-  const profile = await ensureProfile(supabase, user);
+  const profile = await getProfileById(supabase, session.sub);
 
   if (needsProfileSetup(profile)) {
     redirect(`/auth/profile?next=${encodeURIComponent(nextPath)}`);
@@ -90,8 +87,8 @@ export async function getPendingAuthState(nextPath = "/app") {
   return {
     mode: "authenticated" as const,
     user: {
-      id: user.id,
-      email: user.email ?? null,
+      id: session.sub,
+      email: session.email,
     },
     profile,
   };

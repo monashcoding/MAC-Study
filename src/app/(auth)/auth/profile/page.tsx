@@ -2,7 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AtSign, UserRound } from "lucide-react";
-import { ensureProfile, needsProfileSetup } from "@/lib/supabase/profile";
+import { getSafeNextPath } from "@/lib/auth/safe-next-path";
+import { getServerStudySession } from "@/lib/auth/server-session";
+import { getProfileById, needsProfileSetup } from "@/lib/supabase/profile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { saveProfileIdentity } from "./actions";
 
@@ -17,22 +19,21 @@ export default async function ProfileSetupPage({
   searchParams,
 }: ProfileSetupPageProps) {
   const params = await searchParams;
-  const next = getSafeNextPath(params.next);
+  const safeNext = getSafeNextPath(params.next);
+  const next = safeNext.startsWith("/auth/profile") ? "/app" : safeNext;
   const supabase = await createSupabaseServerClient();
 
   if (!supabase) {
     redirect(next);
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getServerStudySession();
 
-  if (!user) {
+  if (!session) {
     redirect(`/auth/login?next=${encodeURIComponent(next)}`);
   }
 
-  const profile = await ensureProfile(supabase, user);
+  const profile = await getProfileById(supabase, session.sub);
 
   if (!needsProfileSetup(profile)) {
     redirect(next);
@@ -161,16 +162,4 @@ function getErrorText(error: string) {
   }
 
   return "Could not save your profile. Try again.";
-}
-
-function getSafeNextPath(next?: string) {
-  if (!next || !next.startsWith("/") || next.startsWith("//")) {
-    return "/app";
-  }
-
-  if (next.startsWith("/auth/profile")) {
-    return "/app";
-  }
-
-  return next;
 }

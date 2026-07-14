@@ -1,10 +1,15 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { getSafeNextPath } from "@/lib/auth/safe-next-path";
+import { getServerStudySession } from "@/lib/auth/server-session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function redeemInvite(formData: FormData) {
-  const next = getSafeNextPath(formData.get("next"));
+  const nextValue = formData.get("next");
+  const next = getSafeNextPath(
+    typeof nextValue === "string" ? nextValue : undefined,
+  );
   const inviteCode = `${formData.get("inviteCode") ?? ""}`.trim();
 
   if (!inviteCode) {
@@ -17,11 +22,9 @@ export async function redeemInvite(formData: FormData) {
     redirect(next);
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getServerStudySession();
 
-  if (!user) {
+  if (!session) {
     redirect(`/auth/login?next=${encodeURIComponent(next)}`);
   }
 
@@ -34,14 +37,4 @@ export async function redeemInvite(formData: FormData) {
   }
 
   redirect(next);
-}
-
-function getSafeNextPath(value: FormDataEntryValue | null) {
-  const next = typeof value === "string" ? value : "/app";
-
-  if (!next.startsWith("/") || next.startsWith("//")) {
-    return "/app";
-  }
-
-  return next;
 }

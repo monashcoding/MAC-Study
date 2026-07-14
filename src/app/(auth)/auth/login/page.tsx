@@ -2,12 +2,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/auth/login-form";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { getSafeNextPath } from "@/lib/auth/safe-next-path";
+import { getServerStudySession } from "@/lib/auth/server-session";
 
 type LoginPageProps = {
   searchParams: Promise<{
+    complete?: string;
     next?: string;
+    signedOut?: string;
   }>;
 };
 
@@ -15,15 +17,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const next = getSafeNextPath(params.next);
 
-  if (isSupabaseConfigured()) {
-    const supabase = await createSupabaseServerClient();
-    const { data } = supabase
-      ? await supabase.auth.getUser()
-      : { data: { user: null } };
+  const session = await getServerStudySession();
 
-    if (data.user) {
-      redirect(next);
-    }
+  if (session) {
+    redirect(next);
   }
 
   return (
@@ -59,22 +56,24 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               Study with your MAC crew
             </h1>
             <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-              Use Google or an email magic link. After sign-in, MAC access is
-              still gated by invite/admin approval.
+              Sign in through the central MAC account system. If you already
+              signed into another MAC app, you will continue automatically.
             </p>
           </div>
 
-          <LoginForm isConfigured={isSupabaseConfigured()} nextPath={next} />
+          {params.signedOut === "1" ? (
+            <p className="mt-5 rounded-md border border-[rgb(66_211_146/0.35)] bg-[rgb(66_211_146/0.07)] p-3 text-sm text-[var(--color-success)]">
+              You have been signed out of your MAC account.
+            </p>
+          ) : null}
+
+          <LoginForm
+            autoComplete={params.signedOut !== "1"}
+            nextPath={next}
+            returnedFromProvider={params.complete === "1"}
+          />
         </section>
       </div>
     </main>
   );
-}
-
-function getSafeNextPath(next?: string) {
-  if (!next || !next.startsWith("/") || next.startsWith("//")) {
-    return "/app";
-  }
-
-  return next;
 }
