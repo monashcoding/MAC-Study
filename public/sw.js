@@ -1,4 +1,4 @@
-const CACHE_NAME = "mac-study-shell-v4";
+const CACHE_NAME = "mac-study-shell-v5";
 const SHELL_ASSETS = ["/icons/mac-square.png"];
 
 self.addEventListener("install", (event) => {
@@ -26,12 +26,21 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") {
+  const requestUrl = new URL(event.request.url);
+
+  if (
+    event.request.method !== "GET" ||
+    requestUrl.origin !== self.location.origin ||
+    event.request.mode === "navigate" ||
+    requestUrl.pathname.startsWith("/api/")
+  ) {
     return;
   }
 
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request)),
+    fetch(event.request).catch(async () => {
+      return (await caches.match(event.request)) ?? Response.error();
+    }),
   );
 });
 
