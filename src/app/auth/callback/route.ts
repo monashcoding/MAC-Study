@@ -1,27 +1,29 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getSiteOrigin } from "@/lib/http/site-origin";
 import { ensureProfile, needsProfileSetup } from "@/lib/supabase/profile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
-  const requestUrl = new URL(request.url);
+  const requestUrl = request.nextUrl;
+  const siteOrigin = getSiteOrigin(requestUrl.origin);
   const code = requestUrl.searchParams.get("code");
   const next = getSafeNextPath(requestUrl.searchParams.get("next"));
   const error = requestUrl.searchParams.get("error_description");
 
   if (error) {
     return NextResponse.redirect(
-      new URL(`/auth/login?error=${encodeURIComponent(error)}`, requestUrl),
+      new URL(`/auth/login?error=${encodeURIComponent(error)}`, siteOrigin),
     );
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL("/auth/login", requestUrl));
+    return NextResponse.redirect(new URL("/auth/login", siteOrigin));
   }
 
   const supabase = await createSupabaseServerClient();
 
   if (!supabase) {
-    return NextResponse.redirect(new URL("/auth/login", requestUrl));
+    return NextResponse.redirect(new URL("/auth/login", siteOrigin));
   }
 
   const { error: exchangeError } =
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(
       new URL(
         `/auth/login?error=${encodeURIComponent(exchangeError.message)}`,
-        requestUrl,
+        siteOrigin,
       ),
     );
   }
@@ -45,12 +47,12 @@ export async function GET(request: NextRequest) {
 
     if (needsProfileSetup(profile)) {
       return NextResponse.redirect(
-        new URL(`/auth/profile?next=${encodeURIComponent(next)}`, requestUrl),
+        new URL(`/auth/profile?next=${encodeURIComponent(next)}`, siteOrigin),
       );
     }
   }
 
-  return NextResponse.redirect(new URL(next, requestUrl));
+  return NextResponse.redirect(new URL(next, siteOrigin));
 }
 
 function getSafeNextPath(next: string | null) {
