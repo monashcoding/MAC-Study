@@ -380,18 +380,9 @@ export function UnitsDashboard() {
 
   return (
     <div className="space-y-6">
-      <section className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold text-[var(--color-mac-yellow)]">
-            Unit cohorts
-          </p>
-          <h2 className="mt-1 text-2xl font-semibold">Your units</h2>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--color-text-muted)]">
-            Find MAC members taking the same unit in the same teaching period.
-          </p>
-        </div>
+      <section className="flex justify-end">
         <button
-          className="mac-focus inline-flex h-10 shrink-0 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414]"
+          className="mac-focus inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
           onClick={() => setIsAdding(true)}
           type="button"
         >
@@ -534,7 +525,7 @@ function OfferingDetail({
             type="button"
           >
             <ArrowLeft aria-hidden size={16} />
-            Units
+            Back
           </button>
         </div>
 
@@ -781,7 +772,7 @@ function AddUnitDialog({
           <div>
             <h2 className="text-lg font-semibold">Add a unit</h2>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Join the exact year and teaching-period cohort.
+              Choose the class you’re taking.
             </p>
           </div>
           <button
@@ -811,22 +802,15 @@ function AddUnitDialog({
                 <option key={suggestion.code} value={suggestion.code} />
               ))}
             </datalist>
-            <span
-              className={cn(
-                "mt-2 block text-xs",
-                codeInput && !valid
-                  ? "text-[var(--color-danger)]"
-                  : "text-[var(--color-text-muted)]",
-              )}
-            >
-              {codeInput && !valid
-                ? "Use three letters and four digits, such as FIT3077."
-                : `Canonical code: ${normalizedCode || "—"}`}
-            </span>
+            {codeInput && !valid ? (
+              <span className="mt-2 block text-xs text-[var(--color-danger)]">
+                Use a code like FIT3077.
+              </span>
+            ) : null}
           </label>
 
           <label className="block text-sm font-medium">
-            Personal name{" "}
+            Nickname{" "}
             <span className="text-[var(--color-text-muted)]">(optional)</span>
             <input
               className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
@@ -897,7 +881,7 @@ function AddUnitDialog({
             type="button"
           >
             <Plus aria-hidden size={17} />
-            {isSaving ? "Adding…" : "Add unit and timer subject"}
+            {isSaving ? "Adding…" : "Add unit"}
           </button>
         </div>
       </div>

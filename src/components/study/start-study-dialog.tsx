@@ -13,7 +13,7 @@ export function StartStudyDialog({
   onClose,
   onStart,
   subjects,
-  title = "Start study",
+  title = "Start a session",
 }: {
   onClose: () => void;
   onStart: (subjectId: string | null) => void;
@@ -53,7 +53,7 @@ export function StartStudyDialog({
                 General study
               </span>
               <span className="block truncate text-sm text-[var(--color-text-muted)]">
-                Counts toward total time only
+                No subject
               </span>
             </span>
             <BookOpen
@@ -76,13 +76,8 @@ export function StartStudyDialog({
               >
                 <Play aria-hidden size={18} />
               </span>
-              <span className="min-w-0">
-                <span className="block truncate font-semibold">
-                  {subject.name}
-                </span>
-                <span className="block truncate text-sm text-[var(--color-text-muted)]">
-                  Subject session
-                </span>
+              <span className="min-w-0 truncate font-semibold">
+                {subject.name}
               </span>
               <span
                 aria-hidden

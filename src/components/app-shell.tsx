@@ -49,14 +49,14 @@ const navItems = [
     href: "/app/friends",
     label: "Friends",
     title: "Friends",
-    subtitle: "See friends, profiles, and group invites.",
+    subtitle: "Your people, study time, and invitations.",
     icon: UserRound,
   },
   {
     href: "/app/units",
     label: "Units",
     title: "Units",
-    subtitle: "Find MAC members taking the same units.",
+    subtitle: "Find people in your current units.",
     icon: BookOpen,
   },
   {
@@ -64,14 +64,14 @@ const navItems = [
     label: "Statistics",
     mobileLabel: "Stats",
     title: "Statistics",
-    subtitle: "Review time, streaks, and subject split.",
+    subtitle: "See where your study time is going.",
     icon: BarChart3,
   },
   {
     href: "/app/profile",
     label: "Profile",
     title: "Profile",
-    subtitle: "Control access, nudges, and account settings.",
+    subtitle: "Manage your account and notifications.",
     icon: Settings,
   },
 ];
@@ -278,10 +278,7 @@ export function AppShell({
                     </h1>
                   </div>
                   <div className="hidden lg:block">
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-mac-yellow)]">
-                      MAC Study / {currentNav.label}
-                    </p>
-                    <h1 className="mt-1.5 text-3xl font-semibold tracking-[-0.025em]">
+                    <h1 className="text-3xl font-semibold tracking-[-0.025em]">
                       {currentNav.title}
                     </h1>
                     <p className="mt-1.5 max-w-xl text-sm text-[var(--color-text-muted)]">
@@ -321,7 +318,7 @@ export function AppShell({
               </header>
 
               <div className="px-4 pb-[calc(var(--mobile-nav-height)+1rem)] pt-5 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10">
-                <div className="lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.065)] lg:bg-[rgb(20_20_20/0.5)] lg:p-6 lg:shadow-[0_28px_80px_rgb(0_0_0/0.28)] xl:p-8">
+                <div className="lg:px-1 lg:py-2">
                   <AppWorkspace
                     activePathname={displayPathname}
                     authState={authState}
@@ -387,11 +384,6 @@ function Brand({ compact = false }: { compact?: boolean }) {
         >
           MAC Study
         </span>
-        {!compact ? (
-          <span className="mt-0.5 block text-xs font-medium uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
-            Focus together
-          </span>
-        ) : null}
       </span>
     </Link>
   );
