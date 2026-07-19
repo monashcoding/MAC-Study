@@ -87,6 +87,7 @@ export function StatisticsDashboard() {
   );
   const [now, setNow] = useState(() => new Date());
   const [isLoaded, setIsLoaded] = useState(false);
+  const [useDemoData, setUseDemoData] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<StatsPeriod>("week");
   const [chartView, setChartView] = useState<ChartView>("column");
 
@@ -100,6 +101,7 @@ export function StatisticsDashboard() {
         setSubjects(cachedRemoteState.subjects);
         setSessions(cachedRemoteState.sessions);
         setActiveSession(cachedRemoteState.activeSession);
+        setUseDemoData(false);
         setIsLoaded(true);
       }
 
@@ -112,6 +114,7 @@ export function StatisticsDashboard() {
           setSubjects(remoteState.subjects);
           setSessions(remoteState.sessions);
           setActiveSession(remoteState.activeSession);
+          setUseDemoData(false);
           setIsLoaded(true);
           return;
         }
@@ -130,6 +133,9 @@ export function StatisticsDashboard() {
           setSubjects(normalizeSubjects(parsed.subjects));
           setSessions(Array.isArray(parsed.sessions) ? parsed.sessions : []);
           setActiveSession(parsed.activeSession ?? null);
+          setUseDemoData(false);
+        } else {
+          setUseDemoData(true);
         }
 
         setIsLoaded(true);
@@ -149,33 +155,42 @@ export function StatisticsDashboard() {
     return () => window.clearInterval(interval);
   }, []);
 
-  const hasTimerData = isLoaded && (sessions.length > 0 || activeSession);
-  const stats = useMemo(
-    () =>
-      buildPeriodStats({
-        activeSession,
-        now,
-        period: selectedPeriod,
-        sessions,
-      }),
-    [activeSession, now, selectedPeriod, sessions],
-  );
-  const subjectTotals = hasTimerData
-    ? stats.subjectTotals
-    : fallbackSubjectTotals;
-  const totalSeconds = hasTimerData
-    ? stats.totalSeconds
-    : Object.values(fallbackSubjectTotals).reduce(
-        (total, seconds) => total + seconds,
-        0,
-      );
+  const stats = useMemo(() => {
+    const periodStats = buildPeriodStats({
+      activeSession,
+      now,
+      period: selectedPeriod,
+      sessions,
+    });
+
+    return isLoaded && useDemoData
+      ? buildDemoPeriodStats(selectedPeriod, now)
+      : periodStats;
+  }, [activeSession, isLoaded, now, selectedPeriod, sessions, useDemoData]);
+  const subjectTotals = stats.subjectTotals;
+  const totalSeconds = stats.totalSeconds;
   const subjectRows = subjects
     .map((subject) => ({
       ...subject,
       seconds: subjectTotals[subject.id] ?? 0,
     }))
-    .filter((subject) => subject.seconds > 0)
-    .sort((first, second) => second.seconds - first.seconds);
+    .filter((subject) => subject.seconds > 0);
+  const assignedSubjectSeconds = subjectRows.reduce(
+    (total, subject) => total + subject.seconds,
+    0,
+  );
+  const generalSeconds = Math.max(0, totalSeconds - assignedSubjectSeconds);
+
+  if (generalSeconds > 0) {
+    subjectRows.push({
+      color: "#9A9A92",
+      id: "general-study",
+      name: "General",
+      seconds: generalSeconds,
+    });
+  }
+
+  subjectRows.sort((first, second) => second.seconds - first.seconds);
   const subjectTotal = subjectRows.reduce(
     (total, subject) => total + subject.seconds,
     0,
@@ -287,7 +302,7 @@ function SubjectSplit({
   topSubject?: StudySubject & { seconds: number };
 }) {
   return (
-    <section className="grid gap-5 rounded-md bg-[rgb(255_255_255/0.035)] p-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:border lg:border-[rgb(255_255_255/0.07)] lg:p-6">
+    <section className="grid gap-5 rounded-lg border border-[rgb(255_255_255/0.06)] bg-[linear-gradient(145deg,rgb(255_255_255/0.04),rgb(255_255_255/0.018))] p-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:p-6">
       <div className="flex items-center justify-center">
         <div
           aria-label="Subject study split"
@@ -325,7 +340,7 @@ function SubjectSplit({
 
               return (
                 <div
-                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-2.5 py-2"
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg bg-[rgb(255_255_255/0.03)] px-3 py-2.5"
                   key={subject.id}
                 >
                   <div className="min-w-0">
@@ -398,7 +413,7 @@ function ColumnChart({
   const yTicks = [scaleMaxSeconds, scaleMaxSeconds / 2, 0];
 
   return (
-    <section className="rounded-md bg-[rgb(255_255_255/0.035)] p-3 lg:border lg:border-[rgb(255_255_255/0.07)] lg:p-5">
+    <section className="rounded-lg border border-[rgb(255_255_255/0.06)] bg-[linear-gradient(145deg,rgb(255_255_255/0.04),rgb(255_255_255/0.018))] p-4 lg:p-5">
       <div className="flex items-center gap-2">
         <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]">
           <Icon aria-hidden size={15} />
@@ -438,13 +453,16 @@ function ColumnChart({
 
                 return (
                   <div
-                    className="flex min-w-0 flex-1 flex-col justify-end"
+                    className="flex h-full min-w-0 flex-1 flex-col justify-end"
                     key={`${bucket.label}-${bucket.start.toISOString()}`}
                   >
                     <div
                       aria-label={`${bucket.label}: ${formatRoundedStudyTime(bucket.seconds)}`}
-                      className="w-full rounded-t bg-[var(--color-mac-yellow)]"
-                      style={{ height: `${height}%` }}
+                      className="w-full rounded-t-lg bg-[linear-gradient(180deg,#fff06a_0%,var(--color-mac-yellow)_100%)] shadow-[0_0_20px_rgb(255_227_48/0.12)]"
+                      style={{
+                        height: `${height}%`,
+                        minHeight: bucket.seconds ? "6px" : undefined,
+                      }}
                       title={formatRoundedStudyTime(bucket.seconds)}
                     />
                   </div>
@@ -555,6 +573,27 @@ function buildPeriodStats({
   }
 
   return { buckets, subjectTotals, totalSeconds };
+}
+
+function buildDemoPeriodStats(period: StatsPeriod, now: Date) {
+  const buckets = buildBuckets(period, now);
+  const totalSeconds = Object.values(fallbackSubjectTotals).reduce(
+    (total, seconds) => total + seconds,
+    0,
+  );
+  const currentBucket = buckets.find(
+    (bucket) => now >= bucket.start && now < bucket.end,
+  );
+
+  if (currentBucket) {
+    currentBucket.seconds = totalSeconds;
+  }
+
+  return {
+    buckets,
+    subjectTotals: { ...fallbackSubjectTotals },
+    totalSeconds,
+  };
 }
 
 function getStudyEntries({

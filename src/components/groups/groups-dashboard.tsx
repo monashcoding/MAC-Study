@@ -512,7 +512,7 @@ export function GroupsDashboard() {
             type="button"
           >
             <ArrowLeft aria-hidden size={17} />
-            Groups
+            Back
           </button>
 
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
@@ -727,9 +727,13 @@ export function GroupsDashboard() {
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-2xl font-semibold">Groups</h2>
+          <p className="text-sm font-medium text-[var(--color-text-muted)]">
+            {socialState.groups.length
+              ? `${socialState.groups.length} ${socialState.groups.length === 1 ? "group" : "groups"}`
+              : "Create a group to study together"}
+          </p>
           <button
-            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414]"
+            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
             onClick={() => setIsCreating(true)}
             type="button"
           >
@@ -921,7 +925,7 @@ function CreateGroupDialog({
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center lg:border-[rgb(255_255_255/0.06)] lg:px-4 lg:py-4">
+    <div className="rounded-lg border border-[rgb(255_255_255/0.055)] bg-[linear-gradient(145deg,rgb(255_255_255/0.045),rgb(255_255_255/0.018))] px-3 py-3 text-center lg:px-4 lg:py-4">
       <p className="text-xl font-semibold tabular-nums lg:text-2xl">{value}</p>
       <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
         {label}

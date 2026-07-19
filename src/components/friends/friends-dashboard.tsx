@@ -273,7 +273,7 @@ export function FriendsDashboard() {
             type="button"
           >
             <ArrowLeft aria-hidden size={17} />
-            Friends
+            Back
           </button>
 
           <div className="flex items-center gap-4">
@@ -381,9 +381,13 @@ export function FriendsDashboard() {
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-2xl font-semibold">Friends</h2>
+          <p className="text-sm font-medium text-[var(--color-text-muted)]">
+            {friendList.length
+              ? `${friendList.length} ${friendList.length === 1 ? "friend" : "friends"}`
+              : "Add someone to get started"}
+          </p>
           <button
-            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414]"
+            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
             onClick={() => setIsAdding(true)}
             type="button"
           >
@@ -395,7 +399,7 @@ export function FriendsDashboard() {
         <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
           {friendList.map((friend) => (
             <button
-              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
+              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.12)] hover:bg-[rgb(255_255_255/0.045)] active:scale-[0.99] lg:min-h-20 lg:px-4"
               key={friend.id}
               onClick={() => {
                 setSelectedFriendId(friend.id);
@@ -474,7 +478,7 @@ function AddFriendDialog({
     >
       <div className="max-h-[calc(var(--app-viewport-height)-2rem)] w-full max-w-xl overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
         <div className="flex items-center justify-between gap-3 p-4">
-          <h2 className="text-lg font-semibold">Add friend</h2>
+          <h2 className="text-lg font-semibold">Add a friend</h2>
           <button
             className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
             onClick={onClose}
@@ -521,7 +525,7 @@ function AddFriendDialog({
                 <input
                   className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
                   onChange={(event) => onNameChange(event.target.value)}
-                  placeholder="Friend name"
+                  placeholder="e.g. Alex Chen"
                   value={name}
                 />
               </label>
@@ -531,7 +535,7 @@ function AddFriendDialog({
                 <input
                   className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
                   onChange={(event) => onHandleChange(event.target.value)}
-                  placeholder="@friend"
+                  placeholder="e.g. @alex"
                   value={handle}
                 />
               </label>
@@ -578,7 +582,7 @@ function AddFriendDialog({
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center lg:border-[rgb(255_255_255/0.06)] lg:px-4 lg:py-4">
+    <div className="rounded-lg border border-[rgb(255_255_255/0.055)] bg-[linear-gradient(145deg,rgb(255_255_255/0.045),rgb(255_255_255/0.018))] px-3 py-3 text-center lg:px-4 lg:py-4">
       <p className="text-xl font-semibold tabular-nums lg:text-2xl">{value}</p>
       <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
         {label}
@@ -589,7 +593,7 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
 
 function ProfileStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center">
+    <div className="rounded-lg bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center">
       <p className="font-mono text-sm font-semibold tabular-nums sm:text-base">
         {value}
       </p>

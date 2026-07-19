@@ -12,7 +12,7 @@ type PushStatus = {
 
 export function PushNotificationSettings() {
   const [pushStatus, setPushStatus] = useState<PushStatus>({
-    message: "Checking this device",
+    message: "Checking…",
     state: "checking",
   });
   const [vapidPublicKey, setVapidPublicKey] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function PushNotificationSettings() {
       if (!supportsPush()) {
         if (!cancelled) {
           setPushStatus({
-            message: "Not available on this browser",
+            message: "Unavailable here",
             state: "unsupported",
           });
         }
@@ -37,7 +37,7 @@ export function PushNotificationSettings() {
       if (Notification.permission === "denied") {
         if (!cancelled) {
           setPushStatus({
-            message: "Blocked in browser settings",
+            message: "Blocked by browser",
             state: "blocked",
           });
         }
@@ -75,7 +75,7 @@ export function PushNotificationSettings() {
           pushSubscriptionUsesKey(subscription, keyBody.publicKey)
         ) {
           setPushStatus({
-            message: "Lock-screen nudges enabled",
+            message: "On for this device",
             state: "enabled",
           });
           return;
@@ -83,14 +83,14 @@ export function PushNotificationSettings() {
 
         setPushStatus({
           message: subscription
-            ? "Push key changed - enable again"
-            : "Enable lock-screen nudges",
+            ? "Reconnect this device"
+            : "Off on this device",
           state: "ready",
         });
       } catch {
         if (!cancelled) {
           setPushStatus({
-            message: "Push keys are not configured",
+            message: "Unavailable here",
             state: "unsupported",
           });
         }
@@ -109,7 +109,7 @@ export function PushNotificationSettings() {
       return;
     }
 
-    setPushStatus({ message: "Opening permission prompt", state: "checking" });
+    setPushStatus({ message: "Waiting for permission…", state: "checking" });
 
     const permission = await Notification.requestPermission();
 
@@ -117,8 +117,8 @@ export function PushNotificationSettings() {
       setPushStatus({
         message:
           permission === "denied"
-            ? "Blocked in browser settings"
-            : "Permission not enabled",
+            ? "Blocked by browser"
+            : "Permission not granted",
         state: permission === "denied" ? "blocked" : "ready",
       });
       return;
@@ -155,12 +155,12 @@ export function PushNotificationSettings() {
       }
 
       setPushStatus({
-        message: "Lock-screen nudges enabled",
+        message: "On for this device",
         state: "enabled",
       });
     } catch {
       setPushStatus({
-        message: "Could not enable on this device",
+        message: "Couldn’t enable alerts",
         state: "ready",
       });
     }
@@ -169,9 +169,9 @@ export function PushNotificationSettings() {
   const enabled = pushState === "enabled";
 
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md bg-[rgb(255_255_255/0.035)] p-4">
+    <div className="flex items-center justify-between gap-4 rounded-md px-3 py-4 transition hover:bg-[rgb(255_255_255/0.04)]">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--color-surface-raised)] text-[var(--color-mac-yellow)]">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[rgb(255_255_255/0.045)] text-[var(--color-mac-yellow)]">
           {enabled ? (
             <CheckCircle2 aria-hidden size={19} />
           ) : (
@@ -179,7 +179,7 @@ export function PushNotificationSettings() {
           )}
         </span>
         <div className="min-w-0">
-          <p className="font-medium">Nudges</p>
+          <p className="font-medium">Nudge alerts</p>
           <p className="truncate text-sm text-[var(--color-text-muted)]">
             {message}
           </p>
@@ -188,7 +188,7 @@ export function PushNotificationSettings() {
 
       <button
         className={cn(
-          "mac-focus inline-flex h-9 shrink-0 items-center justify-center rounded-md px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
+          "mac-focus inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
           enabled
             ? "bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]"
             : "bg-[var(--color-mac-yellow)] text-[#141414]",

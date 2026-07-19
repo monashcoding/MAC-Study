@@ -399,7 +399,7 @@ export function TimerDashboard() {
           ) : (
             <Play aria-hidden size={18} />
           )}
-          {activeSession ? "Stop study" : "Start study"}
+          {activeSession ? "Stop session" : "Start session"}
         </button>
       </section>
 
@@ -574,7 +574,7 @@ function SubjectEditor({
               type="button"
             >
               <ArrowLeft aria-hidden size={17} />
-              Subjects
+              Back
             </button>
 
             {editingSubject.unitOfferingId ? (
