@@ -644,9 +644,11 @@ export async function fetchRemoteSocialSnapshot(
   return {
     currentUserId: userId,
     availableFriends,
-    publicGroups: ((publicGroupsResult.error
-      ? []
-      : (publicGroupsResult.data ?? [])) as PublicGroupRow[])
+    publicGroups: (
+      (publicGroupsResult.error
+        ? []
+        : (publicGroupsResult.data ?? [])) as PublicGroupRow[]
+    )
       .filter(
         (group) =>
           !memberships.some(
@@ -831,19 +833,20 @@ export async function sendRemoteGroupChatMessage({
 export function subscribeToRemoteGroupChat(
   supabase: SupabaseClient,
   groupId: string,
-  onChange: () => void,
+  onMessage: (message: RemoteGroupChatMessage) => void,
 ) {
   const channel = supabase
     .channel(`mac-study-chat-${groupId}-${Math.random().toString(36).slice(2)}`)
     .on(
       "postgres_changes",
       {
-        event: "*",
+        event: "INSERT",
         filter: `group_id=eq.${groupId}`,
         schema: "public",
         table: "group_chat_messages",
       },
-      onChange,
+      (payload) =>
+        onMessage(groupChatMessageFromRow(payload.new as GroupChatRow)),
     )
     .subscribe();
 

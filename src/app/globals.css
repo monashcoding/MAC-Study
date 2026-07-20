@@ -190,6 +190,27 @@ body {
   padding-inline: 0.5rem;
   padding-bottom: var(--safe-area-bottom);
   background: rgb(23 23 23 / 0.94);
+  transition:
+    opacity 160ms ease,
+    transform 180ms ease,
+    visibility 160ms ease;
+}
+
+.mac-chat-composer-active .mac-mobile-nav {
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(100%);
+}
+
+.mac-chat-view-active .mac-app-scroll {
+  overscroll-behavior: none;
+}
+
+@media (max-width: 1023px) {
+  .mac-chat-view-active .mac-app-scroll {
+    overflow-y: hidden;
+  }
 }
 
 .mac-mobile-nav::before {
