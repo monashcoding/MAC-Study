@@ -1,4 +1,4 @@
-import { getElapsedSeconds, getLocalDateKey } from "@/lib/timer";
+import { getElapsedSeconds, getLocalDateKey } from "./timer";
 
 export const SOCIAL_STORAGE_KEY = "mac-study-social-state";
 
@@ -29,11 +29,13 @@ export const PERSON_ICON_KEYS = [
 export type GroupIconKey = (typeof GROUP_ICON_KEYS)[number];
 export type PersonIconKey = (typeof PERSON_ICON_KEYS)[number];
 export type GroupRole = "owner" | "admin" | "member";
+export type GroupVisibility = "private" | "public";
 
 export type RankingWindow = "day" | "week" | "month";
 
 export type SocialFriend = {
   id: string;
+  isFriend?: boolean;
   name: string;
   handle: string;
   initials: string;
@@ -55,7 +57,9 @@ export type SocialGroup = {
   name: string;
   icon: GroupIconKey;
   memberIds: string[];
+  memberRoles: Record<string, GroupRole>;
   currentUserRole?: GroupRole;
+  visibility: GroupVisibility;
 };
 
 export type SocialState = {
@@ -167,14 +171,23 @@ export const defaultSocialState: SocialState = {
       name: "Exam Sprint",
       icon: "target",
       memberIds: ["you", "maya", "josh", "ari"],
+      memberRoles: {
+        you: "owner",
+        maya: "admin",
+        josh: "member",
+        ari: "member",
+      },
       currentUserRole: "owner",
+      visibility: "private",
     },
     {
       id: "lab-night",
       name: "Lab Night",
       icon: "book",
       memberIds: ["you", "josh", "lucy"],
+      memberRoles: { you: "admin", josh: "owner", lucy: "member" },
       currentUserRole: "admin",
+      visibility: "public",
     },
   ],
 };
@@ -231,6 +244,8 @@ function normalizeFriend(value: unknown) {
 
   return {
     id: asString(value.id) || makeStableId(name),
+    isFriend:
+      typeof value.isFriend === "boolean" ? value.isFriend : undefined,
     name,
     handle: asString(value.handle) || `@${makeStableId(name)}`,
     initials: getInitials(asString(value.initials) || name),
@@ -266,6 +281,19 @@ function normalizeGroup(value: unknown) {
   }
 
   const icon = asString(value.icon);
+  const memberIds = Array.isArray(value.memberIds)
+    ? uniqueIds(value.memberIds.map(asString))
+    : ["you"];
+  const currentUserRole = isKnownGroupRole(asString(value.currentUserRole))
+    ? (asString(value.currentUserRole) as GroupRole)
+    : undefined;
+  const memberRoles = isObject(value.memberRoles)
+    ? normalizeMemberRoles(value.memberRoles)
+    : {};
+
+  if (currentUserRole && memberIds.includes("you") && !memberRoles.you) {
+    memberRoles.you = currentUserRole;
+  }
 
   return {
     id: asString(value.id) || makeStableId(name),
@@ -273,13 +301,22 @@ function normalizeGroup(value: unknown) {
     icon: GROUP_ICON_KEYS.includes(icon as GroupIconKey)
       ? (icon as GroupIconKey)
       : "users",
-    memberIds: Array.isArray(value.memberIds)
-      ? uniqueIds(value.memberIds.map(asString))
-      : ["you"],
-    currentUserRole: isKnownGroupRole(asString(value.currentUserRole))
-      ? (asString(value.currentUserRole) as GroupRole)
-      : undefined,
+    memberIds,
+    memberRoles,
+    currentUserRole,
+    visibility: asString(value.visibility) === "public" ? "public" : "private",
   } satisfies SocialGroup;
+}
+
+function normalizeMemberRoles(value: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([memberId, role]) => [memberId, asString(role)] as const)
+      .filter(
+        (entry): entry is [string, GroupRole] =>
+          Boolean(entry[0]) && isKnownGroupRole(entry[1]),
+      ),
+  );
 }
 
 function ensureSelf(friends: SocialFriend[]) {

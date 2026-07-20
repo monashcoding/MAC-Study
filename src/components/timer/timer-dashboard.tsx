@@ -3,12 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  ArrowLeft,
+  Check,
   CircleStop,
   Pencil,
   Play,
   Plus,
-  Save,
   Trash2,
   X,
 } from "lucide-react";
@@ -538,26 +537,31 @@ function SubjectEditor({
     setEditingSubjectId(null);
   }
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div
       aria-modal="true"
       className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] items-center justify-center bg-black/58 px-3 pb-[max(0.75rem,var(--safe-area-bottom))] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
       role="dialog"
     >
-      <div className="max-h-[min(88dvh,720px)] w-full max-w-xl overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-background)] p-4">
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold">
-              {editingSubject ? "Subject details" : "Edit subjects"}
-            </h2>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              {editingSubject
-                ? "Update the name and play colour."
-                : "Choose a subject to edit, or add a new one."}
-            </p>
-          </div>
+      <div className="max-h-[min(88dvh,720px)] w-full max-w-lg overflow-y-auto rounded-2xl border border-[rgb(255_255_255/0.09)] bg-[var(--color-background)] shadow-[0_28px_90px_rgb(0_0_0/0.6)]">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[rgb(20_20_20/0.96)] px-5 py-4 backdrop-blur-xl">
+          <h2 className="text-xl font-semibold tracking-[-0.02em]">
+            {editingSubject ? "Subject details" : "Edit subjects"}
+          </h2>
           <button
-            className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
+            className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.06)] hover:text-[var(--color-text)]"
             onClick={onClose}
             type="button"
           >
@@ -567,18 +571,9 @@ function SubjectEditor({
         </div>
 
         {editingSubject ? (
-          <div className="space-y-5 p-4">
-            <button
-              className="mac-focus inline-flex h-10 items-center gap-2 rounded-md text-sm font-semibold text-[var(--color-text-muted)]"
-              onClick={() => setEditingSubjectId(null)}
-              type="button"
-            >
-              <ArrowLeft aria-hidden size={17} />
-              Back
-            </button>
-
+          <div className="space-y-6 p-5">
             {editingSubject.unitOfferingId ? (
-              <div className="rounded-md border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] p-3">
+              <div className="rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] p-3.5">
                 <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
                   Canonical unit code
                 </p>
@@ -591,48 +586,54 @@ function SubjectEditor({
             <label className="block text-sm font-medium">
               {editingSubject.unitOfferingId ? "Personal name" : "Name"}
               <input
-                className="mac-focus mt-2 h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
+                className="mac-focus mt-2 h-12 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 font-semibold text-[var(--color-text)] transition hover:border-[rgb(255_255_255/0.15)]"
                 maxLength={60}
                 onChange={(event) =>
                   onUpdate(editingSubject.id, { name: event.target.value })
                 }
                 value={editingSubject.name}
               />
-              {editingSubject.unitOfferingId ? (
-                <span className="mt-2 block text-xs leading-5 text-[var(--color-text-muted)]">
-                  This changes your timer label only. The shared unit code stays
-                  fixed.
-                </span>
-              ) : null}
             </label>
 
             <div>
               <p className="text-sm font-medium">Play colour</p>
-              <div className="mt-3 flex flex-wrap gap-3">
+              <div className="mt-2 grid grid-cols-6 gap-2 rounded-2xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.02)] p-2">
                 {SUBJECT_COLORS.map((color) => {
                   const selected = color === editingSubject.color;
 
                   return (
                     <button
+                      aria-pressed={selected}
                       aria-label={`Use colour ${color}`}
                       className={cn(
-                        "mac-focus h-10 w-10 rounded-full border transition",
+                        "mac-focus flex aspect-square min-w-0 items-center justify-center rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:brightness-110",
                         selected
-                          ? "border-white ring-2 ring-[var(--color-mac-yellow)] ring-offset-2 ring-offset-[var(--color-background)]"
-                          : "border-[var(--color-border)]",
+                          ? "border-white/80 ring-2 ring-white/80 ring-offset-2 ring-offset-[var(--color-background)]"
+                          : "border-white/10",
                       )}
                       key={color}
                       onClick={() => onUpdate(editingSubject.id, { color })}
                       style={{ backgroundColor: color }}
                       type="button"
-                    />
+                    >
+                      {selected ? (
+                        <span
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/20"
+                          style={{
+                            color: color === "#FFE330" ? "#141414" : "white",
+                          }}
+                        >
+                          <Check aria-hidden size={13} strokeWidth={3} />
+                        </span>
+                      ) : null}
+                    </button>
                   );
                 })}
               </div>
             </div>
 
             <button
-              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[rgb(255_107_107/0.45)] px-3 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-35"
+              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[rgb(255_107_107/0.35)] bg-[rgb(255_107_107/0.035)] px-3 text-sm font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-35"
               disabled={draftSubjects.length <= 1}
               onClick={() => deleteSubject(editingSubject.id)}
               type="button"
@@ -671,7 +672,7 @@ function SubjectEditor({
 
         <div
           className={cn(
-            "sticky bottom-0 flex flex-col gap-2 border-t border-[var(--color-border)] bg-[var(--color-background)] p-4 sm:flex-row",
+            "sticky bottom-0 flex flex-col gap-2 border-t border-[var(--color-border)] bg-[rgb(20_20_20/0.96)] p-5 backdrop-blur-xl sm:flex-row",
             editingSubject ? "sm:justify-end" : "sm:justify-between",
           )}
         >
@@ -686,11 +687,10 @@ function SubjectEditor({
             </button>
           )}
           <button
-            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414]"
+            className="mac-focus inline-flex h-12 items-center justify-center rounded-xl bg-[var(--color-mac-yellow)] px-5 text-sm font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.99]"
             onClick={onSave}
             type="button"
           >
-            <Save aria-hidden size={17} />
             Save changes
           </button>
         </div>
