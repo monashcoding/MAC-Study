@@ -31,7 +31,9 @@ export function GroupChat({
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const chatRef = useRef<HTMLElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const composerFocusedRef = useRef(false);
   const selfId = currentUserId ?? "you";
   const memberById = new Map(members.map((member) => [member.id, member]));
 
@@ -39,7 +41,11 @@ export function GroupChat({
     if (!remoteClient) return;
 
     try {
-      setMessages(await fetchRemoteGroupChatMessages(remoteClient, groupId));
+      const nextMessages = await fetchRemoteGroupChatMessages(
+        remoteClient,
+        groupId,
+      );
+      setMessages((current) => mergeMessages(current, nextMessages));
       setFeedback(null);
     } catch {
       setFeedback("Chat could not be loaded.");
@@ -52,25 +58,112 @@ export function GroupChat({
     let cancelled = false;
     void fetchRemoteGroupChatMessages(remoteClient, groupId)
       .then((nextMessages) => {
-        if (!cancelled) setMessages(nextMessages);
+        if (!cancelled) {
+          setMessages((current) => mergeMessages(current, nextMessages));
+        }
       })
       .catch(() => {
         if (!cancelled) setFeedback("Chat could not be loaded.");
       });
 
-    const unsubscribe = subscribeToRemoteGroupChat(remoteClient, groupId, () => {
-      void refresh();
-    });
+    const unsubscribe = subscribeToRemoteGroupChat(
+      remoteClient,
+      groupId,
+      (message) => {
+        if (!cancelled) {
+          setMessages((current) => mergeMessages(current, [message]));
+        }
+      },
+    );
+    const poll = window.setInterval(() => void refresh(), 5000);
+
+    function refreshWhenVisible() {
+      if (document.visibilityState === "visible") void refresh();
+    }
+
+    document.addEventListener("visibilitychange", refreshWhenVisible);
 
     return () => {
       cancelled = true;
+      window.clearInterval(poll);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
       unsubscribe();
     };
   }, [groupId, refresh, remoteClient]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const messageList = messageListRef.current;
+    if (!messageList) return;
+
+    messageList.scrollTo({
+      behavior: "smooth",
+      top: messageList.scrollHeight,
+    });
   }, [messages]);
+
+  useEffect(() => {
+    if (remoteClient) return;
+
+    function syncLocalMessages(event: StorageEvent) {
+      if (event.key === LOCAL_CHAT_KEY) {
+        setMessages(readLocalMessages(groupId));
+      }
+    }
+
+    window.addEventListener("storage", syncLocalMessages);
+    return () => window.removeEventListener("storage", syncLocalMessages);
+  }, [groupId, remoteClient]);
+
+  useEffect(() => {
+    const body = document.body;
+    const visualViewport = window.visualViewport;
+    let frame = 0;
+
+    function sizeChat() {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const chat = chatRef.current;
+        if (!chat) return;
+
+        if (!window.matchMedia("(max-width: 1023px)").matches) {
+          chat.style.removeProperty("height");
+          return;
+        }
+
+        const viewportHeight = visualViewport?.height ?? window.innerHeight;
+        const navHeight =
+          document.querySelector<HTMLElement>(".mac-mobile-nav")
+            ?.offsetHeight ?? 0;
+        const bottomGap = composerFocusedRef.current ? 8 : navHeight + 12;
+        const availableHeight = Math.max(
+          composerFocusedRef.current ? 160 : 260,
+          viewportHeight - chat.getBoundingClientRect().top - bottomGap,
+        );
+
+        chat.style.height = `${availableHeight}px`;
+      });
+    }
+
+    body.classList.add("mac-chat-view-active");
+    sizeChat();
+    window.addEventListener("resize", sizeChat);
+    visualViewport?.addEventListener("resize", sizeChat);
+    visualViewport?.addEventListener("scroll", sizeChat);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      body.classList.remove("mac-chat-view-active", "mac-chat-composer-active");
+      window.removeEventListener("resize", sizeChat);
+      visualViewport?.removeEventListener("resize", sizeChat);
+      visualViewport?.removeEventListener("scroll", sizeChat);
+    };
+  }, []);
+
+  function setComposerFocused(focused: boolean) {
+    composerFocusedRef.current = focused;
+    document.body.classList.toggle("mac-chat-composer-active", focused);
+    window.dispatchEvent(new Event("resize"));
+  }
 
   async function sendMessage() {
     const body = draft.trim();
@@ -112,9 +205,15 @@ export function GroupChat({
   }
 
   return (
-    <section className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)]">
-      <div className="flex h-[min(52dvh,520px)] flex-col">
-        <div className="flex-1 space-y-3 overflow-y-auto p-3 sm:p-4">
+    <section
+      className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] lg:h-[min(52dvh,520px)]"
+      ref={chatRef}
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        <div
+          className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 sm:p-4"
+          ref={messageListRef}
+        >
           {messages.length ? (
             messages.map((message) => {
               const isOwn = message.userId === selfId;
@@ -176,7 +275,6 @@ export function GroupChat({
               </p>
             </div>
           )}
-          <div ref={endRef} />
         </div>
 
         <form
@@ -199,7 +297,9 @@ export function GroupChat({
               aria-label="Message"
               className="mac-focus h-11 min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)]"
               maxLength={2000}
+              onBlur={() => setComposerFocused(false)}
               onChange={(event) => setDraft(event.target.value)}
+              onFocus={() => setComposerFocused(true)}
               placeholder="Message the group…"
               value={draft}
             />
@@ -207,6 +307,7 @@ export function GroupChat({
               aria-label="Send message"
               className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414] disabled:opacity-45"
               disabled={!draft.trim() || isSending}
+              onPointerDown={(event) => event.preventDefault()}
               type="submit"
             >
               <Send aria-hidden size={17} />
@@ -215,6 +316,21 @@ export function GroupChat({
         </form>
       </div>
     </section>
+  );
+}
+
+function mergeMessages(
+  current: RemoteGroupChatMessage[],
+  incoming: RemoteGroupChatMessage[],
+) {
+  const byId = new Map(current.map((message) => [message.id, message]));
+
+  incoming.forEach((message) => byId.set(message.id, message));
+
+  return [...byId.values()].sort(
+    (first, second) =>
+      new Date(first.createdAt).getTime() -
+      new Date(second.createdAt).getTime(),
   );
 }
 
