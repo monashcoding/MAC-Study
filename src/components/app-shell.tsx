@@ -93,6 +93,9 @@ export function AppShell({
   const currentNav =
     navItems.find((item) => isActive(displayPathname, item.href)) ??
     navItems[0];
+  const isGroupDetail =
+    isActive(displayPathname, "/app/groups") && Boolean(headerDetail);
+  const currentTitle = isGroupDetail ? headerDetail : currentNav.title;
   const accountName =
     authState.mode === "authenticated"
       ? authState.profile.display_name?.trim() || "MAC member"
@@ -270,16 +273,22 @@ export function AppShell({
 
             <main className="min-w-0 flex-1 lg:min-h-dvh">
               <header className="sticky top-0 z-20 bg-[rgb(23_23_23/0.94)] px-4 pb-3 pt-[calc(var(--safe-area-top)+0.85rem)] backdrop-blur lg:z-30 lg:border-b lg:border-[rgb(255_255_255/0.07)] lg:bg-[rgb(23_23_23/0.84)] lg:px-8 lg:py-5 xl:px-12">
-                <div className="mx-auto flex max-w-[80rem] items-center justify-between gap-4">
+                <div className="relative mx-auto flex max-w-[80rem] items-center justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3 lg:hidden">
                     <LogoMark size="sm" />
-                    <h1 className="min-w-0 truncate text-xl font-semibold">
-                      {currentNav.title}
+                    <h1
+                      className={cn(
+                        "min-w-0 truncate text-xl font-semibold",
+                        isGroupDetail &&
+                          "pointer-events-none absolute left-1/2 max-w-[calc(100%-7rem)] -translate-x-1/2 text-center",
+                      )}
+                    >
+                      {currentTitle}
                     </h1>
                   </div>
                   <div className="hidden lg:block">
                     <h1 className="text-3xl font-semibold tracking-[-0.025em]">
-                      {currentNav.title}
+                      {currentTitle}
                     </h1>
                     <p className="mt-1.5 max-w-xl text-sm text-[var(--color-text-muted)]">
                       {currentNav.subtitle}

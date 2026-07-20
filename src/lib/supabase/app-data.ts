@@ -7,6 +7,7 @@ import {
   PROFILE_COLORS,
   type GroupIconKey,
   type GroupRole,
+  type GroupVisibility,
   type PersonIconKey,
   type SocialFriend,
   type SocialGroup,
@@ -59,7 +60,22 @@ export type RemoteTimerState = {
 export type RemoteSocialSnapshot = {
   socialState: SocialState;
   availableFriends: SocialFriend[];
+  publicGroups: RemotePublicGroup[];
   currentUserId: string;
+};
+
+export type RemotePublicGroup = {
+  id: string;
+  name: string;
+  memberCount: number;
+};
+
+export type RemoteGroupChatMessage = {
+  id: string;
+  groupId: string;
+  userId: string;
+  body: string;
+  createdAt: string;
 };
 
 export type RemoteNudgeNotification = {
@@ -144,6 +160,8 @@ type GroupRow = {
   id: string;
   name: string;
   icon?: string | null;
+  invite_code?: string;
+  visibility: "invite_only" | "public";
 };
 
 type GroupMemberRow = {
@@ -175,6 +193,20 @@ type NudgeRow = {
   sender_id: string;
   recipient_id: string;
   message: string | null;
+  created_at: string;
+};
+
+type PublicGroupRow = {
+  group_id: string;
+  group_name: string;
+  member_count: number;
+};
+
+type GroupChatRow = {
+  id: string;
+  group_id: string;
+  user_id: string;
+  body: string;
   created_at: string;
 };
 
@@ -523,6 +555,7 @@ export async function fetchRemoteSocialSnapshot(
     groupsResult,
     membershipsResult,
     sessionsResult,
+    publicGroupsResult,
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -531,9 +564,12 @@ export async function fetchRemoteSocialSnapshot(
       )
       .order("display_name", { ascending: true }),
     supabase.from("friendships").select("friend_id").eq("user_id", userId),
-    supabase.from("groups").select("id, name, icon").order("created_at", {
-      ascending: false,
-    }),
+    supabase
+      .from("groups")
+      .select("id, name, icon, invite_code, visibility")
+      .order("created_at", {
+        ascending: false,
+      }),
     supabase
       .from("group_members")
       .select("group_id, user_id, role, status")
@@ -546,6 +582,7 @@ export async function fetchRemoteSocialSnapshot(
       .is("deleted_at", null)
       .order("started_at", { ascending: false })
       .limit(1000),
+    supabase.rpc("list_public_study_groups"),
   ]);
 
   if (profilesResult.error) throw profilesResult.error;
@@ -570,9 +607,10 @@ export async function fetchRemoteSocialSnapshot(
   const visibleProfiles = profiles.filter((profile) =>
     visibleProfileIds.has(profile.id),
   );
-  const remoteFriends = visibleProfiles.map((profile) =>
-    friendFromProfile(profile, sessions),
-  );
+  const remoteFriends = visibleProfiles.map((profile) => ({
+    ...friendFromProfile(profile, sessions),
+    isFriend: profile.id === userId || friendIds.has(profile.id),
+  }));
   const socialGroups: SocialGroup[] = groups.map((group) => ({
     id: group.id,
     name: group.name,
@@ -586,32 +624,59 @@ export async function fetchRemoteSocialSnapshot(
         (member) => member.group_id === group.id && member.user_id === userId,
       )?.role,
     ),
+    memberRoles: Object.fromEntries(
+      memberships
+        .filter((member) => member.group_id === group.id)
+        .map((member) => [
+          member.user_id,
+          normalizeGroupRole(member.role) ?? "member",
+        ]),
+    ),
+    visibility: normalizeGroupVisibility(group.visibility),
   }));
   const availableFriends = profiles
     .filter((profile) => profile.id !== userId && !friendIds.has(profile.id))
-    .map((profile) => friendFromProfile(profile, []));
+    .map((profile) => ({
+      ...friendFromProfile(profile, []),
+      isFriend: false,
+    }));
 
   return {
     currentUserId: userId,
     availableFriends,
+    publicGroups: ((publicGroupsResult.error
+      ? []
+      : (publicGroupsResult.data ?? [])) as PublicGroupRow[])
+      .filter(
+        (group) =>
+          !memberships.some(
+            (member) =>
+              member.group_id === group.group_id && member.user_id === userId,
+          ),
+      )
+      .map((group) => ({
+        id: group.group_id,
+        name: group.group_name,
+        memberCount: Number(group.member_count),
+      })),
     socialState: {
       friends: remoteFriends,
-      groups: socialGroups.filter((group) => group.memberIds.length),
+      groups: socialGroups.filter((group) => group.currentUserRole),
     },
   };
 }
 
 export async function createRemoteGroup({
-  icon,
   name,
   supabase,
+  visibility,
 }: {
-  icon: GroupIconKey;
   name: string;
   supabase: SupabaseClient;
+  visibility: GroupVisibility;
 }) {
   const { data, error } = await supabase.rpc("create_study_group", {
-    group_icon: icon,
+    group_icon: "users",
     group_name: name,
   });
 
@@ -619,26 +684,172 @@ export async function createRemoteGroup({
     throw error;
   }
 
-  return data as string | null;
+  const groupId = data as string | null;
+
+  if (groupId && visibility === "public") {
+    const { error: visibilityError } = await supabase
+      .from("groups")
+      .update({ visibility: "public" })
+      .eq("id", groupId);
+
+    if (visibilityError) throw visibilityError;
+  }
+
+  return groupId;
 }
 
-export async function updateRemoteGroupIcon({
+export async function updateRemoteGroupDetails({
   groupId,
-  icon,
+  name,
   supabase,
+  visibility,
 }: {
   groupId: string;
-  icon: GroupIconKey;
+  name: string;
   supabase: SupabaseClient;
+  visibility: GroupVisibility;
 }) {
   const { error } = await supabase
     .from("groups")
-    .update({ icon })
+    .update({
+      icon: "users",
+      name,
+      visibility: visibility === "public" ? "public" : "invite_only",
+    })
     .eq("id", groupId);
 
   if (error) {
     throw error;
   }
+}
+
+export async function setRemoteGroupMemberRole({
+  groupId,
+  role,
+  supabase,
+  userId,
+}: {
+  groupId: string;
+  role: Exclude<GroupRole, "owner">;
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const { error } = await supabase.rpc("set_group_member_role", {
+    target_group_id: groupId,
+    target_user_id: userId,
+    new_role: role,
+  });
+
+  if (error) throw error;
+}
+
+export async function removeRemoteGroupMember({
+  groupId,
+  supabase,
+  userId,
+}: {
+  groupId: string;
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const { error } = await supabase.rpc("remove_group_member", {
+    target_group_id: groupId,
+    target_user_id: userId,
+  });
+
+  if (error) throw error;
+}
+
+export async function leaveRemoteGroup({
+  groupId,
+  supabase,
+}: {
+  groupId: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("leave_study_group", {
+    target_group_id: groupId,
+  });
+
+  if (error) throw error;
+}
+
+export async function joinRemotePublicGroup({
+  groupId,
+  supabase,
+}: {
+  groupId: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("join_public_study_group", {
+    target_group_id: groupId,
+  });
+
+  if (error) throw error;
+}
+
+export async function fetchRemoteGroupChatMessages(
+  supabase: SupabaseClient,
+  groupId: string,
+) {
+  const { data, error } = await supabase
+    .from("group_chat_messages")
+    .select("id, group_id, user_id, body, created_at")
+    .eq("group_id", groupId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true })
+    .limit(200);
+
+  if (error) throw error;
+
+  return ((data ?? []) as GroupChatRow[]).map(groupChatMessageFromRow);
+}
+
+export async function sendRemoteGroupChatMessage({
+  body,
+  groupId,
+  supabase,
+}: {
+  body: string;
+  groupId: string;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+  const trimmedBody = body.trim();
+
+  if (!userId || !trimmedBody) return;
+
+  const { error } = await supabase.from("group_chat_messages").insert({
+    body: trimmedBody,
+    group_id: groupId,
+    user_id: userId,
+  });
+
+  if (error) throw error;
+}
+
+export function subscribeToRemoteGroupChat(
+  supabase: SupabaseClient,
+  groupId: string,
+  onChange: () => void,
+) {
+  const channel = supabase
+    .channel(`mac-study-chat-${groupId}-${Math.random().toString(36).slice(2)}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        filter: `group_id=eq.${groupId}`,
+        schema: "public",
+        table: "group_chat_messages",
+      },
+      onChange,
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
 }
 
 export async function updateRemoteStudyIcon({
@@ -978,8 +1189,30 @@ function normalizeGroupIcon(icon: string | null | undefined): GroupIconKey {
     : "users";
 }
 
-function normalizeGroupRole(role: string | null | undefined): GroupRole {
-  return role === "owner" || role === "admin" ? role : "member";
+function normalizeGroupRole(
+  role: string | null | undefined,
+): GroupRole | undefined {
+  if (role === "owner" || role === "admin" || role === "member") {
+    return role;
+  }
+
+  return undefined;
+}
+
+function normalizeGroupVisibility(
+  visibility: string | null | undefined,
+): GroupVisibility {
+  return visibility === "public" ? "public" : "private";
+}
+
+function groupChatMessageFromRow(row: GroupChatRow): RemoteGroupChatMessage {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    userId: row.user_id,
+    body: row.body,
+    createdAt: row.created_at,
+  };
 }
 
 function normalizePersonIcon(icon: string | null | undefined): PersonIconKey {

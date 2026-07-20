@@ -1,8 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ArrowLeft, Check, Plus, Save, Send, Trash2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  Plus,
+  Send,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 import {
   PROFILE_COLORS,
   SOCIAL_STORAGE_KEY,
@@ -331,18 +340,11 @@ export function FriendsDashboard() {
         <section className="space-y-3">
           <h3 className="text-lg font-semibold">Groups</h3>
           <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-            <select
-              className="mac-focus h-10 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
-              onChange={(event) => setInviteGroupId(event.target.value)}
+            <GroupPicker
+              groups={socialState.groups}
+              onChange={setInviteGroupId}
               value={inviteGroupId}
-            >
-              <option value="">Choose group</option>
-              {socialState.groups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))}
-            </select>
+            />
             <button
               className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
               disabled={!inviteGroupId || alreadyInSelectedGroup}
@@ -569,13 +571,149 @@ function AddFriendDialog({
                 onClick={onAdd}
                 type="button"
               >
-                <Save aria-hidden size={17} />
                 Add friend
               </button>
             </div>
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function GroupPicker({
+  groups,
+  onChange,
+  value,
+}: {
+  groups: SocialState["groups"];
+  onChange: (groupId: string) => void;
+  value: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selectedGroup = groups.find((group) => group.id === value) ?? null;
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (
+        rootRef.current &&
+        event.target instanceof Node &&
+        !rootRef.current.contains(event.target)
+      ) {
+        setIsOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  function selectGroup(groupId: string) {
+    onChange(groupId);
+    setIsOpen(false);
+  }
+
+  return (
+    <div className="relative" ref={rootRef}>
+      <button
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        className={cn(
+          "mac-focus grid h-12 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-[var(--color-surface)] px-3 text-left transition",
+          isOpen
+            ? "border-[var(--color-mac-yellow)] bg-[var(--color-surface-raised)]"
+            : "border-[var(--color-border)] hover:border-[rgb(255_255_255/0.16)]",
+        )}
+        onClick={() => setIsOpen((current) => !current)}
+        type="button"
+      >
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+          <Users aria-hidden size={16} />
+        </span>
+        <span className="min-w-0">
+          <span
+            className={cn(
+              "block truncate text-sm font-semibold",
+              selectedGroup
+                ? "text-[var(--color-text)]"
+                : "text-[var(--color-text-muted)]",
+            )}
+          >
+            {selectedGroup?.name ?? "Choose group"}
+          </span>
+          {selectedGroup ? (
+            <span className="block truncate text-xs text-[var(--color-text-muted)]">
+              {selectedGroup.memberIds.length}{" "}
+              {selectedGroup.memberIds.length === 1 ? "member" : "members"}
+            </span>
+          ) : null}
+        </span>
+        <ChevronDown
+          aria-hidden
+          className={cn("transition-transform", isOpen && "rotate-180")}
+          size={17}
+        />
+      </button>
+
+      {isOpen ? (
+        <div
+          className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-30 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-1.5 shadow-[0_18px_50px_rgb(0_0_0/0.45)]"
+          role="listbox"
+        >
+          {groups.length ? (
+            groups.map((group) => {
+              const selected = group.id === value;
+
+              return (
+                <button
+                  aria-selected={selected}
+                  className={cn(
+                    "mac-focus grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2.5 text-left transition",
+                    selected
+                      ? "bg-[rgb(255_227_48/0.1)] text-[var(--color-text)]"
+                      : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]",
+                  )}
+                  key={group.id}
+                  onClick={() => selectGroup(group.id)}
+                  role="option"
+                  type="button"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold">
+                      {group.name}
+                    </span>
+                    <span className="block text-xs text-[var(--color-text-muted)]">
+                      {group.memberIds.length}{" "}
+                      {group.memberIds.length === 1 ? "member" : "members"}
+                    </span>
+                  </span>
+                  {selected ? (
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414]">
+                      <Check aria-hidden size={13} />
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })
+          ) : (
+            <p className="px-3 py-4 text-center text-sm text-[var(--color-text-muted)]">
+              No groups available
+            </p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
