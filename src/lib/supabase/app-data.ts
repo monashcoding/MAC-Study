@@ -745,6 +745,23 @@ export async function setRemoteGroupMemberRole({
   if (error) throw error;
 }
 
+export async function transferRemoteGroupLeadership({
+  groupId,
+  supabase,
+  userId,
+}: {
+  groupId: string;
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const { error } = await supabase.rpc("transfer_group_leadership", {
+    target_group_id: groupId,
+    target_user_id: userId,
+  });
+
+  if (error) throw error;
+}
+
 export async function removeRemoteGroupMember({
   groupId,
   supabase,

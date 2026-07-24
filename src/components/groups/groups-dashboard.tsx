@@ -6,12 +6,15 @@ import {
   ArrowLeft,
   Check,
   CircleStop,
+  Crown,
   Globe2,
   Lock,
   LogOut,
+  MoreHorizontal,
   Play,
   Plus,
   Settings,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -24,14 +27,12 @@ import {
   getCachedRemoteTimerState,
 } from "@/lib/client-cache";
 import {
-  PERSON_ICON_KEYS,
   SOCIAL_STORAGE_KEY,
   defaultSocialState,
   getLiveRankingSeconds,
   normalizeSocialState,
   type GroupRole,
   type GroupVisibility,
-  type PersonIconKey,
   type RankingWindow,
   type SocialFriend,
   type SocialGroup,
@@ -49,10 +50,10 @@ import {
   startRemoteStudySession,
   stopRemoteStudySession,
   subscribeToRemoteAppChanges,
+  transferRemoteGroupLeadership,
   type RemoteActiveSession,
   type RemoteSubject,
   updateRemoteGroupDetails,
-  updateRemoteStudyIcon,
   type RemotePublicGroup,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -78,13 +79,6 @@ const fallbackStudySubjects = defaultSubjects.map((subject) => ({
   name: subject.code,
   color: subject.color,
 })) satisfies RemoteSubject[];
-
-const personIconLabels = {
-  "flame-desk": "Flame",
-  "clock-desk": "Clock",
-  "lamp-desk": "Lamp",
-  "spark-desk": "Spark",
-} satisfies Record<PersonIconKey, string>;
 
 export function GroupsDashboard() {
   const [socialState, setSocialState] = useState<SocialState>(emptySocialState);
@@ -458,6 +452,42 @@ export function GroupsDashboard() {
     }));
   }
 
+  async function transferGroupLeadership(userId: string) {
+    if (!selectedGroup) return;
+
+    if (remoteClient) {
+      await transferRemoteGroupLeadership({
+        groupId: selectedGroup.id,
+        supabase: remoteClient,
+        userId,
+      });
+      await refreshRemoteSocial(remoteClient);
+      return;
+    }
+
+    setSocialState((current) => ({
+      ...current,
+      groups: current.groups.map((group) => {
+        if (group.id !== selectedGroup.id) return group;
+
+        const currentOwnerId =
+          Object.entries(group.memberRoles).find(
+            ([, role]) => role === "owner",
+          )?.[0] ?? "you";
+
+        return {
+          ...group,
+          currentUserRole: "admin",
+          memberRoles: {
+            ...group.memberRoles,
+            [currentOwnerId]: "admin",
+            [userId]: "owner",
+          },
+        };
+      }),
+    }));
+  }
+
   async function leaveGroup() {
     if (!selectedGroup) return;
 
@@ -576,25 +606,6 @@ export function GroupsDashboard() {
       subjects: timerSubjects,
     });
     setActiveStudySession(null);
-  }
-
-  async function updateFriendIcon(friendId: string, personIcon: PersonIconKey) {
-    if (remoteClient) {
-      await updateRemoteStudyIcon({
-        icon: personIcon,
-        supabase: remoteClient,
-        userId: friendId,
-      });
-      await refreshRemoteSocial(remoteClient);
-      return;
-    }
-
-    setSocialState((current) => ({
-      ...current,
-      friends: current.friends.map((friend) =>
-        friend.id === friendId ? { ...friend, personIcon } : friend,
-      ),
-    }));
   }
 
   function nudgeMember(memberId: string, groupId: string) {
@@ -724,10 +735,7 @@ export function GroupsDashboard() {
                   }}
                   type="button"
                 >
-                  <StudyPersonIcon
-                    active={member.studying}
-                    icon={member.personIcon}
-                  />
+                  <StudyPersonIcon active={member.studying} />
                   <p
                     className={cn(
                       "mt-2 truncate text-sm font-semibold",
@@ -787,9 +795,8 @@ export function GroupsDashboard() {
             onLeave={leaveGroup}
             onMemberRemove={removeGroupMember}
             onMemberRoleUpdate={updateGroupMemberRole}
+            onLeadershipTransfer={transferGroupLeadership}
             selectedGroup={selectedGroup}
-            remoteCurrentUserId={remoteClient ? currentUserId : null}
-            onUpdate={updateFriendIcon}
           />
         ) : null}
 
@@ -1314,10 +1321,9 @@ function GroupSettingsDialog({
   onGroupDetailsUpdate,
   onInvite,
   onLeave,
+  onLeadershipTransfer,
   onMemberRemove,
   onMemberRoleUpdate,
-  onUpdate,
-  remoteCurrentUserId,
   selectedGroup,
 }: {
   allFriends: SocialFriend[];
@@ -1330,13 +1336,12 @@ function GroupSettingsDialog({
   ) => void | Promise<void>;
   onInvite: (friendId: string) => void | Promise<void>;
   onLeave: () => void | Promise<void>;
+  onLeadershipTransfer: (userId: string) => void | Promise<void>;
   onMemberRemove: (userId: string) => void | Promise<void>;
   onMemberRoleUpdate: (
     userId: string,
     role: Exclude<GroupRole, "owner">,
   ) => void | Promise<void>;
-  onUpdate: (friendId: string, icon: PersonIconKey) => void | Promise<void>;
-  remoteCurrentUserId: string | null;
   selectedGroup: SocialGroup;
 }) {
   const [name, setName] = useState(selectedGroup.name);
@@ -1345,6 +1350,8 @@ function GroupSettingsDialog({
   );
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [openMemberMenuId, setOpenMemberMenuId] = useState<string | null>(null);
   const currentRole =
     selectedGroup.currentUserRole ??
     selectedGroup.memberRoles?.[currentUserId] ??
@@ -1358,11 +1365,9 @@ function GroupSettingsDialog({
       friend.isFriend !== false &&
       !selectedGroup.memberIds.includes(friend.id),
   );
-  const editableMembers = remoteCurrentUserId
-    ? members.filter((member) => member.id === remoteCurrentUserId)
-    : members.filter(
-        (member) => member.id === currentUserId || member.id === "you",
-      );
+  const detailsChanged =
+    name.trim() !== selectedGroup.name ||
+    visibility !== (selectedGroup.visibility ?? "private");
 
   async function runAction(
     key: string,
@@ -1411,41 +1416,59 @@ function GroupSettingsDialog({
           ) : null}
 
           <section className="space-y-3">
-            <label className="block text-sm font-medium">
-              Group name
-              <input
-                className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 disabled:opacity-60"
-                disabled={!isLeader}
-                maxLength={80}
-                onChange={(event) => setName(event.target.value)}
-                value={name}
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {(["public", "private"] as const).map((option) => {
-                const Icon = option === "public" ? Globe2 : Lock;
-                return (
-                  <button
-                    className={cn(
-                      "mac-focus flex h-11 items-center justify-center gap-2 rounded-md border text-sm font-semibold capitalize disabled:opacity-60",
-                      visibility === option
-                        ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)]"
-                        : "border-[var(--color-border)]",
-                    )}
-                    disabled={!isLeader}
-                    key={option}
-                    onClick={() => setVisibility(option)}
-                    type="button"
-                  >
-                    <Icon aria-hidden size={15} /> {option}
-                  </button>
-                );
-              })}
-            </div>
+            <h3 className="text-sm font-semibold">Group details</h3>
+            {isLeader ? (
+              <>
+                <label className="block text-sm font-medium">
+                  Name
+                  <input
+                    className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
+                    maxLength={80}
+                    onChange={(event) => setName(event.target.value)}
+                    value={name}
+                  />
+                </label>
+                <div
+                  aria-label="Group privacy"
+                  className="grid grid-cols-2 gap-2"
+                  role="group"
+                >
+                  {(["public", "private"] as const).map((option) => {
+                    const Icon = option === "public" ? Globe2 : Lock;
+                    return (
+                      <button
+                        aria-pressed={visibility === option}
+                        className={cn(
+                          "mac-focus flex h-11 items-center justify-center gap-2 rounded-md border text-sm font-semibold capitalize",
+                          visibility === option
+                            ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)]"
+                            : "border-[var(--color-border)] text-[var(--color-text-muted)]",
+                        )}
+                        key={option}
+                        onClick={() => setVisibility(option)}
+                        type="button"
+                      >
+                        <Icon aria-hidden size={15} /> {option}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="divide-y divide-[var(--color-border)] rounded-md bg-[rgb(255_255_255/0.035)] px-3">
+                <SettingValue label="Name" value={selectedGroup.name} />
+                <SettingValue
+                  label="Privacy"
+                  value={
+                    selectedGroup.visibility === "public" ? "Public" : "Private"
+                  }
+                />
+              </div>
+            )}
             {isLeader ? (
               <button
                 className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] disabled:opacity-45"
-                disabled={!name.trim() || busyKey !== null}
+                disabled={!name.trim() || !detailsChanged || busyKey !== null}
                 onClick={() =>
                   void runAction(
                     "details",
@@ -1455,13 +1478,72 @@ function GroupSettingsDialog({
                 }
                 type="button"
               >
-                Save
+                {busyKey === "details" ? "Saving…" : "Save details"}
               </button>
             ) : null}
           </section>
 
           <section className="space-y-3 border-t border-[var(--color-border)] pt-5">
-            <p className="text-sm font-semibold">Members</p>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">Members</h3>
+                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                  {members.length} {members.length === 1 ? "person" : "people"}
+                </p>
+              </div>
+              {canManageMembers && inviteableFriends.length ? (
+                <button
+                  aria-expanded={inviteOpen}
+                  className="mac-focus inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold"
+                  onClick={() => {
+                    setInviteOpen((current) => !current);
+                    setOpenMemberMenuId(null);
+                  }}
+                  type="button"
+                >
+                  <UserPlus aria-hidden size={14} />
+                  Invite
+                </button>
+              ) : null}
+            </div>
+
+            {inviteOpen ? (
+              <div className="space-y-1.5 rounded-md border border-[var(--color-border)] bg-[rgb(255_255_255/0.02)] p-2">
+                {inviteableFriends.map((friend) => (
+                  <div
+                    className="flex items-center gap-3 rounded-md px-2 py-2"
+                    key={friend.id}
+                  >
+                    <ProfileBadge friend={friend} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">
+                        {friend.name}
+                      </p>
+                      <p className="truncate text-xs text-[var(--color-text-muted)]">
+                        {friend.handle}
+                      </p>
+                    </div>
+                    <button
+                      className="mac-focus h-8 rounded-md bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] disabled:opacity-45"
+                      disabled={busyKey !== null}
+                      onClick={() =>
+                        void runAction(
+                          `invite:${friend.id}`,
+                          () => onInvite(friend.id),
+                          `${friend.name} invited.`,
+                        )
+                      }
+                      type="button"
+                    >
+                      {busyKey === `invite:${friend.id}`
+                        ? "Inviting…"
+                        : "Invite"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             <div className="grid gap-2">
               {members.map((member) => {
                 const role = selectedGroup.memberRoles?.[member.id] ?? "member";
@@ -1469,10 +1551,15 @@ function GroupSettingsDialog({
                   member.id !== currentUserId &&
                   role !== "owner" &&
                   (isLeader || (currentRole === "admin" && role === "member"));
+                const canChangeRole = isLeader && role !== "owner";
+                const canTransferLeadership =
+                  isLeader && role !== "owner" && member.id !== currentUserId;
+                const hasActions =
+                  canChangeRole || canRemove || canTransferLeadership;
 
                 return (
                   <div
-                    className="rounded-md bg-[rgb(255_255_255/0.035)] p-3"
+                    className="relative rounded-md bg-[rgb(255_255_255/0.035)] p-3"
                     key={member.id}
                   >
                     <div className="flex items-center gap-3">
@@ -1493,61 +1580,87 @@ function GroupSettingsDialog({
                             ? "Moderator"
                             : "Member"}
                       </span>
-                    </div>
-                    {isLeader && role !== "owner" ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      {hasActions ? (
                         <button
-                          className="mac-focus h-9 rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold disabled:opacity-45"
-                          disabled={busyKey !== null}
-                          onClick={() =>
-                            void runAction(
-                              `role:${member.id}`,
-                              () =>
-                                onMemberRoleUpdate(
-                                  member.id,
-                                  role === "admin" ? "member" : "admin",
-                                ),
-                              role === "admin"
-                                ? "Moderator removed."
-                                : "Moderator promoted.",
-                            )
-                          }
+                          aria-expanded={openMemberMenuId === member.id}
+                          aria-label={`Manage ${member.name}`}
+                          className="mac-focus inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.06)] hover:text-[var(--color-text)]"
+                          onClick={() => {
+                            setInviteOpen(false);
+                            setOpenMemberMenuId((current) =>
+                              current === member.id ? null : member.id,
+                            );
+                          }}
                           type="button"
                         >
-                          {role === "admin" ? "Make member" : "Make moderator"}
+                          <MoreHorizontal aria-hidden size={18} />
                         </button>
+                      ) : null}
+                    </div>
+
+                    {openMemberMenuId === member.id ? (
+                      <div className="mt-2 grid gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-1.5 shadow-[0_14px_34px_rgb(0_0_0/0.32)]">
+                        {canChangeRole ? (
+                          <button
+                            className="mac-focus h-9 rounded px-2.5 text-left text-xs font-semibold transition hover:bg-[rgb(255_255_255/0.055)]"
+                            disabled={busyKey !== null}
+                            onClick={() => {
+                              setOpenMemberMenuId(null);
+                              void runAction(
+                                `role:${member.id}`,
+                                () =>
+                                  onMemberRoleUpdate(
+                                    member.id,
+                                    role === "admin" ? "member" : "admin",
+                                  ),
+                                role === "admin"
+                                  ? `${member.name} is now a member.`
+                                  : `${member.name} is now a moderator.`,
+                              );
+                            }}
+                            type="button"
+                          >
+                            {role === "admin"
+                              ? "Make member"
+                              : "Make moderator"}
+                          </button>
+                        ) : null}
+                        {canTransferLeadership ? (
+                          <button
+                            className="mac-focus flex h-9 items-center gap-2 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
+                            disabled={busyKey !== null}
+                            onClick={() => {
+                              setOpenMemberMenuId(null);
+                              void runAction(
+                                `leader:${member.id}`,
+                                () => onLeadershipTransfer(member.id),
+                                `${member.name} is now the group leader.`,
+                              );
+                            }}
+                            type="button"
+                          >
+                            <Crown aria-hidden size={14} />
+                            Transfer leadership
+                          </button>
+                        ) : null}
                         {canRemove ? (
                           <button
-                            className="mac-focus h-9 rounded-md border border-[var(--color-danger)] px-3 text-xs font-semibold text-[var(--color-danger)] disabled:opacity-45"
+                            className="mac-focus h-9 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.07)]"
                             disabled={busyKey !== null}
-                            onClick={() =>
+                            onClick={() => {
+                              setOpenMemberMenuId(null);
                               void runAction(
                                 `remove:${member.id}`,
                                 () => onMemberRemove(member.id),
-                                "Member removed.",
-                              )
-                            }
+                                `${member.name} removed.`,
+                              );
+                            }}
                             type="button"
                           >
-                            Remove
+                            Remove from group
                           </button>
                         ) : null}
                       </div>
-                    ) : canRemove ? (
-                      <button
-                        className="mac-focus mt-3 h-9 rounded-md border border-[var(--color-danger)] px-3 text-xs font-semibold text-[var(--color-danger)] disabled:opacity-45"
-                        disabled={busyKey !== null}
-                        onClick={() =>
-                          void runAction(
-                            `remove:${member.id}`,
-                            () => onMemberRemove(member.id),
-                            "Member removed.",
-                          )
-                        }
-                        type="button"
-                      >
-                        Remove
-                      </button>
                     ) : null}
                   </div>
                 );
@@ -1555,76 +1668,21 @@ function GroupSettingsDialog({
             </div>
           </section>
 
-          {canManageMembers && inviteableFriends.length ? (
-            <section className="space-y-3 border-t border-[var(--color-border)] pt-5">
-              <p className="text-sm font-semibold">Invite friends</p>
-              <div className="grid gap-2">
-                {inviteableFriends.map((friend) => (
-                  <div
-                    className="flex items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
-                    key={friend.id}
-                  >
-                    <ProfileBadge friend={friend} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold">{friend.name}</p>
-                      <p className="truncate text-sm text-[var(--color-text-muted)]">
-                        {friend.handle}
-                      </p>
-                    </div>
-                    <button
-                      className="mac-focus h-9 rounded-md bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] disabled:opacity-45"
-                      disabled={busyKey !== null}
-                      onClick={() =>
-                        void runAction(
-                          `invite:${friend.id}`,
-                          () => onInvite(friend.id),
-                          "Member invited.",
-                        )
-                      }
-                      type="button"
-                    >
-                      Invite
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
           <section className="space-y-3 border-t border-[var(--color-border)] pt-5">
-            <p className="text-sm font-semibold">
-              {remoteCurrentUserId ? "Class icon" : "Member icons"}
-            </p>
-            {editableMembers.map((member) => (
-              <div className="space-y-3" key={member.id}>
-                <div className="grid grid-cols-4 gap-2">
-                  {PERSON_ICON_KEYS.map((icon) => {
-                    const selected = member.personIcon === icon;
-
-                    return (
-                      <button
-                        aria-label={`Use ${personIconLabels[icon]} icon for ${member.name}`}
-                        className={cn(
-                          "mac-focus flex h-20 items-center justify-center rounded-md border transition",
-                          selected
-                            ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.1)]"
-                            : "border-[var(--color-border)]",
-                        )}
-                        key={icon}
-                        onClick={() => void onUpdate(member.id, icon)}
-                        type="button"
-                      >
-                        <StudyPersonIcon active={member.studying} icon={icon} />
-                      </button>
-                    );
-                  })}
+            <h3 className="text-sm font-semibold">Your membership</h3>
+            {isLeader ? (
+              <div className="flex items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+                  <Crown aria-hidden size={17} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">Group leader</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Transfer leadership before leaving.
+                  </p>
                 </div>
               </div>
-            ))}
-          </section>
-
-          {!isLeader ? (
-            <section className="border-t border-[var(--color-border)] pt-5">
+            ) : (
               <button
                 className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--color-danger)] px-4 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
                 disabled={busyKey !== null}
@@ -1635,21 +1693,24 @@ function GroupSettingsDialog({
               >
                 <LogOut aria-hidden size={16} /> Leave group
               </button>
-            </section>
-          ) : null}
+            )}
+          </section>
         </div>
       </div>
     </div>
   );
 }
 
-function StudyPersonIcon({
-  active,
-  icon,
-}: {
-  active: boolean;
-  icon: PersonIconKey;
-}) {
+function SettingValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <span className="text-sm text-[var(--color-text-muted)]">{label}</span>
+      <span className="min-w-0 truncate text-sm font-semibold">{value}</span>
+    </div>
+  );
+}
+
+function StudyPersonIcon({ active }: { active: boolean }) {
   const color = active ? MEMBER_ACTIVE_COLOR : MEMBER_INACTIVE_COLOR;
 
   return (
@@ -1663,50 +1724,15 @@ function StudyPersonIcon({
       strokeWidth="3.2"
       viewBox="0 0 72 72"
     >
-      <PersonIconAccent icon={icon} />
+      <path d="M31 6c5 5 1 9 6 13" />
+      <path d="M25 10c4 4 1 7 5 10" />
+      <path d="M40 10c-3 4-1 7-5 10" />
       <circle cx="32" cy="25" r="7.5" />
       <path d="M18 53c0-10 6-17 14-17s14 7 14 17" />
       <path d="M12 56h40M17 64V49h31v15" />
       <path d="M52 37h10l3 19H50l2-19Z" />
       <path d="M56 37V28h8" />
     </svg>
-  );
-}
-
-function PersonIconAccent({ icon }: { icon: PersonIconKey }) {
-  if (icon === "clock-desk") {
-    return (
-      <>
-        <circle cx="18" cy="14" r="7" />
-        <path d="M18 10v5l4 2" />
-      </>
-    );
-  }
-
-  if (icon === "lamp-desk") {
-    return (
-      <>
-        <path d="M20 13h15" />
-        <path d="M23 13 20 23h18l-3-10" />
-      </>
-    );
-  }
-
-  if (icon === "spark-desk") {
-    return (
-      <>
-        <path d="M19 12h.1M24 7h.1M27 15h.1" />
-        <path d="M21 21c4-4 8-4 12 0" />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <path d="M31 6c5 5 1 9 6 13" />
-      <path d="M25 10c4 4 1 7 5 10" />
-      <path d="M40 10c-3 4-1 7-5 10" />
-    </>
   );
 }
 
