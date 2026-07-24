@@ -1411,16 +1411,8 @@ function GroupSettingsDialog({
           ) : null}
 
           <section className="space-y-3">
-            <div>
-              <p className="text-sm font-semibold">Group details</p>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                {isLeader
-                  ? "As group leader, you control the name and privacy."
-                  : "Only the group leader can change these settings."}
-              </p>
-            </div>
             <label className="block text-sm font-medium">
-              Name
+              Group name
               <input
                 className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 disabled:opacity-60"
                 disabled={!isLeader}
@@ -1463,19 +1455,13 @@ function GroupSettingsDialog({
                 }
                 type="button"
               >
-                Save details
+                Save
               </button>
             ) : null}
           </section>
 
           <section className="space-y-3 border-t border-[var(--color-border)] pt-5">
-            <div>
-              <p className="text-sm font-semibold">Members</p>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Leaders and moderators can invite people and remove regular
-                members.
-              </p>
-            </div>
+            <p className="text-sm font-semibold">Members</p>
             <div className="grid gap-2">
               {members.map((member) => {
                 const role = selectedGroup.memberRoles?.[member.id] ?? "member";
@@ -1499,14 +1485,14 @@ function GroupSettingsDialog({
                         <p className="truncate text-sm text-[var(--color-text-muted)]">
                           {member.handle}
                         </p>
-                        <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                          {role === "owner"
-                            ? "Group leader"
-                            : role === "admin"
-                              ? "Moderator"
-                              : "Member"}
-                        </p>
                       </div>
+                      <span className="shrink-0 rounded-full bg-[rgb(255_255_255/0.055)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                        {role === "owner"
+                          ? "Leader"
+                          : role === "admin"
+                            ? "Moderator"
+                            : "Member"}
+                      </span>
                     </div>
                     {isLeader && role !== "owner" ? (
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -1528,9 +1514,7 @@ function GroupSettingsDialog({
                           }
                           type="button"
                         >
-                          {role === "admin"
-                            ? "Make member"
-                            : "Promote moderator"}
+                          {role === "admin" ? "Make member" : "Make moderator"}
                         </button>
                         {canRemove ? (
                           <button
@@ -1607,34 +1591,12 @@ function GroupSettingsDialog({
             </section>
           ) : null}
 
-          <section className="space-y-3">
-            <div>
-              <p className="text-sm font-semibold">
-                {remoteCurrentUserId ? "My class icon" : "Member icons"}
-              </p>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Choose how you appear in class view.
-              </p>
-            </div>
+          <section className="space-y-3 border-t border-[var(--color-border)] pt-5">
+            <p className="text-sm font-semibold">
+              {remoteCurrentUserId ? "Class icon" : "Member icons"}
+            </p>
             {editableMembers.map((member) => (
-              <div
-                className="space-y-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
-                key={member.id}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold">
-                      {member.name}
-                      {member.id === currentUserId ? " (You)" : ""}
-                    </p>
-                    <p className="truncate text-sm text-[var(--color-text-muted)]">
-                      {member.handle}
-                    </p>
-                  </div>
-                  <p className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">
-                    {formatDuration(member.daySeconds)}
-                  </p>
-                </div>
+              <div className="space-y-3" key={member.id}>
                 <div className="grid grid-cols-4 gap-2">
                   {PERSON_ICON_KEYS.map((icon) => {
                     const selected = member.personIcon === icon;
@@ -1661,13 +1623,8 @@ function GroupSettingsDialog({
             ))}
           </section>
 
-          <section className="border-t border-[var(--color-border)] pt-5">
-            {isLeader ? (
-              <p className="text-sm text-[var(--color-text-muted)]">
-                Group leaders cannot leave or delete the group. This keeps
-                shared study history intact.
-              </p>
-            ) : (
+          {!isLeader ? (
+            <section className="border-t border-[var(--color-border)] pt-5">
               <button
                 className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--color-danger)] px-4 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
                 disabled={busyKey !== null}
@@ -1678,8 +1635,8 @@ function GroupSettingsDialog({
               >
                 <LogOut aria-hidden size={16} /> Leave group
               </button>
-            )}
-          </section>
+            </section>
+          ) : null}
         </div>
       </div>
     </div>
