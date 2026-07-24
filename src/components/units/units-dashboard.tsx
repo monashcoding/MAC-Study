@@ -97,6 +97,9 @@ export function UnitsDashboard() {
   const [search, setSearch] = useState("");
   const [scope, setScope] = useState<CohortScope>("all");
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [sentFriendRequestIds, setSentFriendRequestIds] = useState<string[]>(
+    [],
+  );
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const refreshRemote = useCallback(async (supabase: SupabaseClient) => {
@@ -297,12 +300,10 @@ export function UnitsDashboard() {
         await refreshRemote(remoteClient);
       }
 
-      setCohort((current) =>
-        current.map((member) =>
-          member.id === memberId ? { ...member, isFriend: true } : member,
-        ),
+      setSentFriendRequestIds((current) =>
+        Array.from(new Set([...current, memberId])),
       );
-      setFeedback("Friend added. You can now add them to a group.");
+      setFeedback("Friend request sent.");
     } catch (error) {
       setFeedback(getErrorMessage(error, "Could not add this friend."));
     } finally {
@@ -365,6 +366,7 @@ export function UnitsDashboard() {
         onLeave={() => void leaveEnrollment(selectedEnrollment)}
         onScopeChange={setScope}
         onSearchChange={setSearch}
+        sentFriendRequestIds={sentFriendRequestIds}
         scope={scope}
         search={search}
       />
@@ -496,6 +498,7 @@ function OfferingDetail({
   onSearchChange,
   scope,
   search,
+  sentFriendRequestIds,
 }: {
   allGroups: SocialGroup[];
   busyKey: string | null;
@@ -512,6 +515,7 @@ function OfferingDetail({
   onSearchChange: (value: string) => void;
   scope: CohortScope;
   search: string;
+  sentFriendRequestIds: string[];
 }) {
   const unitTitle = enrollment.nickname?.trim() || "Unit cohort";
 
@@ -605,6 +609,7 @@ function OfferingDetail({
                 member={member}
                 onAddFriend={onAddFriend}
                 onAddToGroup={onAddToGroup}
+                requested={sentFriendRequestIds.includes(member.id)}
               />
             ))}
           </div>
@@ -625,6 +630,7 @@ function CohortMemberCard({
   member,
   onAddFriend,
   onAddToGroup,
+  requested,
 }: {
   allGroups: SocialGroup[];
   busyKey: string | null;
@@ -632,6 +638,7 @@ function CohortMemberCard({
   member: UnitCohortMember;
   onAddFriend: (memberId: string) => void;
   onAddToGroup: (memberId: string, groupId: string) => void;
+  requested: boolean;
 }) {
   const availableGroups = manageableGroups.filter(
     (group) => !member.sharedGroupIds.includes(group.id),
@@ -673,13 +680,18 @@ function CohortMemberCard({
       </div>
       {!member.isFriend ? (
         <button
-          className="mac-focus inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--color-mac-yellow)] px-2.5 text-[11px] font-semibold text-[#141414] disabled:opacity-45"
-          disabled={busyKey === `friend:${member.id}`}
+          className={cn(
+            "mac-focus inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold disabled:opacity-60",
+            requested
+              ? "border border-[var(--color-border)] text-[var(--color-text-muted)]"
+              : "bg-[var(--color-mac-yellow)] text-[#141414]",
+          )}
+          disabled={requested || busyKey === `friend:${member.id}`}
           onClick={() => onAddFriend(member.id)}
           type="button"
         >
           <UserPlus aria-hidden size={13} />
-          Add friend
+          {requested ? "Requested" : "Request"}
         </button>
       ) : availableGroups.length ? (
         <select

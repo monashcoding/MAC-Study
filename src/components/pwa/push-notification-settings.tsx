@@ -1,244 +1,245 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell, CheckCircle2 } from "lucide-react";
+import {
+  Bell,
+  CheckCircle2,
+  Hand,
+  MessagesSquare,
+  UserRoundPlus,
+} from "lucide-react";
+import {
+  fetchRemoteNotificationPreferences,
+  updateRemoteNotificationPreferences,
+  type RemoteNotificationPreferences,
+} from "@/lib/supabase/app-data";
+import {
+  enablePushNotifications,
+  getPushStatus,
+  type PushStatus,
+} from "@/lib/push/client";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { cn } from "@/lib/utils";
 
-type PushState = "checking" | "enabled" | "blocked" | "ready" | "unsupported";
-type PushStatus = {
-  message: string;
-  state: PushState;
+const defaultPreferences: RemoteNotificationPreferences = {
+  friendNotifications: true,
+  nudgeNotifications: true,
+  otherNotifications: true,
 };
 
 export function PushNotificationSettings() {
   const [pushStatus, setPushStatus] = useState<PushStatus>({
     message: "Checking…",
+    publicKey: null,
     state: "checking",
   });
-  const [vapidPublicKey, setVapidPublicKey] = useState<string | null>(null);
-  const { message, state: pushState } = pushStatus;
+  const [preferences, setPreferences] =
+    useState<RemoteNotificationPreferences>(defaultPreferences);
+  const [savingKey, setSavingKey] = useState<
+    keyof RemoteNotificationPreferences | null
+  >(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function checkPushStatus() {
-      await Promise.resolve();
-
-      if (!supportsPush()) {
-        if (!cancelled) {
-          setPushStatus({
-            message: "Unavailable here",
-            state: "unsupported",
-          });
-        }
-        return;
-      }
-
-      if (Notification.permission === "denied") {
-        if (!cancelled) {
-          setPushStatus({
-            message: "Blocked by browser",
-            state: "blocked",
-          });
-        }
-        return;
-      }
+    async function load() {
+      const status = await getPushStatus();
+      if (!cancelled) setPushStatus(status);
 
       try {
-        const keyResponse = await fetch("/api/push/public-key", {
-          cache: "no-store",
-        });
-
-        if (!keyResponse.ok) {
-          throw new Error("Push key unavailable.");
-        }
-
-        const keyBody = (await keyResponse.json()) as { publicKey?: string };
-
-        if (!keyBody.publicKey) {
-          throw new Error("Push key unavailable.");
-        }
-
-        const registration = await navigator.serviceWorker.getRegistration();
-        const subscription = registration
-          ? await registration.pushManager.getSubscription()
-          : null;
-
-        if (cancelled) {
-          return;
-        }
-
-        setVapidPublicKey(keyBody.publicKey);
-
-        if (
-          subscription &&
-          pushSubscriptionUsesKey(subscription, keyBody.publicKey)
-        ) {
-          setPushStatus({
-            message: "On for this device",
-            state: "enabled",
-          });
-          return;
-        }
-
-        setPushStatus({
-          message: subscription
-            ? "Reconnect this device"
-            : "Off on this device",
-          state: "ready",
-        });
+        const supabase = createSupabaseBrowserClient();
+        const nextPreferences =
+          await fetchRemoteNotificationPreferences(supabase);
+        if (!cancelled) setPreferences(nextPreferences);
       } catch {
-        if (!cancelled) {
-          setPushStatus({
-            message: "Unavailable here",
-            state: "unsupported",
-          });
-        }
+        // Keep safe defaults for demo mode or before the migration is applied.
       }
     }
 
-    void checkPushStatus();
-
+    void load();
     return () => {
       cancelled = true;
     };
   }, []);
 
   async function enablePush() {
-    if (!supportsPush() || !vapidPublicKey) {
-      return;
-    }
-
-    setPushStatus({ message: "Waiting for permission…", state: "checking" });
-
-    const permission = await Notification.requestPermission();
-
-    if (permission !== "granted") {
-      setPushStatus({
-        message:
-          permission === "denied"
-            ? "Blocked by browser"
-            : "Permission not granted",
-        state: permission === "denied" ? "blocked" : "ready",
-      });
-      return;
-    }
+    setFeedback(null);
+    setPushStatus((current) => ({
+      ...current,
+      message: "Waiting for permission…",
+      state: "checking",
+    }));
 
     try {
-      const registration = await navigator.serviceWorker.register("/sw.js");
-      let existingSubscription =
-        await registration.pushManager.getSubscription();
-
-      if (
-        existingSubscription &&
-        !pushSubscriptionUsesKey(existingSubscription, vapidPublicKey)
-      ) {
-        await existingSubscription.unsubscribe();
-        existingSubscription = null;
-      }
-
-      const subscription =
-        existingSubscription ??
-        (await registration.pushManager.subscribe({
-          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-          userVisibleOnly: true,
-        }));
-
-      const response = await fetch("/api/push/subscribe", {
-        body: JSON.stringify(subscription.toJSON()),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-
-      if (!response.ok) {
-        throw new Error("Could not save subscription.");
-      }
-
+      await enablePushNotifications(pushStatus.publicKey);
       setPushStatus({
         message: "On for this device",
+        publicKey: pushStatus.publicKey,
         state: "enabled",
       });
-    } catch {
-      setPushStatus({
-        message: "Couldn’t enable alerts",
-        state: "ready",
-      });
+    } catch (error) {
+      setFeedback(
+        error instanceof Error ? error.message : "Could not enable alerts.",
+      );
+      setPushStatus(await getPushStatus());
     }
   }
 
-  const enabled = pushState === "enabled";
+  async function togglePreference(
+    key: keyof RemoteNotificationPreferences,
+  ) {
+    const previous = preferences;
+    const next = { ...previous, [key]: !previous[key] };
+    setPreferences(next);
+    setSavingKey(key);
+    setFeedback(null);
+
+    try {
+      const supabase = createSupabaseBrowserClient();
+      await updateRemoteNotificationPreferences({
+        preferences: next,
+        supabase,
+      });
+      window.dispatchEvent(
+        new CustomEvent("mac-notification-preferences-changed", {
+          detail: next,
+        }),
+      );
+    } catch {
+      setPreferences(previous);
+      setFeedback("Could not save notification settings.");
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  const enabled = pushStatus.state === "enabled";
 
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md px-3 py-4 transition hover:bg-[rgb(255_255_255/0.04)]">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[rgb(255_255_255/0.045)] text-[var(--color-mac-yellow)]">
-          {enabled ? (
-            <CheckCircle2 aria-hidden size={19} />
-          ) : (
-            <Bell aria-hidden size={19} />
-          )}
-        </span>
-        <div className="min-w-0">
-          <p className="font-medium">Nudge alerts</p>
-          <p className="truncate text-sm text-[var(--color-text-muted)]">
-            {message}
-          </p>
+    <div className="px-3 py-4">
+      <div className="mb-3">
+        <p className="font-semibold">Notifications</p>
+        <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
+          Choose what can alert you.
+        </p>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.018)]">
+        <div className="flex items-center justify-between gap-4 px-3 py-3.5">
+          <SettingIcon>
+            {enabled ? (
+              <CheckCircle2 aria-hidden size={18} />
+            ) : (
+              <Bell aria-hidden size={18} />
+            )}
+          </SettingIcon>
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Device alerts</p>
+            <p className="truncate text-sm text-[var(--color-text-muted)]">
+              {pushStatus.message}
+            </p>
+          </div>
+          <button
+            className={cn(
+              "mac-focus inline-flex h-10 shrink-0 items-center justify-center rounded-full px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
+              enabled
+                ? "bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]"
+                : "bg-[var(--color-mac-yellow)] text-[#141414]",
+            )}
+            disabled={
+              enabled ||
+              pushStatus.state === "blocked" ||
+              pushStatus.state === "checking" ||
+              pushStatus.state === "unsupported"
+            }
+            onClick={() => void enablePush()}
+            type="button"
+          >
+            {enabled ? "Enabled" : "Enable"}
+          </button>
+        </div>
+
+        <div className="border-t border-[var(--color-border)]">
+          <PreferenceRow
+            checked={preferences.friendNotifications}
+            disabled={savingKey !== null}
+            icon={<UserRoundPlus aria-hidden size={18} />}
+            label="Friend activity"
+            onChange={() => void togglePreference("friendNotifications")}
+          />
+          <PreferenceRow
+            checked={preferences.nudgeNotifications}
+            disabled={savingKey !== null}
+            icon={<Hand aria-hidden size={18} />}
+            label="Nudges"
+            onChange={() => void togglePreference("nudgeNotifications")}
+          />
+          <PreferenceRow
+            checked={preferences.otherNotifications}
+            disabled={savingKey !== null}
+            icon={<MessagesSquare aria-hidden size={18} />}
+            label="Other activity"
+            onChange={() => void togglePreference("otherNotifications")}
+          />
         </div>
       </div>
 
+      {feedback ? (
+        <p className="mt-2 text-sm text-[var(--color-danger)]" role="status">
+          {feedback}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function PreferenceRow({
+  checked,
+  disabled,
+  icon,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onChange: () => void;
+}) {
+  return (
+    <div className="flex min-h-14 items-center gap-3 border-b border-[var(--color-border)] px-3 last:border-b-0">
+      <SettingIcon>{icon}</SettingIcon>
+      <span className="min-w-0 flex-1 font-medium">{label}</span>
       <button
+        aria-checked={checked}
+        aria-label={`${label} notifications`}
         className={cn(
-          "mac-focus inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
-          enabled
-            ? "bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]"
-            : "bg-[var(--color-mac-yellow)] text-[#141414]",
+          "mac-focus relative h-8 w-14 shrink-0 rounded-full border transition disabled:opacity-50",
+          checked
+            ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)]"
+            : "border-[var(--color-border)] bg-[var(--color-surface-raised)]",
         )}
-        disabled={
-          enabled || pushState === "blocked" || pushState === "unsupported"
-        }
-        onClick={() => void enablePush()}
+        disabled={disabled}
+        onClick={onChange}
+        role="switch"
         type="button"
       >
-        {enabled ? "Enabled" : "Enable"}
+        <span
+          className={cn(
+            "absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-transform",
+            checked ? "translate-x-6" : "translate-x-1",
+          )}
+        />
       </button>
     </div>
   );
 }
 
-function supportsPush() {
+function SettingIcon({ children }: { children: React.ReactNode }) {
   return (
-    typeof window !== "undefined" &&
-    "Notification" in window &&
-    "serviceWorker" in navigator &&
-    "PushManager" in window
-  );
-}
-
-function urlBase64ToUint8Array(value: string) {
-  const padding = "=".repeat((4 - (value.length % 4)) % 4);
-  const base64 = `${value}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-
-  return Uint8Array.from(
-    [...rawData].map((character) => character.charCodeAt(0)),
-  );
-}
-
-function pushSubscriptionUsesKey(
-  subscription: PushSubscription,
-  publicKey: string,
-) {
-  const subscriptionKey = subscription.options.applicationServerKey;
-
-  if (!subscriptionKey) {
-    return false;
-  }
-
-  const expectedKey = urlBase64ToUint8Array(publicKey);
-  const currentKey = new Uint8Array(subscriptionKey);
-
-  return (
-    currentKey.length === expectedKey.length &&
-    currentKey.every((value, index) => value === expectedKey[index])
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgb(255_255_255/0.045)] text-[var(--color-mac-yellow)]">
+      {children}
+    </span>
   );
 }

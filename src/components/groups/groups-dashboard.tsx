@@ -15,7 +15,6 @@ import {
   Plus,
   Settings,
   UserPlus,
-  Users,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { useAppHeaderDetail } from "@/components/app-header-detail";
@@ -876,8 +875,8 @@ export function GroupsDashboard() {
   }
 
   return (
-    <div className="space-y-5 pt-1 lg:space-y-6 lg:pt-0">
-      <section className="grid grid-cols-3 gap-2 lg:gap-4">
+    <div className="space-y-4 lg:space-y-6">
+      <section className="hidden grid-cols-3 gap-4 lg:grid">
         <SummaryStat label="Groups" value={`${socialState.groups.length}`} />
         <SummaryStat label="Active" value={`${activeTotal}`} />
         <SummaryStat label="Members" value={`${uniqueMemberCount}`} />
@@ -903,7 +902,7 @@ export function GroupsDashboard() {
         <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
           {groupSummaries.map(({ group, activeNow, memberCount }) => (
             <button
-              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
+              className="mac-focus grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
               key={group.id}
               onClick={() => {
                 setGroupView("class");
@@ -911,7 +910,6 @@ export function GroupsDashboard() {
               }}
               type="button"
             >
-              <GroupIconBadge />
               <div className="min-w-0">
                 <h3 className="truncate text-lg font-semibold">{group.name}</h3>
                 <div className="mt-1 flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
@@ -951,10 +949,9 @@ export function GroupsDashboard() {
           <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
             {publicGroups.map((group) => (
               <div
-                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
                 key={group.id}
               >
-                <GroupIconBadge />
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{group.name}</p>
                   <p className="mt-1 text-xs text-[var(--color-text-muted)]">
@@ -963,7 +960,7 @@ export function GroupsDashboard() {
                   </p>
                 </div>
                 <button
-                  className="mac-focus h-9 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
+                  className="mac-focus h-11 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
                   disabled={joiningPublicGroupId === group.id}
                   onClick={() => void joinPublicGroup(group.id)}
                   type="button"
@@ -1176,14 +1173,6 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
         {label}
       </p>
     </div>
-  );
-}
-
-function GroupIconBadge() {
-  return (
-    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414]">
-      <Users aria-hidden size={20} />
-    </span>
   );
 }
 

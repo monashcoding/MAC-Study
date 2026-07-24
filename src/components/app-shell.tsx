@@ -33,6 +33,8 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { AppWorkspace } from "@/components/app-workspace";
 import { AppHeaderDetailProvider } from "@/components/app-header-detail";
+import { NotificationOnboarding } from "@/components/pwa/notification-onboarding";
+import { AppNotifications } from "@/components/social/app-notifications";
 import { NudgeNotifications } from "@/components/social/nudge-notifications";
 import { cn } from "@/lib/utils";
 
@@ -388,7 +390,11 @@ export function AppShell({
         </div>
 
         {authState.mode === "authenticated" ? (
-          <NudgeNotifications userId={authState.user.id} />
+          <>
+            <AppNotifications userId={authState.user.id} />
+            <NudgeNotifications userId={authState.user.id} />
+            <NotificationOnboarding userId={authState.user.id} />
+          </>
         ) : null}
       </>
     </AppHeaderDetailProvider>
