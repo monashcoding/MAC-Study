@@ -1,16 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  Check,
-  CircleStop,
-  Pencil,
-  Play,
-  Plus,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Check, CircleStop, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { AppDialog } from "@/components/app-dialog";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   cacheRemoteTimerState,
@@ -525,8 +518,10 @@ function SubjectEditor({
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(
     initialSubjectId,
   );
+  const initialSubjectsRef = useRef(JSON.stringify(draftSubjects));
   const editingSubject =
     draftSubjects.find((subject) => subject.id === editingSubjectId) ?? null;
+  const isDirty = JSON.stringify(draftSubjects) !== initialSubjectsRef.current;
 
   function addAndEditSubject() {
     setEditingSubjectId(onAdd());
@@ -537,148 +532,20 @@ function SubjectEditor({
     setEditingSubjectId(null);
   }
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
   return (
-    <div
-      aria-modal="true"
-      className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] items-center justify-center bg-black/58 px-3 pb-[max(0.75rem,var(--safe-area-bottom))] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-      role="dialog"
-    >
-      <div className="max-h-[min(88dvh,720px)] w-full max-w-lg overflow-y-auto rounded-2xl border border-[rgb(255_255_255/0.09)] bg-[var(--color-background)] shadow-[0_28px_90px_rgb(0_0_0/0.6)]">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[rgb(20_20_20/0.96)] px-5 py-4 backdrop-blur-xl">
-          <h2 className="text-xl font-semibold tracking-[-0.02em]">
-            {editingSubject ? "Subject details" : "Edit subjects"}
-          </h2>
-          <button
-            className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.06)] hover:text-[var(--color-text)]"
-            onClick={onClose}
-            type="button"
-          >
-            <X aria-hidden size={18} />
-            <span className="sr-only">Close subject editor</span>
-          </button>
-        </div>
-
-        {editingSubject ? (
-          <div className="space-y-6 p-5">
-            {editingSubject.unitOfferingId ? (
-              <div className="rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] p-3.5">
-                <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
-                  Canonical unit code
-                </p>
-                <p className="mt-1 font-mono font-semibold text-[var(--color-mac-yellow)]">
-                  {editingSubject.canonicalCode}
-                </p>
-              </div>
-            ) : null}
-
-            <label className="block text-sm font-medium">
-              {editingSubject.unitOfferingId ? "Personal name" : "Name"}
-              <input
-                className="mac-focus mt-2 h-12 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 font-semibold text-[var(--color-text)] transition hover:border-[rgb(255_255_255/0.15)]"
-                maxLength={60}
-                onChange={(event) =>
-                  onUpdate(editingSubject.id, { name: event.target.value })
-                }
-                value={editingSubject.name}
-              />
-            </label>
-
-            <div>
-              <p className="text-sm font-medium">Play colour</p>
-              <div className="mt-2 grid grid-cols-6 gap-2 rounded-2xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.02)] p-2">
-                {SUBJECT_COLORS.map((color) => {
-                  const selected = color === editingSubject.color;
-
-                  return (
-                    <button
-                      aria-pressed={selected}
-                      aria-label={`Use colour ${color}`}
-                      className={cn(
-                        "mac-focus flex aspect-square min-w-0 items-center justify-center rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:brightness-110",
-                        selected
-                          ? "border-white/80 ring-2 ring-white/80 ring-offset-2 ring-offset-[var(--color-background)]"
-                          : "border-white/10",
-                      )}
-                      key={color}
-                      onClick={() => onUpdate(editingSubject.id, { color })}
-                      style={{ backgroundColor: color }}
-                      type="button"
-                    >
-                      {selected ? (
-                        <span
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/20"
-                          style={{
-                            color: color === "#FFE330" ? "#141414" : "white",
-                          }}
-                        >
-                          <Check aria-hidden size={13} strokeWidth={3} />
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <button
-              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[rgb(255_107_107/0.35)] bg-[rgb(255_107_107/0.035)] px-3 text-sm font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-35"
-              disabled={draftSubjects.length <= 1}
-              onClick={() => deleteSubject(editingSubject.id)}
-              type="button"
-            >
-              <Trash2 aria-hidden size={16} />
-              Delete subject
-            </button>
-          </div>
-        ) : (
-          <div className="divide-y divide-[var(--color-border)]">
-            {draftSubjects.map((subject) => (
-              <div
-                className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3"
-                key={subject.id}
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <span
-                    aria-hidden
-                    className="h-3.5 w-3.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: subject.color }}
-                  />
-                  <p className="truncate font-semibold">{subject.name}</p>
-                </div>
-                <button
-                  className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
-                  onClick={() => setEditingSubjectId(subject.id)}
-                  type="button"
-                >
-                  <Pencil aria-hidden size={16} />
-                  <span className="sr-only">Edit {subject.name}</span>
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
+    <AppDialog
+      bodyClassName={editingSubject ? "space-y-6 p-5" : "p-0"}
+      closeLabel="Close subject editor"
+      footer={
         <div
           className={cn(
-            "sticky bottom-0 flex flex-col gap-2 border-t border-[var(--color-border)] bg-[rgb(20_20_20/0.96)] p-5 backdrop-blur-xl sm:flex-row",
+            "flex flex-col gap-2 sm:flex-row",
             editingSubject ? "sm:justify-end" : "sm:justify-between",
           )}
         >
           {editingSubject ? null : (
             <button
-              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)]"
+              className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)]"
               onClick={addAndEditSubject}
               type="button"
             >
@@ -687,15 +554,120 @@ function SubjectEditor({
             </button>
           )}
           <button
-            className="mac-focus inline-flex h-12 items-center justify-center rounded-xl bg-[var(--color-mac-yellow)] px-5 text-sm font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.99]"
+            className="mac-focus inline-flex h-11 items-center justify-center rounded-xl bg-[var(--color-mac-yellow)] px-5 text-sm font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.99]"
             onClick={onSave}
             type="button"
           >
             Save changes
           </button>
         </div>
-      </div>
-    </div>
+      }
+      isDirty={isDirty}
+      maxWidthClassName="max-w-lg"
+      onClose={onClose}
+      title={editingSubject ? "Subject details" : "Edit subjects"}
+    >
+      {editingSubject ? (
+        <>
+          {editingSubject.unitOfferingId ? (
+            <div className="rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] p-3.5">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+                Canonical unit code
+              </p>
+              <p className="mt-1 font-mono font-semibold text-[var(--color-mac-yellow)]">
+                {editingSubject.canonicalCode}
+              </p>
+            </div>
+          ) : null}
+
+          <label className="block text-sm font-medium">
+            {editingSubject.unitOfferingId ? "Personal name" : "Name"}
+            <input
+              className="mac-focus mt-2 h-12 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 font-semibold text-[var(--color-text)] transition hover:border-[rgb(255_255_255/0.15)]"
+              data-dialog-autofocus
+              maxLength={60}
+              onChange={(event) =>
+                onUpdate(editingSubject.id, { name: event.target.value })
+              }
+              value={editingSubject.name}
+            />
+          </label>
+
+          <div>
+            <p className="text-sm font-medium">Play colour</p>
+            <div className="mt-2 grid grid-cols-6 gap-2 rounded-2xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.02)] p-2">
+              {SUBJECT_COLORS.map((color) => {
+                const selected = color === editingSubject.color;
+
+                return (
+                  <button
+                    aria-pressed={selected}
+                    aria-label={`Use colour ${color}`}
+                    className={cn(
+                      "mac-focus flex aspect-square min-w-0 items-center justify-center rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:brightness-110",
+                      selected
+                        ? "border-white/80 ring-2 ring-white/80 ring-offset-2 ring-offset-[var(--color-background)]"
+                        : "border-white/10",
+                    )}
+                    key={color}
+                    onClick={() => onUpdate(editingSubject.id, { color })}
+                    style={{ backgroundColor: color }}
+                    type="button"
+                  >
+                    {selected ? (
+                      <span
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/20"
+                        style={{
+                          color: color === "#FFE330" ? "#141414" : "white",
+                        }}
+                      >
+                        <Check aria-hidden size={13} strokeWidth={3} />
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <button
+            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[rgb(255_107_107/0.35)] bg-[rgb(255_107_107/0.035)] px-3 text-sm font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-35"
+            disabled={draftSubjects.length <= 1}
+            onClick={() => deleteSubject(editingSubject.id)}
+            type="button"
+          >
+            <Trash2 aria-hidden size={16} />
+            Delete subject
+          </button>
+        </>
+      ) : (
+        <div className="divide-y divide-[var(--color-border)]">
+          {draftSubjects.map((subject) => (
+            <div
+              className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3"
+              key={subject.id}
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <span
+                  aria-hidden
+                  className="h-3.5 w-3.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: subject.color }}
+                />
+                <p className="truncate font-semibold">{subject.name}</p>
+              </div>
+              <button
+                className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
+                onClick={() => setEditingSubjectId(subject.id)}
+                type="button"
+              >
+                <Pencil aria-hidden size={16} />
+                <span className="sr-only">Edit {subject.name}</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </AppDialog>
   );
 }
 

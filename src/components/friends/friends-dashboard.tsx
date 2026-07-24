@@ -10,8 +10,8 @@ import {
   Send,
   Trash2,
   Users,
-  X,
 } from "lucide-react";
+import { AppDialog } from "@/components/app-dialog";
 import {
   PROFILE_COLORS,
   SOCIAL_STORAGE_KEY,
@@ -277,12 +277,12 @@ export function FriendsDashboard() {
       <div className="space-y-5 pt-1">
         <section className="space-y-4">
           <button
-            className="mac-focus inline-flex h-10 items-center gap-2 rounded-md text-sm font-semibold text-[var(--color-text-muted)]"
+            aria-label="Back to friends"
+            className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-xl text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
             onClick={() => setSelectedFriendId(null)}
             type="button"
           >
-            <ArrowLeft aria-hidden size={17} />
-            Back
+            <ArrowLeft aria-hidden size={19} />
           </button>
 
           <div className="flex items-center gap-4">
@@ -438,7 +438,12 @@ export function FriendsDashboard() {
           onAddRemote={(friendId) =>
             void addRemoteFriendFromCandidate(friendId)
           }
-          onClose={() => setIsAdding(false)}
+          onClose={() => {
+            setIsAdding(false);
+            setFriendName("");
+            setFriendHandle("");
+            setFriendColor(PROFILE_COLORS[1]);
+          }}
           onColorChange={setFriendColor}
           onHandleChange={setFriendHandle}
           onNameChange={setFriendName}
@@ -472,112 +477,103 @@ function AddFriendDialog({
   onNameChange: (name: string) => void;
   remoteCandidates: SocialFriend[] | null;
 }) {
+  const isDirty =
+    remoteCandidates === null &&
+    Boolean(name.trim() || handle.trim() || color !== PROFILE_COLORS[1]);
+
   return (
-    <div
-      aria-modal="true"
-      className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] items-center justify-center bg-black/58 px-3 pb-[max(0.75rem,var(--safe-area-bottom))] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm"
-      role="dialog"
-    >
-      <div className="max-h-[calc(var(--app-viewport-height)-2rem)] w-full max-w-xl overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
-        <div className="flex items-center justify-between gap-3 p-4">
-          <h2 className="text-lg font-semibold">Add a friend</h2>
+    <AppDialog
+      bodyClassName={remoteCandidates ? "grid gap-2" : "space-y-5"}
+      closeLabel="Close add friend"
+      footer={
+        remoteCandidates ? null : (
           <button
-            className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
-            onClick={onClose}
+            className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
+            disabled={!name.trim()}
+            onClick={onAdd}
             type="button"
           >
-            <X aria-hidden size={18} />
-            <span className="sr-only">Close</span>
+            Add friend
           </button>
-        </div>
-
-        {remoteCandidates ? (
-          <div className="grid gap-2 p-4">
-            {remoteCandidates.length ? (
-              remoteCandidates.map((candidate) => (
-                <button
-                  className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left"
-                  key={candidate.id}
-                  onClick={() => onAddRemote(candidate.id)}
-                  type="button"
-                >
-                  <ProfileBadge friend={candidate} />
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold">{candidate.name}</p>
-                    <p className="truncate text-sm text-[var(--color-text-muted)]">
-                      {candidate.handle}
-                    </p>
-                  </div>
-                  <span className="text-sm font-semibold text-[var(--color-mac-yellow)]">
-                    Add
-                  </span>
-                </button>
-              ))
-            ) : (
-              <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
-                No new profiles available.
-              </p>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="space-y-5 p-4">
-              <label className="block text-sm font-medium">
-                Name
-                <input
-                  className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
-                  onChange={(event) => onNameChange(event.target.value)}
-                  placeholder="e.g. Alex Chen"
-                  value={name}
-                />
-              </label>
-
-              <label className="block text-sm font-medium">
-                Handle
-                <input
-                  className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
-                  onChange={(event) => onHandleChange(event.target.value)}
-                  placeholder="e.g. @alex"
-                  value={handle}
-                />
-              </label>
-
-              <div>
-                <p className="text-sm font-medium">Colour</p>
-                <div className="mt-3 flex flex-wrap gap-3">
-                  {PROFILE_COLORS.map((profileColor) => (
-                    <button
-                      aria-label={`Use colour ${profileColor}`}
-                      className={cn(
-                        "mac-focus h-10 w-10 rounded-full border transition",
-                        profileColor === color
-                          ? "border-white ring-2 ring-[var(--color-mac-yellow)] ring-offset-2 ring-offset-[var(--color-background)]"
-                          : "border-[var(--color-border)]",
-                      )}
-                      key={profileColor}
-                      onClick={() => onColorChange(profileColor)}
-                      style={{ backgroundColor: profileColor }}
-                      type="button"
-                    />
-                  ))}
-                </div>
+        )
+      }
+      isDirty={isDirty}
+      onClose={onClose}
+      title="Add a friend"
+    >
+      {remoteCandidates ? (
+        remoteCandidates.length ? (
+          remoteCandidates.map((candidate, index) => (
+            <button
+              className="mac-focus grid min-h-14 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left"
+              data-dialog-autofocus={index === 0 ? "" : undefined}
+              key={candidate.id}
+              onClick={() => onAddRemote(candidate.id)}
+              type="button"
+            >
+              <ProfileBadge friend={candidate} />
+              <div className="min-w-0">
+                <p className="truncate font-semibold">{candidate.name}</p>
+                <p className="truncate text-sm text-[var(--color-text-muted)]">
+                  {candidate.handle}
+                </p>
               </div>
-            </div>
+              <span className="text-sm font-semibold text-[var(--color-mac-yellow)]">
+                Add
+              </span>
+            </button>
+          ))
+        ) : (
+          <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
+            No new profiles available.
+          </p>
+        )
+      ) : (
+        <>
+          <label className="block text-sm font-medium">
+            Name
+            <input
+              className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
+              data-dialog-autofocus
+              onChange={(event) => onNameChange(event.target.value)}
+              placeholder="e.g. Alex Chen"
+              value={name}
+            />
+          </label>
 
-            <div className="p-4">
-              <button
-                className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
-                disabled={!name.trim()}
-                onClick={onAdd}
-                type="button"
-              >
-                Add friend
-              </button>
+          <label className="block text-sm font-medium">
+            Handle
+            <input
+              className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[var(--color-text)]"
+              onChange={(event) => onHandleChange(event.target.value)}
+              placeholder="e.g. @alex"
+              value={handle}
+            />
+          </label>
+
+          <div>
+            <p className="text-sm font-medium">Colour</p>
+            <div className="mt-3 flex flex-wrap gap-3">
+              {PROFILE_COLORS.map((profileColor) => (
+                <button
+                  aria-label={`Use colour ${profileColor}`}
+                  className={cn(
+                    "mac-focus h-11 w-11 rounded-full border transition",
+                    profileColor === color
+                      ? "border-white ring-2 ring-[var(--color-mac-yellow)] ring-offset-2 ring-offset-[var(--color-background)]"
+                      : "border-[var(--color-border)]",
+                  )}
+                  key={profileColor}
+                  onClick={() => onColorChange(profileColor)}
+                  style={{ backgroundColor: profileColor }}
+                  type="button"
+                />
+              ))}
             </div>
-          </>
-        )}
-      </div>
-    </div>
+          </div>
+        </>
+      )}
+    </AppDialog>
   );
 }
 

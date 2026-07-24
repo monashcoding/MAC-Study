@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ArrowLeft,
@@ -9,8 +9,8 @@ import {
   Plus,
   Search,
   UserPlus,
-  X,
 } from "lucide-react";
+import { AppDialog } from "@/components/app-dialog";
 import {
   addRemoteFriend,
   fetchRemoteSocialSnapshot,
@@ -154,7 +154,7 @@ export function UnitsDashboard() {
   const selectedEnrollment = unitState.enrollments.find(
     (enrollment) => enrollment.offeringId === selectedOfferingId,
   );
-  useAppHeaderDetail(selectedEnrollment?.code ?? null);
+  useAppHeaderDetail("/app/units", selectedEnrollment?.code ?? null);
 
   useEffect(() => {
     if (!selectedOfferingId) {
@@ -518,19 +518,16 @@ function OfferingDetail({
   return (
     <div className="space-y-4">
       <section className="border-b border-[rgb(255_255_255/0.08)] pb-4">
-        <div className="flex h-9 items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
-            className="mac-focus -ml-1 inline-flex h-9 items-center gap-1.5 rounded-md px-1 text-sm font-medium text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+            aria-label="Back to units"
+            className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
             onClick={onBack}
             type="button"
           >
-            <ArrowLeft aria-hidden size={16} />
-            Back
+            <ArrowLeft aria-hidden size={19} />
           </button>
-        </div>
-
-        <div className="mt-2 flex items-start justify-between gap-3">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-[var(--color-text-muted)]">
               {unitTitle}
             </p>
@@ -539,7 +536,7 @@ function OfferingDetail({
             </p>
           </div>
           <button
-            className="mac-focus inline-flex h-8 shrink-0 items-center rounded-md border border-[rgb(255_107_107/0.42)] bg-[rgb(255_107_107/0.06)] px-2.5 text-[11px] font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.12)] disabled:opacity-45"
+            className="mac-focus inline-flex h-11 shrink-0 items-center rounded-xl border border-[rgb(255_107_107/0.42)] bg-[rgb(255_107_107/0.06)] px-3 text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.12)] disabled:opacity-45"
             disabled={busyKey === `leave:${enrollment.offeringId}`}
             onClick={onLeave}
             type="button"
@@ -548,8 +545,8 @@ function OfferingDetail({
           </button>
         </div>
 
-        <div className="mt-6 grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <label className="flex h-9 items-center gap-2 rounded-lg border border-[rgb(255_255_255/0.12)] bg-[rgb(255_255_255/0.018)] px-3 transition focus-within:border-[var(--color-mac-yellow)] focus-within:bg-[rgb(255_255_255/0.025)]">
+        <div className="mt-4 grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <label className="flex h-11 items-center gap-2 rounded-xl border border-[rgb(255_255_255/0.12)] bg-[rgb(255_255_255/0.018)] px-3 transition focus-within:border-[var(--color-mac-yellow)] focus-within:bg-[rgb(255_255_255/0.025)]">
             <Search
               aria-hidden
               className="text-[var(--color-text-muted)]"
@@ -747,8 +744,16 @@ function AddUnitDialog({
   const [period, setPeriod] = useState<TeachingPeriod>(
     getDefaultTeachingPeriod(),
   );
+  const initialYearRef = useRef(year);
+  const initialPeriodRef = useRef(period);
   const normalizedCode = normalizeUnitCode(codeInput);
   const valid = isValidUnitCode(codeInput);
+  const isDirty = Boolean(
+    codeInput.trim() ||
+    nickname.trim() ||
+    year !== initialYearRef.current ||
+    period !== initialPeriodRef.current,
+  );
 
   function updateCode(value: string) {
     setCodeInput(value.toUpperCase());
@@ -762,130 +767,116 @@ function AddUnitDialog({
   }
 
   return (
-    <div
-      aria-modal="true"
-      className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] items-center justify-center bg-black/60 px-3 pb-[max(0.75rem,var(--safe-area-bottom))] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm"
-      role="dialog"
+    <AppDialog
+      bodyClassName="space-y-5"
+      closeLabel="Close add unit"
+      footer={
+        <button
+          className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] disabled:opacity-45"
+          disabled={!valid || isSaving}
+          onClick={() =>
+            onAdd({
+              code: normalizedCode,
+              nickname: normalizeUnitNickname(nickname) || null,
+              period,
+              year,
+            })
+          }
+          type="button"
+        >
+          <Plus aria-hidden size={17} />
+          {isSaving ? "Adding…" : "Add unit"}
+        </button>
+      }
+      isDirty={isDirty}
+      maxWidthClassName="max-w-lg"
+      onClose={onClose}
+      title="Add a unit"
     >
-      <div className="max-h-[calc(var(--app-viewport-height)-2rem)] w-full max-w-lg overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] p-4">
-          <div>
-            <h2 className="text-lg font-semibold">Add a unit</h2>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Choose the class you’re taking.
-            </p>
-          </div>
-          <button
-            className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
-            onClick={onClose}
-            type="button"
+      <p className="text-sm text-[var(--color-text-muted)]">
+        Choose the class you’re taking.
+      </p>
+
+      <label className="block text-sm font-medium">
+        Unit code
+        <input
+          autoCapitalize="characters"
+          className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 font-mono uppercase"
+          data-dialog-autofocus
+          list="unit-code-suggestions"
+          maxLength={14}
+          onChange={(event) => updateCode(event.target.value)}
+          placeholder="FIT3077"
+          value={codeInput}
+        />
+        <datalist id="unit-code-suggestions">
+          {suggestions.map((suggestion) => (
+            <option key={suggestion.code} value={suggestion.code} />
+          ))}
+        </datalist>
+        {codeInput && !valid ? (
+          <span className="mt-2 block text-xs text-[var(--color-danger)]">
+            Use a code like FIT3077.
+          </span>
+        ) : null}
+      </label>
+
+      <label className="block text-sm font-medium">
+        Nickname{" "}
+        <span className="text-[var(--color-text-muted)]">(optional)</span>
+        <input
+          className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
+          maxLength={60}
+          onChange={(event) => setNickname(event.target.value)}
+          placeholder="Software architecture"
+          value={nickname}
+        />
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-sm font-medium">
+          Year
+          <select
+            className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
+            onChange={(event) => setYear(Number(event.target.value))}
+            value={year}
           >
-            <X aria-hidden size={18} />
-            <span className="sr-only">Close</span>
-          </button>
-        </div>
-
-        <div className="space-y-5 p-4">
-          <label className="block text-sm font-medium">
-            Unit code
-            <input
-              autoCapitalize="characters"
-              className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 font-mono uppercase"
-              list="unit-code-suggestions"
-              maxLength={14}
-              onChange={(event) => updateCode(event.target.value)}
-              placeholder="FIT3077"
-              value={codeInput}
-            />
-            <datalist id="unit-code-suggestions">
-              {suggestions.map((suggestion) => (
-                <option key={suggestion.code} value={suggestion.code} />
-              ))}
-            </datalist>
-            {codeInput && !valid ? (
-              <span className="mt-2 block text-xs text-[var(--color-danger)]">
-                Use a code like FIT3077.
-              </span>
-            ) : null}
-          </label>
-
-          <label className="block text-sm font-medium">
-            Nickname{" "}
-            <span className="text-[var(--color-text-muted)]">(optional)</span>
-            <input
-              className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
-              maxLength={60}
-              onChange={(event) => setNickname(event.target.value)}
-              placeholder="Software architecture"
-              value={nickname}
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-sm font-medium">
-              Year
-              <select
-                className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
-                onChange={(event) => setYear(Number(event.target.value))}
-                value={year}
-              >
-                {years.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm font-medium">
-              Teaching period
-              <select
-                className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
-                onChange={(event) =>
-                  setPeriod(event.target.value as TeachingPeriod)
-                }
-                value={period}
-              >
-                {TEACHING_PERIODS.map((option) => (
-                  <option key={option} value={option}>
-                    {getTeachingPeriodLabel(option)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          {valid ? (
-            <div className="rounded-md bg-[rgb(255_227_48/0.08)] p-3">
-              <p className="text-xs font-medium text-[var(--color-text-muted)]">
-                Cohort
-              </p>
-              <p className="mt-1 font-mono text-sm font-semibold text-[var(--color-mac-yellow)]">
-                {getCohortLabel({ code: normalizedCode, period, year })}
-              </p>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="border-t border-[var(--color-border)] p-4">
-          <button
-            className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] disabled:opacity-45"
-            disabled={!valid || isSaving}
-            onClick={() =>
-              onAdd({
-                code: normalizedCode,
-                nickname: normalizeUnitNickname(nickname) || null,
-                period,
-                year,
-              })
+            {years.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm font-medium">
+          Teaching period
+          <select
+            className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
+            onChange={(event) =>
+              setPeriod(event.target.value as TeachingPeriod)
             }
-            type="button"
+            value={period}
           >
-            <Plus aria-hidden size={17} />
-            {isSaving ? "Adding…" : "Add unit"}
-          </button>
-        </div>
+            {TEACHING_PERIODS.map((option) => (
+              <option key={option} value={option}>
+                {getTeachingPeriodLabel(option)}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
-    </div>
+
+      {valid ? (
+        <div className="rounded-md bg-[rgb(255_227_48/0.08)] p-3">
+          <p className="text-xs font-medium text-[var(--color-text-muted)]">
+            Cohort
+          </p>
+          <p className="mt-1 font-mono text-sm font-semibold text-[var(--color-mac-yellow)]">
+            {getCohortLabel({ code: normalizedCode, period, year })}
+          </p>
+        </div>
+      ) : null}
+    </AppDialog>
   );
 }
 

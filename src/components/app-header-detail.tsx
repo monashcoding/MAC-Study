@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 
 const AppHeaderDetailContext = createContext<
-  ((detail: string | null) => void) | null
+  ((scope: string, detail: string | null) => void) | null
 >(null);
 
 export function AppHeaderDetailProvider({
@@ -11,7 +11,7 @@ export function AppHeaderDetailProvider({
   onChange,
 }: {
   children: ReactNode;
-  onChange: (detail: string | null) => void;
+  onChange: (scope: string, detail: string | null) => void;
 }) {
   return (
     <AppHeaderDetailContext.Provider value={onChange}>
@@ -20,12 +20,12 @@ export function AppHeaderDetailProvider({
   );
 }
 
-export function useAppHeaderDetail(detail: string | null) {
+export function useAppHeaderDetail(scope: string, detail: string | null) {
   const onChange = useContext(AppHeaderDetailContext);
 
   useEffect(() => {
-    onChange?.(detail);
+    onChange?.(scope, detail);
 
-    return () => onChange?.(null);
-  }, [detail, onChange]);
+    return () => onChange?.(scope, null);
+  }, [detail, onChange, scope]);
 }
