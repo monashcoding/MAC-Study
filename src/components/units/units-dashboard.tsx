@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ArrowLeft,
@@ -11,6 +18,8 @@ import {
   UserPlus,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import { CustomSelect } from "@/components/custom-select";
+import { TransientToast } from "@/components/transient-toast";
 import {
   addRemoteFriend,
   fetchRemoteSocialSnapshot,
@@ -101,6 +110,7 @@ export function UnitsDashboard() {
     [],
   );
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const refreshRemote = useCallback(async (supabase: SupabaseClient) => {
     const [units, social] = await Promise.all([
@@ -293,18 +303,22 @@ export function UnitsDashboard() {
 
   async function addFriend(memberId: string) {
     setBusyKey(`friend:${memberId}`);
+    setFeedback(null);
+    setSentFriendRequestIds((current) =>
+      Array.from(new Set([...current, memberId])),
+    );
+    setToastMessage("Friend request sent");
 
     try {
       if (remoteClient) {
         await addRemoteFriend({ friendId: memberId, supabase: remoteClient });
         await refreshRemote(remoteClient);
       }
-
-      setSentFriendRequestIds((current) =>
-        Array.from(new Set([...current, memberId])),
-      );
-      setFeedback("Friend request sent.");
     } catch (error) {
+      setSentFriendRequestIds((current) =>
+        current.filter((id) => id !== memberId),
+      );
+      setToastMessage(null);
       setFeedback(getErrorMessage(error, "Could not add this friend."));
     } finally {
       setBusyKey(null);
@@ -347,29 +361,37 @@ export function UnitsDashboard() {
 
   if (selectedEnrollment) {
     return (
-      <OfferingDetail
-        allGroups={socialState.groups}
-        busyKey={busyKey}
-        cohort={filteredCohort}
-        cohortLoading={cohortLoading}
-        enrollment={selectedEnrollment}
-        feedback={feedback}
-        manageableGroups={manageableGroups}
-        onAddFriend={(memberId) => void addFriend(memberId)}
-        onAddToGroup={(memberId, groupId) => void addToGroup(memberId, groupId)}
-        onBack={() => {
-          setSelectedOfferingId(null);
-          setCohort([]);
-          setSearch("");
-          setScope("all");
-        }}
-        onLeave={() => void leaveEnrollment(selectedEnrollment)}
-        onScopeChange={setScope}
-        onSearchChange={setSearch}
-        sentFriendRequestIds={sentFriendRequestIds}
-        scope={scope}
-        search={search}
-      />
+      <>
+        <OfferingDetail
+          allGroups={socialState.groups}
+          busyKey={busyKey}
+          cohort={filteredCohort}
+          cohortLoading={cohortLoading}
+          enrollment={selectedEnrollment}
+          feedback={feedback}
+          manageableGroups={manageableGroups}
+          onAddFriend={(memberId) => void addFriend(memberId)}
+          onAddToGroup={(memberId, groupId) =>
+            void addToGroup(memberId, groupId)
+          }
+          onBack={() => {
+            setSelectedOfferingId(null);
+            setCohort([]);
+            setSearch("");
+            setScope("all");
+          }}
+          onLeave={() => void leaveEnrollment(selectedEnrollment)}
+          onScopeChange={setScope}
+          onSearchChange={setSearch}
+          sentFriendRequestIds={sentFriendRequestIds}
+          scope={scope}
+          search={search}
+        />
+        <TransientToast
+          message={toastMessage}
+          onDismiss={() => setToastMessage(null)}
+        />
+      </>
     );
   }
 
@@ -694,23 +716,20 @@ function CohortMemberCard({
           {requested ? "Requested" : "Request"}
         </button>
       ) : availableGroups.length ? (
-        <select
-          aria-label={`Add ${member.displayName} to a group`}
-          className="mac-focus h-8 max-w-[8.5rem] rounded-md border border-[rgb(255_255_255/0.12)] bg-transparent px-2 text-[11px] font-semibold sm:max-w-[10rem]"
+        <CustomSelect
+          ariaLabel={`Add ${member.displayName} to a group`}
+          className="w-[8.5rem] sm:w-[10rem]"
           disabled={busyKey === `group:${member.id}`}
-          onChange={(event) => {
-            onAddToGroup(member.id, event.target.value);
-            event.target.value = "";
-          }}
-          value=""
-        >
-          <option value="">Add to group…</option>
-          {availableGroups.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name}
-            </option>
-          ))}
-        </select>
+          onChange={(groupId) => onAddToGroup(member.id, groupId)}
+          options={availableGroups.map((group) => ({
+            label: group.name,
+            value: group.id,
+          }))}
+          placement="top"
+          placeholder="Add to group…"
+          size="compact"
+          value={null}
+        />
       ) : (
         <span
           className={cn(
@@ -809,29 +828,12 @@ function AddUnitDialog({
         Choose the class you’re taking.
       </p>
 
-      <label className="block text-sm font-medium">
-        Unit code
-        <input
-          autoCapitalize="characters"
-          className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 font-mono uppercase"
-          data-dialog-autofocus
-          list="unit-code-suggestions"
-          maxLength={14}
-          onChange={(event) => updateCode(event.target.value)}
-          placeholder="FIT3077"
-          value={codeInput}
-        />
-        <datalist id="unit-code-suggestions">
-          {suggestions.map((suggestion) => (
-            <option key={suggestion.code} value={suggestion.code} />
-          ))}
-        </datalist>
-        {codeInput && !valid ? (
-          <span className="mt-2 block text-xs text-[var(--color-danger)]">
-            Use a code like FIT3077.
-          </span>
-        ) : null}
-      </label>
+      <UnitCodeInput
+        invalid={Boolean(codeInput && !valid)}
+        onChange={updateCode}
+        suggestions={suggestions}
+        value={codeInput}
+      />
 
       <label className="block text-sm font-medium">
         Nickname{" "}
@@ -846,36 +848,30 @@ function AddUnitDialog({
       </label>
 
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-medium">
-          Year
-          <select
-            className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
-            onChange={(event) => setYear(Number(event.target.value))}
+        <div className="text-sm font-medium">
+          <p className="mb-2">Year</p>
+          <CustomSelect
+            ariaLabel="Year"
+            onChange={setYear}
+            options={years.map((option) => ({
+              label: `${option}`,
+              value: option,
+            }))}
             value={year}
-          >
-            {years.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block text-sm font-medium">
-          Teaching period
-          <select
-            className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
-            onChange={(event) =>
-              setPeriod(event.target.value as TeachingPeriod)
-            }
+          />
+        </div>
+        <div className="text-sm font-medium">
+          <p className="mb-2">Teaching period</p>
+          <CustomSelect
+            ariaLabel="Teaching period"
+            onChange={setPeriod}
+            options={TEACHING_PERIODS.map((option) => ({
+              label: getTeachingPeriodLabel(option),
+              value: option,
+            }))}
             value={period}
-          >
-            {TEACHING_PERIODS.map((option) => (
-              <option key={option} value={option}>
-                {getTeachingPeriodLabel(option)}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
       </div>
 
       {valid ? (
@@ -889,6 +885,128 @@ function AddUnitDialog({
         </div>
       ) : null}
     </AppDialog>
+  );
+}
+
+function UnitCodeInput({
+  invalid,
+  onChange,
+  suggestions,
+  value,
+}: {
+  invalid: boolean;
+  onChange: (value: string) => void;
+  suggestions: RemoteUnitState["suggestions"];
+  value: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const inputId = useId();
+  const listboxId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const query = normalizeUnitCode(value);
+  const filteredSuggestions = suggestions
+    .filter(
+      (suggestion) =>
+        !query ||
+        suggestion.code.includes(query) ||
+        suggestion.nickname?.toLowerCase().includes(value.toLowerCase()),
+    )
+    .slice(0, 6);
+
+  return (
+    <div
+      className="relative"
+      onBlur={(event) => {
+        if (
+          event.relatedTarget instanceof Node &&
+          rootRef.current?.contains(event.relatedTarget)
+        ) {
+          return;
+        }
+
+        setIsOpen(false);
+      }}
+      ref={rootRef}
+    >
+      <label className="block text-sm font-medium" htmlFor={inputId}>
+        Unit code
+      </label>
+      <input
+        aria-controls={isOpen ? listboxId : undefined}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-autocomplete="list"
+        autoCapitalize="characters"
+        className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 font-mono uppercase"
+        data-dialog-autofocus
+        id={inputId}
+        maxLength={14}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        placeholder="FIT3077"
+        role="combobox"
+        value={value}
+      />
+
+      {isOpen && filteredSuggestions.length ? (
+        <div
+          className="absolute inset-x-0 top-[calc(100%+0.45rem)] z-50 max-h-60 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[rgb(30_30_30/0.99)] p-1.5 shadow-[0_18px_50px_rgb(0_0_0/0.52)] backdrop-blur-xl"
+          id={listboxId}
+          role="listbox"
+        >
+          {filteredSuggestions.map((suggestion) => {
+            const selected = suggestion.code === query;
+
+            return (
+              <button
+                aria-selected={selected}
+                className={cn(
+                  "mac-focus grid min-h-11 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2 text-left transition",
+                  selected
+                    ? "bg-[rgb(255_227_48/0.12)]"
+                    : "hover:bg-[rgb(255_255_255/0.055)]",
+                )}
+                key={suggestion.code}
+                onClick={() => {
+                  onChange(suggestion.code);
+                  setIsOpen(false);
+                }}
+                onMouseDown={(event) => event.preventDefault()}
+                role="option"
+                type="button"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-mono text-sm font-semibold">
+                    {suggestion.code}
+                  </span>
+                  {suggestion.nickname ? (
+                    <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
+                      {suggestion.nickname}
+                    </span>
+                  ) : null}
+                </span>
+                {selected ? (
+                  <Check
+                    aria-hidden
+                    className="text-[var(--color-mac-yellow)]"
+                    size={15}
+                  />
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {invalid ? (
+        <span className="mt-2 block text-xs text-[var(--color-danger)]">
+          Use a code like FIT3077.
+        </span>
+      ) : null}
+    </div>
   );
 }
 

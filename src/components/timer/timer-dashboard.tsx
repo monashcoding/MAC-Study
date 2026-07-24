@@ -27,6 +27,7 @@ import {
   sumCompletedSeconds,
 } from "@/lib/timer";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
+import { TransientToast } from "@/components/transient-toast";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "mac-study-demo-state";
@@ -341,6 +342,16 @@ export function TimerDashboard() {
     });
   }
 
+  function restoreDraftSubject(subject: StudySubject, index: number) {
+    setDraftSubjects((current) => {
+      if (current.some((item) => item.id === subject.id)) return current;
+
+      const next = [...current];
+      next.splice(Math.min(index, next.length), 0, subject);
+      return next;
+    });
+  }
+
   async function saveSubjects() {
     const cleanedSubjects = normalizeSubjects(draftSubjects);
     const subjectIds = new Set(cleanedSubjects.map((subject) => subject.id));
@@ -482,6 +493,7 @@ export function TimerDashboard() {
             setInitialEditingSubjectId(null);
           }}
           onDelete={deleteDraftSubject}
+          onRestore={restoreDraftSubject}
           onSave={saveSubjects}
           onUpdate={updateDraftSubject}
         />
@@ -504,6 +516,7 @@ function SubjectEditor({
   onAdd,
   onClose,
   onDelete,
+  onRestore,
   onSave,
   onUpdate,
 }: {
@@ -512,15 +525,20 @@ function SubjectEditor({
   onAdd: () => string;
   onClose: () => void;
   onDelete: (subjectId: string) => void;
+  onRestore: (subject: StudySubject, index: number) => void;
   onSave: () => void;
   onUpdate: (subjectId: string, updates: Partial<StudySubject>) => void;
 }) {
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(
     initialSubjectId,
   );
+  const [deletedSubjects, setDeletedSubjects] = useState<
+    { index: number; subject: StudySubject }[]
+  >([]);
   const initialSubjectsRef = useRef(JSON.stringify(draftSubjects));
   const editingSubject =
     draftSubjects.find((subject) => subject.id === editingSubjectId) ?? null;
+  const lastDeleted = deletedSubjects.at(-1) ?? null;
   const isDirty = JSON.stringify(draftSubjects) !== initialSubjectsRef.current;
 
   function addAndEditSubject() {
@@ -532,8 +550,24 @@ function SubjectEditor({
     setEditingSubjectId(null);
   }
 
+  function quickDeleteSubject(subject: StudySubject) {
+    const index = draftSubjects.findIndex((item) => item.id === subject.id);
+    if (index < 0) return;
+
+    setDeletedSubjects((current) => [...current, { index, subject }]);
+    onDelete(subject.id);
+  }
+
+  function undoLastDelete() {
+    if (!lastDeleted) return;
+
+    onRestore(lastDeleted.subject, lastDeleted.index);
+    setDeletedSubjects((current) => current.slice(0, -1));
+  }
+
   return (
-    <AppDialog
+    <>
+      <AppDialog
       bodyClassName={editingSubject ? "space-y-6 p-5" : "p-0"}
       closeLabel="Close subject editor"
       footer={
@@ -655,19 +689,42 @@ function SubjectEditor({
                 />
                 <p className="truncate font-semibold">{subject.name}</p>
               </div>
-              <button
-                className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
-                onClick={() => setEditingSubjectId(subject.id)}
-                type="button"
-              >
-                <Pencil aria-hidden size={16} />
-                <span className="sr-only">Edit {subject.name}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+                  onClick={() => setEditingSubjectId(subject.id)}
+                  type="button"
+                >
+                  <Pencil aria-hidden size={16} />
+                  <span className="sr-only">Edit {subject.name}</span>
+                </button>
+                <button
+                  className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[rgb(255_107_107/0.35)] text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:cursor-not-allowed disabled:opacity-30"
+                  disabled={draftSubjects.length <= 1}
+                  onClick={() => quickDeleteSubject(subject)}
+                  type="button"
+                >
+                  <Trash2 aria-hidden size={16} />
+                  <span className="sr-only">Delete {subject.name}</span>
+                </button>
+              </div>
             </div>
           ))}
         </div>
       )}
-    </AppDialog>
+      </AppDialog>
+
+      {lastDeleted ? (
+        <TransientToast
+          actionLabel="Undo"
+          durationMs={6000}
+          key={lastDeleted.subject.id}
+          message={`${lastDeleted.subject.name} removed`}
+          onAction={undoLastDelete}
+          onDismiss={() => setDeletedSubjects([])}
+        />
+      ) : null}
+    </>
   );
 }
 

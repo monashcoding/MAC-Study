@@ -45,6 +45,7 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { NudgePill } from "@/components/social/nudge-pill";
 import { useNudgeQueue } from "@/components/social/use-nudge-queue";
+import { TransientToast } from "@/components/transient-toast";
 import { formatDuration } from "@/lib/timer";
 import { cn } from "@/lib/utils";
 
@@ -72,18 +73,50 @@ export function FriendsDashboard() {
   );
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const pendingFriendRequestIdsRef = useRef(new Set<string>());
+  const pendingCancelledRequestsRef = useRef(new Map<string, string>());
   const nudgeQueue = useNudgeQueue(Boolean(remoteClient));
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
     const snapshot = await fetchRemoteSocialSnapshot(supabase);
 
     if (snapshot) {
+      const cancellingFriendIds = new Set(
+        pendingCancelledRequestsRef.current.values(),
+      );
       cacheRemoteSocialSnapshot(snapshot);
       setCurrentUserId(snapshot.currentUserId);
       setSocialState(snapshot.socialState);
-      setAvailableFriends(snapshot.availableFriends);
-      setFriendRequests(snapshot.friendRequests ?? []);
+      setAvailableFriends(
+        snapshot.availableFriends.map((friend) => {
+          if (cancellingFriendIds.has(friend.id)) {
+            return { ...friend, requestDirection: null };
+          }
+
+          return pendingFriendRequestIdsRef.current.has(friend.id)
+            ? { ...friend, requestDirection: "outgoing" }
+            : friend;
+        }),
+      );
+      setFriendRequests((current) => {
+        const remoteRequests = (snapshot.friendRequests ?? []).filter(
+          (request) =>
+            !pendingCancelledRequestsRef.current.has(request.id),
+        );
+        const remoteUserIds = new Set(
+          remoteRequests.map((request) => request.user.id),
+        );
+        const pendingRequests = current.filter(
+          (request) =>
+            request.id.startsWith("optimistic-") &&
+            pendingFriendRequestIdsRef.current.has(request.user.id) &&
+            !remoteUserIds.has(request.user.id),
+        );
+
+        return [...pendingRequests, ...remoteRequests];
+      });
     }
   }, []);
 
@@ -250,24 +283,98 @@ export function FriendsDashboard() {
     setFriendHandle("");
     setFriendColor(PROFILE_COLORS[1]);
     setIsAdding(false);
+    setToastMessage("Friend request sent");
   }
 
   async function addRemoteFriendFromCandidate(friendId: string) {
-    if (!remoteClient) {
-      return;
-    }
+    if (!remoteClient) return;
 
-    setBusyKey(`send:${friendId}`);
+    const candidate = availableFriends.find((friend) => friend.id === friendId);
+    if (!candidate || candidate.requestDirection) return;
+
+    const optimisticRequestId = `optimistic-${friendId}`;
+    pendingFriendRequestIdsRef.current.add(friendId);
     setFeedback(null);
+    setToastMessage("Friend request sent");
+    setAvailableFriends((current) =>
+      current.map((friend) =>
+        friend.id === friendId
+          ? { ...friend, requestDirection: "outgoing" }
+          : friend,
+      ),
+    );
+    setFriendRequests((current) => [
+      {
+        createdAt: new Date().toISOString(),
+        direction: "outgoing",
+        id: optimisticRequestId,
+        user: candidate,
+      },
+      ...current.filter((request) => request.user.id !== friendId),
+    ]);
 
     try {
       await addRemoteFriend({ friendId, supabase: remoteClient });
       await refreshRemoteSocial(remoteClient);
-      setFeedback("Friend request sent.");
+      pendingFriendRequestIdsRef.current.delete(friendId);
     } catch (error) {
+      pendingFriendRequestIdsRef.current.delete(friendId);
+      setAvailableFriends((current) =>
+        current.map((friend) =>
+          friend.id === friendId
+            ? { ...friend, requestDirection: null }
+            : friend,
+        ),
+      );
+      setFriendRequests((current) =>
+        current.filter((request) => request.id !== optimisticRequestId),
+      );
+      setToastMessage(null);
       setFeedback(getErrorMessage(error, "Could not send that request."));
-    } finally {
-      setBusyKey(null);
+    }
+  }
+
+  async function cancelFriendRequest(request: RemoteFriendRequest) {
+    pendingCancelledRequestsRef.current.set(request.id, request.user.id);
+    setFeedback(null);
+    setToastMessage("Friend request cancelled");
+    setFriendRequests((current) =>
+      current.filter((item) => item.id !== request.id),
+    );
+    setAvailableFriends((current) =>
+      current.map((friend) =>
+        friend.id === request.user.id
+          ? { ...friend, requestDirection: null }
+          : friend,
+      ),
+    );
+
+    try {
+      if (remoteClient) {
+        await updateRemoteFriendRequest({
+          action: "cancel",
+          requestId: request.id,
+        });
+        await refreshRemoteSocial(remoteClient);
+      }
+
+      pendingCancelledRequestsRef.current.delete(request.id);
+    } catch (error) {
+      pendingCancelledRequestsRef.current.delete(request.id);
+      setFriendRequests((current) =>
+        current.some((item) => item.id === request.id)
+          ? current
+          : [request, ...current],
+      );
+      setAvailableFriends((current) =>
+        current.map((friend) =>
+          friend.id === request.user.id
+            ? { ...friend, requestDirection: "outgoing" }
+            : friend,
+        ),
+      );
+      setToastMessage(null);
+      setFeedback(getErrorMessage(error, "Could not cancel that request."));
     }
   }
 
@@ -275,6 +382,11 @@ export function FriendsDashboard() {
     request: RemoteFriendRequest,
     action: "accept" | "cancel" | "decline",
   ) {
+    if (action === "cancel") {
+      await cancelFriendRequest(request);
+      return;
+    }
+
     setBusyKey(`${action}:${request.id}`);
     setFeedback(null);
 
@@ -631,9 +743,13 @@ export function FriendsDashboard() {
             setActiveTab("requests");
           }}
           remoteCandidates={remoteClient ? availableFriends : null}
-          busyKey={busyKey}
         />
       ) : null}
+
+      <TransientToast
+        message={toastMessage}
+        onDismiss={() => setToastMessage(null)}
+      />
     </div>
   );
 }
@@ -665,6 +781,7 @@ function FriendRequestRow({
   request: RemoteFriendRequest;
 }) {
   const isBusy = busyKey?.endsWith(`:${request.id}`) ?? false;
+  const isOptimistic = request.id.startsWith("optimistic-");
 
   return (
     <article className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-xl border border-[rgb(255_255_255/0.065)] bg-[rgb(255_255_255/0.028)] p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
@@ -703,7 +820,7 @@ function FriendRequestRow({
           </span>
           <button
             className="mac-focus h-11 rounded-lg px-3 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
-            disabled={isBusy}
+            disabled={isBusy || isOptimistic}
             onClick={() => onAction("cancel")}
             type="button"
           >
@@ -716,7 +833,6 @@ function FriendRequestRow({
 }
 
 function AddFriendDialog({
-  busyKey,
   color,
   handle,
   name,
@@ -729,7 +845,6 @@ function AddFriendDialog({
   onShowRequests,
   remoteCandidates,
 }: {
-  busyKey: string | null;
   color: string;
   handle: string;
   name: string;
@@ -769,8 +884,6 @@ function AddFriendDialog({
       {remoteCandidates ? (
         remoteCandidates.length ? (
           remoteCandidates.map((candidate, index) => {
-            const isSending = busyKey === `send:${candidate.id}`;
-
             return (
             <div
               className="grid min-h-16 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-3 py-3"
@@ -802,11 +915,10 @@ function AddFriendDialog({
                 <button
                   className="mac-focus h-11 rounded-lg border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-mac-yellow)] disabled:opacity-45"
                   data-dialog-autofocus={index === 0 ? "" : undefined}
-                  disabled={busyKey !== null}
                   onClick={() => onAddRemote(candidate.id)}
                   type="button"
                 >
-                  {isSending ? "Sending…" : "Request"}
+                  Request
                 </button>
               )}
             </div>
