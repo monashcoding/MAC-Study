@@ -1,0 +1,7 @@
+interface:
+  display_name: "MAC Study Workstyle"
+  short_description: "Concise UI and UX project preferences"
+  default_prompt: "Use $mac-study-workstyle for this MAC Study task."
+
+policy:
+  allow_implicit_invocation: true
