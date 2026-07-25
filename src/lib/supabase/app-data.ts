@@ -32,6 +32,7 @@ export type RemoteSubject = {
 
 export type RemoteUnitState = {
   enrollments: UnitEnrollment[];
+  subjects: RemoteSubject[];
   suggestions: UnitSuggestion[];
 };
 
@@ -53,6 +54,7 @@ export type RemoteStoredSession = {
 
 export type RemoteTimerState = {
   subjects: RemoteSubject[];
+  unitEnrollments: UnitEnrollment[];
   activeSession: RemoteActiveSession | null;
   sessions: RemoteStoredSession[];
 };
@@ -298,22 +300,31 @@ export async function fetchRemoteTimerState(
     return null;
   }
 
-  const subjects = await ensureRemoteSubjects(supabase, userId);
-  const { data, error } = await supabase
-    .from("study_sessions")
-    .select(
-      "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds",
-    )
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("started_at", { ascending: false })
-    .limit(250);
+  const [subjects, sessionsResult, enrolmentsResult] = await Promise.all([
+    ensureRemoteSubjects(supabase, userId),
+    supabase
+      .from("study_sessions")
+      .select(
+        "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds",
+      )
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .order("started_at", { ascending: false })
+      .limit(250),
+    supabase
+      .from("unit_enrolments")
+      .select(
+        "offering_id, nickname, joined_at, unit_offerings!inner(id, unit_id, study_year, teaching_period, units!inner(id, code))",
+      )
+      .eq("user_id", userId)
+      .is("left_at", null)
+      .order("joined_at", { ascending: false }),
+  ]);
 
-  if (error) {
-    throw error;
-  }
+  if (sessionsResult.error) throw sessionsResult.error;
+  if (enrolmentsResult.error) throw enrolmentsResult.error;
 
-  const rows = (data ?? []) as SessionRow[];
+  const rows = (sessionsResult.data ?? []) as SessionRow[];
   const activeRow =
     rows.find((row) => row.status === "active" && !row.ended_at) ?? null;
   const completedRows = rows.filter(
@@ -324,6 +335,11 @@ export async function fetchRemoteTimerState(
 
   return {
     subjects,
+    unitEnrollments: (
+      (enrolmentsResult.data ?? []) as UnitEnrollmentRow[]
+    )
+      .map(unitEnrollmentFromRow)
+      .filter((value): value is UnitEnrollment => Boolean(value)),
     activeSession: activeRow
       ? {
           subjectId: activeRow.subject_id,
@@ -409,6 +425,10 @@ export async function saveRemoteSubjects({
   }
 
   const savedSubjects: RemoteSubject[] = [];
+  const linkChanges: {
+    offeringId: string | null;
+    subjectId: string;
+  }[] = [];
 
   for (const subject of subjects) {
     if (isUuid(subject.id)) {
@@ -432,6 +452,12 @@ export async function saveRemoteSubjects({
       }
 
       savedSubjects.push(subjectFromRow(data));
+      if (subject.unitOfferingId !== undefined) {
+        linkChanges.push({
+          offeringId: subject.unitOfferingId,
+          subjectId: data.id,
+        });
+      }
     } else {
       const { data, error } = await supabase
         .from("subjects")
@@ -449,6 +475,12 @@ export async function saveRemoteSubjects({
       }
 
       savedSubjects.push(subjectFromRow(data));
+      if (subject.unitOfferingId !== undefined) {
+        linkChanges.push({
+          offeringId: subject.unitOfferingId,
+          subjectId: data.id,
+        });
+      }
     }
   }
 
@@ -457,7 +489,10 @@ export async function saveRemoteSubjects({
   if (keptIds.length) {
     const { error } = await supabase
       .from("subjects")
-      .update({ archived_at: new Date().toISOString() })
+      .update({
+        archived_at: new Date().toISOString(),
+        unit_offering_id: null,
+      })
       .eq("user_id", userId)
       .not("id", "in", `(${keptIds.join(",")})`);
 
@@ -466,7 +501,26 @@ export async function saveRemoteSubjects({
     }
   }
 
-  return savedSubjects;
+  for (const change of linkChanges) {
+    await setRemoteSubjectUnitOffering({
+      offeringId: change.offeringId,
+      subjectId: change.subjectId,
+      supabase,
+    });
+  }
+
+  const { data: refreshedSubjects, error: refreshError } = await supabase
+    .from("subjects")
+    .select("id, code, name, color, unit_offering_id")
+    .eq("user_id", userId)
+    .is("archived_at", null)
+    .order("created_at", { ascending: true });
+
+  if (refreshError) {
+    throw refreshError;
+  }
+
+  return ((refreshedSubjects ?? []) as SubjectRow[]).map(subjectFromRow);
 }
 
 export async function fetchRemoteUnitState(
@@ -519,11 +573,33 @@ export async function fetchRemoteUnitState(
 
   return {
     enrollments,
+    subjects: ((subjectsResult.data ?? []) as SubjectRow[]).map(subjectFromRow),
     suggestions: uniqueUnitSuggestions([
       ...subjectSuggestions,
       ...catalogueSuggestions,
     ]),
   };
+}
+
+export async function setRemoteSubjectUnitOffering({
+  offeringId,
+  subjectId,
+  supabase,
+}: {
+  offeringId: string | null;
+  subjectId: string;
+  supabase: SupabaseClient;
+}) {
+  const { data, error } = await supabase.rpc("set_subject_unit_offering", {
+    input_offering_id: offeringId,
+    input_subject_id: subjectId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return Boolean(data);
 }
 
 export async function upsertRemoteUnitEnrollment({

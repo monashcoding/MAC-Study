@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Check, CircleStop, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import { CustomSelect } from "@/components/custom-select";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   cacheRemoteTimerState,
@@ -28,9 +29,14 @@ import {
 } from "@/lib/timer";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
 import { TransientToast } from "@/components/transient-toast";
+import {
+  getTeachingPeriodLabel,
+  type UnitEnrollment,
+} from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "mac-study-demo-state";
+const UNLINKED_UNIT_VALUE = "__unlinked__";
 const SUBJECT_COLORS = [
   "#FFE330",
   "#6CB6FF",
@@ -90,6 +96,7 @@ export function TimerDashboard() {
     null,
   );
   const [sessions, setSessions] = useState<StoredSession[]>([]);
+  const [unitEnrollments, setUnitEnrollments] = useState<UnitEnrollment[]>([]);
   const [now, setNow] = useState(() => new Date());
   const [isLoaded, setIsLoaded] = useState(false);
   const [isEditingSubjects, setIsEditingSubjects] = useState(false);
@@ -103,6 +110,7 @@ export function TimerDashboard() {
   const applyRemoteTimerState = useCallback((remoteState: RemoteTimerState) => {
     setSubjects(remoteState.subjects);
     setDraftSubjects(remoteState.subjects);
+    setUnitEnrollments(remoteState.unitEnrollments ?? []);
     setActiveSession(remoteState.activeSession);
     setSessions(remoteState.sessions);
   }, []);
@@ -496,6 +504,7 @@ export function TimerDashboard() {
           onRestore={restoreDraftSubject}
           onSave={saveSubjects}
           onUpdate={updateDraftSubject}
+          unitEnrollments={unitEnrollments}
         />
       ) : null}
 
@@ -519,6 +528,7 @@ function SubjectEditor({
   onRestore,
   onSave,
   onUpdate,
+  unitEnrollments,
 }: {
   draftSubjects: StudySubject[];
   initialSubjectId: string | null;
@@ -528,6 +538,7 @@ function SubjectEditor({
   onRestore: (subject: StudySubject, index: number) => void;
   onSave: () => void;
   onUpdate: (subjectId: string, updates: Partial<StudySubject>) => void;
+  unitEnrollments: UnitEnrollment[];
 }) {
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(
     initialSubjectId,
@@ -538,6 +549,17 @@ function SubjectEditor({
   const initialSubjectsRef = useRef(JSON.stringify(draftSubjects));
   const editingSubject =
     draftSubjects.find((subject) => subject.id === editingSubjectId) ?? null;
+  const linkedByOtherSubjects = new Set(
+    draftSubjects
+      .filter((subject) => subject.id !== editingSubjectId)
+      .map((subject) => subject.unitOfferingId)
+      .filter((offeringId): offeringId is string => Boolean(offeringId)),
+  );
+  const availableUnitEnrollments = unitEnrollments.filter(
+    (enrollment) =>
+      !linkedByOtherSubjects.has(enrollment.offeringId) ||
+      enrollment.offeringId === editingSubject?.unitOfferingId,
+  );
   const lastDeleted = deletedSubjects.at(-1) ?? null;
   const isDirty = JSON.stringify(draftSubjects) !== initialSubjectsRef.current;
 
@@ -603,17 +625,6 @@ function SubjectEditor({
     >
       {editingSubject ? (
         <>
-          {editingSubject.unitOfferingId ? (
-            <div className="rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] p-3.5">
-              <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
-                Canonical unit code
-              </p>
-              <p className="mt-1 font-mono font-semibold text-[var(--color-mac-yellow)]">
-                {editingSubject.canonicalCode}
-              </p>
-            </div>
-          ) : null}
-
           <label className="block text-sm font-medium">
             {editingSubject.unitOfferingId ? "Personal name" : "Name"}
             <input
@@ -626,6 +637,34 @@ function SubjectEditor({
               value={editingSubject.name}
             />
           </label>
+
+          <div>
+            <p className="mb-2 text-sm font-medium">Linked unit</p>
+            <CustomSelect
+              ariaLabel={`Linked unit for ${editingSubject.name}`}
+              onChange={(offeringId) => {
+                const enrollment = availableUnitEnrollments.find(
+                  (item) => item.offeringId === offeringId,
+                );
+
+                onUpdate(editingSubject.id, {
+                  canonicalCode: enrollment?.code,
+                  unitOfferingId:
+                    offeringId === UNLINKED_UNIT_VALUE ? null : offeringId,
+                });
+              }}
+              options={[
+                { label: "Not linked", value: UNLINKED_UNIT_VALUE },
+                ...availableUnitEnrollments.map((enrollment) => ({
+                  label: `${enrollment.code} · ${enrollment.year} ${getTeachingPeriodLabel(enrollment.period)}`,
+                  value: enrollment.offeringId,
+                })),
+              ]}
+              value={
+                editingSubject.unitOfferingId ?? UNLINKED_UNIT_VALUE
+              }
+            />
+          </div>
 
           <div>
             <p className="text-sm font-medium">Play colour</p>

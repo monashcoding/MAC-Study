@@ -13,6 +13,8 @@ import {
   ArrowLeft,
   BookOpen,
   Check,
+  Info,
+  Link2,
   Plus,
   Search,
   UserPlus,
@@ -27,6 +29,7 @@ import {
   fetchRemoteUnitState,
   inviteRemoteFriendToGroup,
   leaveRemoteUnitEnrollment,
+  setRemoteSubjectUnitOffering,
   subscribeToRemoteAppChanges,
   upsertRemoteUnitEnrollment,
   type RemoteUnitState,
@@ -55,6 +58,7 @@ import {
 import { cn } from "@/lib/utils";
 
 type CohortScope = "all" | "friends";
+const UNLINKED_SUBJECT_VALUE = "__unlinked__";
 
 const demoEnrollments: UnitEnrollment[] = [
   {
@@ -79,6 +83,21 @@ const demoEnrollments: UnitEnrollment[] = [
 
 const demoUnitState: RemoteUnitState = {
   enrollments: demoEnrollments,
+  subjects: [
+    {
+      color: "#6CB6FF",
+      id: "demo-subject-fit3077",
+      name: "Software architecture",
+      canonicalCode: "FIT3077",
+      unitOfferingId: "demo-fit3077-2027-s1",
+    },
+    {
+      color: "#42D392",
+      id: "demo-subject-algorithms",
+      name: "Algorithms",
+      unitOfferingId: null,
+    },
+  ],
   suggestions: [
     { code: "FIT2004", nickname: null },
     { code: "FIT3077", nickname: "Software architecture" },
@@ -89,6 +108,7 @@ const demoUnitState: RemoteUnitState = {
 export function UnitsDashboard() {
   const [unitState, setUnitState] = useState<RemoteUnitState>({
     enrollments: [],
+    subjects: [],
     suggestions: [],
   });
   const [socialState, setSocialState] =
@@ -147,7 +167,7 @@ export function UnitsDashboard() {
         if (!cancelled) {
           setFeedback("Run the latest unit discovery migration, then reload.");
           setDataMode("remote");
-          setUnitState({ enrollments: [], suggestions: [] });
+          setUnitState({ enrollments: [], subjects: [], suggestions: [] });
         }
       });
 
@@ -238,15 +258,15 @@ export function UnitsDashboard() {
 
     try {
       if (remoteClient) {
-        const offeringId = await upsertRemoteUnitEnrollment({
+        await upsertRemoteUnitEnrollment({
           ...input,
           supabase: remoteClient,
         });
         await refreshRemote(remoteClient);
-        setSelectedOfferingId(offeringId);
       } else {
         const offeringId = `demo-${input.code}-${input.year}-${input.period}`;
         setUnitState((current) => ({
+          ...current,
           suggestions: current.suggestions,
           enrollments: [
             ...current.enrollments.filter(
@@ -260,11 +280,10 @@ export function UnitsDashboard() {
             },
           ],
         }));
-        setSelectedOfferingId(offeringId);
       }
 
       setIsAdding(false);
-      setFeedback("Unit added to your cohort list and study timer.");
+      setFeedback("Unit added to your cohort. Study timer unchanged.");
     } catch (error) {
       setFeedback(getErrorMessage(error, "Could not add that unit."));
     } finally {
@@ -296,6 +315,64 @@ export function UnitsDashboard() {
       setFeedback("Left the cohort. Your timer history is unchanged.");
     } catch (error) {
       setFeedback(getErrorMessage(error, "Could not leave this cohort."));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function linkSubject(
+    subjectId: string,
+    offeringId: string | null,
+  ) {
+    setBusyKey(`link:${subjectId}`);
+    setFeedback(null);
+
+    try {
+      if (remoteClient) {
+        await setRemoteSubjectUnitOffering({
+          offeringId,
+          subjectId,
+          supabase: remoteClient,
+        });
+        await refreshRemote(remoteClient);
+      } else {
+        setUnitState((current) => ({
+          ...current,
+          subjects: current.subjects.map((subject) => {
+            if (subject.id === subjectId) {
+              return {
+                ...subject,
+                canonicalCode:
+                  offeringId === null
+                    ? undefined
+                    : current.enrollments.find(
+                        (enrollment) =>
+                          enrollment.offeringId === offeringId,
+                      )?.code,
+                unitOfferingId: offeringId,
+              };
+            }
+
+            if (offeringId && subject.unitOfferingId === offeringId) {
+              return {
+                ...subject,
+                canonicalCode: undefined,
+                unitOfferingId: null,
+              };
+            }
+
+            return subject;
+          }),
+        }));
+      }
+
+      setToastMessage(
+        offeringId ? "Study timer linked." : "Study timer unlinked.",
+      );
+    } catch (error) {
+      setFeedback(
+        getErrorMessage(error, "Could not update the study timer link."),
+      );
     } finally {
       setBusyKey(null);
     }
@@ -381,11 +458,15 @@ export function UnitsDashboard() {
             setScope("all");
           }}
           onLeave={() => void leaveEnrollment(selectedEnrollment)}
+          onLinkSubject={(subjectId, offeringId) =>
+            void linkSubject(subjectId, offeringId)
+          }
           onScopeChange={setScope}
           onSearchChange={setSearch}
           sentFriendRequestIds={sentFriendRequestIds}
           scope={scope}
           search={search}
+          subjects={unitState.subjects}
         />
         <TransientToast
           message={toastMessage}
@@ -516,11 +597,13 @@ function OfferingDetail({
   onAddToGroup,
   onBack,
   onLeave,
+  onLinkSubject,
   onScopeChange,
   onSearchChange,
   scope,
   search,
   sentFriendRequestIds,
+  subjects,
 }: {
   allGroups: SocialGroup[];
   busyKey: string | null;
@@ -533,13 +616,21 @@ function OfferingDetail({
   onAddToGroup: (memberId: string, groupId: string) => void;
   onBack: () => void;
   onLeave: () => void;
+  onLinkSubject: (subjectId: string, offeringId: string | null) => void;
   onScopeChange: (scope: CohortScope) => void;
   onSearchChange: (value: string) => void;
   scope: CohortScope;
   search: string;
   sentFriendRequestIds: string[];
+  subjects: RemoteUnitState["subjects"];
 }) {
   const unitTitle = enrollment.nickname?.trim() || "Unit cohort";
+  const linkedSubject =
+    subjects.find(
+      (subject) => subject.unitOfferingId === enrollment.offeringId,
+    ) ?? null;
+  const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
+  const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
 
   return (
     <div className="space-y-4">
@@ -561,14 +652,29 @@ function OfferingDetail({
               {enrollment.year} · {getTeachingPeriodLabel(enrollment.period)}
             </p>
           </div>
-          <button
-            className="mac-focus inline-flex h-11 shrink-0 items-center rounded-xl border border-[rgb(255_107_107/0.42)] bg-[rgb(255_107_107/0.06)] px-3 text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.12)] disabled:opacity-45"
-            disabled={busyKey === `leave:${enrollment.offeringId}`}
-            onClick={onLeave}
-            type="button"
-          >
-            Leave
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className={cn(
+                "mac-focus inline-flex h-11 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition",
+                linkedSubject
+                  ? "border-[rgb(255_227_48/0.32)] bg-[rgb(255_227_48/0.07)] text-[var(--color-mac-yellow)]"
+                  : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+              )}
+              onClick={() => setIsLinkDialogOpen(true)}
+              type="button"
+            >
+              <Link2 aria-hidden size={14} />
+              Link
+            </button>
+            <button
+              className="mac-focus inline-flex h-11 items-center rounded-xl border border-[rgb(255_107_107/0.42)] bg-[rgb(255_107_107/0.06)] px-3 text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.12)] disabled:opacity-45"
+              disabled={busyKey === `leave:${enrollment.offeringId}`}
+              onClick={() => setIsLeaveDialogOpen(true)}
+              type="button"
+            >
+              Leave
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -600,7 +706,7 @@ function OfferingDetail({
                 onClick={() => onScopeChange(item)}
                 type="button"
               >
-                {item === "all" ? "All MAC" : item}
+                {item === "all" ? "All" : item}
               </button>
             ))}
           </div>
@@ -641,7 +747,172 @@ function OfferingDetail({
           </p>
         )}
       </section>
+
+      {isLinkDialogOpen ? (
+        <StudyTimerLinkDialog
+          busyKey={busyKey}
+          enrollment={enrollment}
+          onClose={() => setIsLinkDialogOpen(false)}
+          onLinkSubject={onLinkSubject}
+          subjects={subjects}
+        />
+      ) : null}
+
+      {isLeaveDialogOpen ? (
+        <LeaveUnitDialog
+          busy={busyKey === `leave:${enrollment.offeringId}`}
+          enrollment={enrollment}
+          onClose={() => setIsLeaveDialogOpen(false)}
+          onConfirm={() => {
+            setIsLeaveDialogOpen(false);
+            onLeave();
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function StudyTimerLinkDialog({
+  busyKey,
+  enrollment,
+  onClose,
+  onLinkSubject,
+  subjects,
+}: {
+  busyKey: string | null;
+  enrollment: UnitEnrollment;
+  onClose: () => void;
+  onLinkSubject: (subjectId: string, offeringId: string | null) => void;
+  subjects: RemoteUnitState["subjects"];
+}) {
+  const linkedSubject =
+    subjects.find(
+      (subject) => subject.unitOfferingId === enrollment.offeringId,
+    ) ?? null;
+  const availableSubjects = subjects.filter(
+    (subject) =>
+      !subject.unitOfferingId || subject.id === linkedSubject?.id,
+  );
+  const initialSubjectId = linkedSubject?.id ?? UNLINKED_SUBJECT_VALUE;
+  const [selectedSubjectId, setSelectedSubjectId] = useState(
+    initialSubjectId,
+  );
+  const isBusy = Boolean(busyKey?.startsWith("link:"));
+  const isDirty = selectedSubjectId !== initialSubjectId;
+
+  function saveLink() {
+    if (!isDirty) return;
+
+    if (selectedSubjectId === UNLINKED_SUBJECT_VALUE) {
+      if (linkedSubject) onLinkSubject(linkedSubject.id, null);
+    } else {
+      onLinkSubject(selectedSubjectId, enrollment.offeringId);
+    }
+
+    onClose();
+  }
+
+  return (
+    <AppDialog
+      bodyClassName="space-y-4"
+      closeLabel="Close study timer link"
+      footer={
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className="mac-focus h-11 rounded-lg border border-[var(--color-border)] text-sm font-semibold"
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="mac-focus h-11 rounded-lg bg-[var(--color-mac-yellow)] text-sm font-semibold text-[#141414] disabled:opacity-45"
+            disabled={!isDirty || isBusy}
+            onClick={saveLink}
+            type="button"
+          >
+            Save link
+          </button>
+        </div>
+      }
+      isDirty={isDirty}
+      maxWidthClassName="max-w-md"
+      onClose={onClose}
+      title="Study timer link"
+    >
+      {availableSubjects.length ? (
+        <div>
+          <p className="mb-2 text-sm font-medium">Study subject</p>
+          <CustomSelect
+            ariaLabel={`Study subject linked to ${enrollment.code}`}
+            disabled={isBusy}
+            onChange={setSelectedSubjectId}
+            options={[
+              {
+                label: "Not linked",
+                value: UNLINKED_SUBJECT_VALUE,
+              },
+              ...availableSubjects.map((subject) => ({
+                label: subject.name,
+                value: subject.id,
+              })),
+            ]}
+            value={selectedSubjectId}
+          />
+        </div>
+      ) : (
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Create a study subject before linking this unit.
+        </p>
+      )}
+    </AppDialog>
+  );
+}
+
+function LeaveUnitDialog({
+  busy,
+  enrollment,
+  onClose,
+  onConfirm,
+}: {
+  busy: boolean;
+  enrollment: UnitEnrollment;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <AppDialog
+      closeLabel="Close leave unit confirmation"
+      footer={
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className="mac-focus h-11 rounded-lg border border-[var(--color-border)] text-sm font-semibold"
+            disabled={busy}
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="mac-focus h-11 rounded-lg border border-[rgb(255_107_107/0.45)] bg-[rgb(255_107_107/0.07)] text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
+            disabled={busy}
+            onClick={onConfirm}
+            type="button"
+          >
+            Leave unit
+          </button>
+        </div>
+      }
+      maxWidthClassName="max-w-md"
+      onClose={onClose}
+      title="Leave unit?"
+    >
+      <p className="text-sm leading-6 text-[var(--color-text-muted)]">
+        Leave {enrollment.code}? Your study subject and history will stay, but
+        the unit link will be removed.
+      </p>
+    </AppDialog>
   );
 }
 
@@ -824,9 +1095,10 @@ function AddUnitDialog({
       onClose={onClose}
       title="Add a unit"
     >
-      <p className="text-sm text-[var(--color-text-muted)]">
-        Choose the class you’re taking.
-      </p>
+      <div className="flex gap-2.5 rounded-xl border border-[rgb(108_182_255/0.18)] bg-[rgb(108_182_255/0.08)] p-3 text-sm text-[var(--color-info)]">
+        <Info aria-hidden className="mt-0.5 shrink-0" size={17} />
+        <p>Adding a unit joins its cohort only. Link a study timer later.</p>
+      </div>
 
       <UnitCodeInput
         invalid={Boolean(codeInput && !valid)}
