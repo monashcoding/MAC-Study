@@ -43,11 +43,7 @@ export function NotificationOnboarding({ userId }: { userId: string }) {
       await enablePushNotifications(status.publicKey);
       dismiss();
     } catch (error) {
-      setFeedback(
-        error instanceof Error
-          ? error.message
-          : "Could not enable notifications.",
-      );
+      setFeedback(getOnboardingError(error));
       setIsEnabling(false);
     }
   }
@@ -100,4 +96,18 @@ export function NotificationOnboarding({ userId }: { userId: string }) {
       ) : null}
     </AppDialog>
   );
+}
+
+function getOnboardingError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+
+  if (/service worker|pushmanager|subscribe/i.test(message)) {
+    return "Notifications are not ready yet. Reload the app and try again.";
+  }
+
+  if (/blocked|denied/i.test(message)) {
+    return "Notifications are blocked in your browser settings.";
+  }
+
+  return "Could not enable notifications. Try again.";
 }

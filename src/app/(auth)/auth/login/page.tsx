@@ -56,8 +56,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               Study with your crew
             </h1>
             <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-              Sign in with your existing account. If you already signed in, you
-              will continue automatically.
+              Sign in to sync your sessions across devices.
             </p>
           </div>
 

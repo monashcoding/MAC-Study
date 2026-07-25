@@ -79,16 +79,30 @@ export function PushNotificationSettings() {
         state: "enabled",
       });
     } catch (error) {
-      setFeedback(
-        error instanceof Error ? error.message : "Could not enable alerts.",
-      );
+      setFeedback(getNotificationErrorMessage(error));
       setPushStatus(await getPushStatus());
     }
   }
 
-  async function togglePreference(
-    key: keyof RemoteNotificationPreferences,
-  ) {
+  function handleDeviceAction() {
+    if (pushStatus.state === "blocked") {
+      setFeedback(
+        "Open this site in your browser settings, allow Notifications, then reload.",
+      );
+      return;
+    }
+
+    if (pushStatus.state === "unsupported") {
+      setFeedback(
+        "Push alerts need a supported browser or the installed mobile app.",
+      );
+      return;
+    }
+
+    void enablePush();
+  }
+
+  async function togglePreference(key: keyof RemoteNotificationPreferences) {
     const previous = preferences;
     const next = { ...previous, [key]: !previous[key] };
     setPreferences(next);
@@ -136,27 +150,22 @@ export function PushNotificationSettings() {
           </SettingIcon>
           <div className="min-w-0 flex-1">
             <p className="font-medium">Device alerts</p>
-            <p className="truncate text-sm text-[var(--color-text-muted)]">
+            <p className="text-sm leading-5 text-[var(--color-text-muted)]">
               {pushStatus.message}
             </p>
           </div>
           <button
             className={cn(
-              "mac-focus inline-flex h-10 shrink-0 items-center justify-center rounded-full px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
+              "mac-focus inline-flex h-11 shrink-0 items-center justify-center rounded-full px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
               enabled
                 ? "bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]"
                 : "bg-[var(--color-mac-yellow)] text-[#141414]",
             )}
-            disabled={
-              enabled ||
-              pushStatus.state === "blocked" ||
-              pushStatus.state === "checking" ||
-              pushStatus.state === "unsupported"
-            }
-            onClick={() => void enablePush()}
+            disabled={enabled || pushStatus.state === "checking"}
+            onClick={handleDeviceAction}
             type="button"
           >
-            {enabled ? "Enabled" : "Enable"}
+            {getDeviceActionLabel(pushStatus.state)}
           </button>
         </div>
 
@@ -242,4 +251,27 @@ function SettingIcon({ children }: { children: React.ReactNode }) {
       {children}
     </span>
   );
+}
+
+function getDeviceActionLabel(state: PushStatus["state"]) {
+  if (state === "enabled") return "Enabled";
+  if (state === "blocked") return "Fix";
+  if (state === "unsupported") return "Why?";
+  if (state === "checking") return "Checking…";
+
+  return "Enable";
+}
+
+function getNotificationErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+
+  if (/service worker|pushmanager|subscribe/i.test(message)) {
+    return "Notifications are not ready yet. Reload the app and try again.";
+  }
+
+  if (/blocked|denied/i.test(message)) {
+    return "Notifications are blocked. Allow them in your browser settings.";
+  }
+
+  return "Could not enable notifications. Try again.";
 }
