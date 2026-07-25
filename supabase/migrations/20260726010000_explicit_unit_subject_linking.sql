@@ -22,7 +22,7 @@ declare
   target_offering_id uuid;
 begin
   if current_user_id is null or not public.is_active_mac_member(current_user_id) then
-    raise exception 'Active MAC access is required.';
+    raise exception 'Active account access is required.';
   end if;
 
   if normalized_code !~ '^[A-Z]{3}[0-9]{4}$' then
@@ -97,7 +97,7 @@ declare
   canonical_code text;
 begin
   if current_user_id is null or not public.is_active_mac_member(current_user_id) then
-    raise exception 'Active MAC access is required.';
+    raise exception 'Active account access is required.';
   end if;
 
   if not exists (

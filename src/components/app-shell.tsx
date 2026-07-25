@@ -4,13 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   BarChart3,
   BookOpen,
@@ -111,13 +105,13 @@ export function AppShell({
   const currentTitle = isNestedDetail ? headerDetail : currentNav.title;
   const accountName =
     authState.mode === "authenticated"
-      ? authState.profile.display_name?.trim() || "MAC member"
+      ? authState.profile.display_name?.trim() || "Student"
       : "Demo member";
   const accountHandle =
     authState.mode === "authenticated" && authState.profile.username
       ? `@${authState.profile.username}`
       : authState.mode === "authenticated"
-        ? "MAC member"
+        ? "Student"
         : "Local workspace";
   const handleHeaderDetailChange = useCallback(
     (scope: string, detail: string | null) => {

@@ -19,6 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import { PaginatedList } from "@/components/paginated-list";
 import {
   PROFILE_COLORS,
   SOCIAL_STORAGE_KEY,
@@ -68,9 +69,7 @@ export function FriendsDashboard() {
   const [friendRequests, setFriendRequests] = useState<RemoteFriendRequest[]>(
     [],
   );
-  const [activeTab, setActiveTab] = useState<"friends" | "requests">(
-    "friends",
-  );
+  const [activeTab, setActiveTab] = useState<"friends" | "requests">("friends");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -90,20 +89,21 @@ export function FriendsDashboard() {
       setCurrentUserId(snapshot.currentUserId);
       setSocialState(snapshot.socialState);
       setAvailableFriends(
-        snapshot.availableFriends.map((friend) => {
-          if (cancellingFriendIds.has(friend.id)) {
-            return { ...friend, requestDirection: null };
-          }
+        sortFriendCandidates(
+          snapshot.availableFriends.map((friend) => {
+            if (cancellingFriendIds.has(friend.id)) {
+              return { ...friend, requestDirection: null };
+            }
 
-          return pendingFriendRequestIdsRef.current.has(friend.id)
-            ? { ...friend, requestDirection: "outgoing" }
-            : friend;
-        }),
+            return pendingFriendRequestIdsRef.current.has(friend.id)
+              ? { ...friend, requestDirection: "outgoing" }
+              : friend;
+          }),
+        ),
       );
       setFriendRequests((current) => {
         const remoteRequests = (snapshot.friendRequests ?? []).filter(
-          (request) =>
-            !pendingCancelledRequestsRef.current.has(request.id),
+          (request) => !pendingCancelledRequestsRef.current.has(request.id),
         );
         const remoteUserIds = new Set(
           remoteRequests.map((request) => request.user.id),
@@ -136,7 +136,9 @@ export function FriendsDashboard() {
       if (cachedSocial) {
         setCurrentUserId(cachedSocial.currentUserId);
         setSocialState(cachedSocial.socialState);
-        setAvailableFriends(cachedSocial.availableFriends ?? []);
+        setAvailableFriends(
+          sortFriendCandidates(cachedSocial.availableFriends ?? []),
+        );
         setFriendRequests(cachedSocial.friendRequests ?? []);
         setIsLoaded(true);
       }
@@ -152,7 +154,7 @@ export function FriendsDashboard() {
           cacheRemoteSocialSnapshot(snapshot);
           setCurrentUserId(snapshot.currentUserId);
           setSocialState(snapshot.socialState);
-          setAvailableFriends(snapshot.availableFriends);
+          setAvailableFriends(sortFriendCandidates(snapshot.availableFriends));
           setFriendRequests(snapshot.friendRequests ?? []);
           setIsLoaded(true);
           return;
@@ -219,9 +221,7 @@ export function FriendsDashboard() {
   }, [refreshRemoteSocial, remoteClient]);
 
   useEffect(() => {
-    if (
-      new URLSearchParams(window.location.search).get("tab") === "requests"
-    ) {
+    if (new URLSearchParams(window.location.search).get("tab") === "requests") {
       setActiveTab("requests");
     }
 
@@ -261,7 +261,7 @@ export function FriendsDashboard() {
       color: friendColor,
       personIcon: "flame-desk",
       studying: false,
-      currentSubject: "MAC Study",
+      currentSubject: "General study",
       daySeconds: 0,
       weekSeconds: 0,
       monthSeconds: 0,
@@ -315,7 +315,6 @@ export function FriendsDashboard() {
 
     try {
       await addRemoteFriend({ friendId, supabase: remoteClient });
-      await refreshRemoteSocial(remoteClient);
       pendingFriendRequestIdsRef.current.delete(friendId);
     } catch (error) {
       pendingFriendRequestIdsRef.current.delete(friendId);
@@ -647,8 +646,11 @@ export function FriendsDashboard() {
             </button>
           </div>
 
-          <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
-            {friendList.map((friend) => (
+          <PaginatedList
+            className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+            items={friendList}
+            pageSize={12}
+            renderItem={(friend) => (
               <button
                 className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.12)] hover:bg-[rgb(255_255_255/0.045)] active:scale-[0.99] lg:min-h-20 lg:px-4"
                 key={friend.id}
@@ -674,38 +676,51 @@ export function FriendsDashboard() {
                   </p>
                 </div>
               </button>
-            ))}
-          </div>
+            )}
+            resetKey="friends"
+          />
         </section>
       ) : (
         <section className="space-y-6" role="tabpanel">
           {incomingRequests.length ? (
             <RequestSection title={`Incoming (${incomingRequests.length})`}>
-              {incomingRequests.map((request) => (
-                <FriendRequestRow
-                  busyKey={busyKey}
-                  key={request.id}
-                  onAction={(action) =>
-                    void updateFriendRequest(request, action)
-                  }
-                  request={request}
-                />
-              ))}
+              <PaginatedList
+                className="grid gap-2"
+                items={incomingRequests}
+                pageSize={10}
+                renderItem={(request) => (
+                  <FriendRequestRow
+                    busyKey={busyKey}
+                    key={request.id}
+                    onAction={(action) =>
+                      void updateFriendRequest(request, action)
+                    }
+                    request={request}
+                  />
+                )}
+                resetKey="incoming"
+              />
             </RequestSection>
           ) : null}
 
           {outgoingRequests.length ? (
             <RequestSection title={`Sent (${outgoingRequests.length})`}>
-              {outgoingRequests.map((request) => (
-                <FriendRequestRow
-                  busyKey={busyKey}
-                  key={request.id}
-                  onAction={(action) =>
-                    void updateFriendRequest(request, action)
-                  }
-                  request={request}
-                />
-              ))}
+              <PaginatedList
+                className="grid gap-2"
+                items={outgoingRequests}
+                pageSize={10}
+                renderItem={(request) => (
+                  <FriendRequestRow
+                    busyKey={busyKey}
+                    key={request.id}
+                    onAction={(action) =>
+                      void updateFriendRequest(request, action)
+                    }
+                    request={request}
+                  />
+                )}
+                resetKey="outgoing"
+              />
             </RequestSection>
           ) : null}
 
@@ -883,47 +898,51 @@ function AddFriendDialog({
     >
       {remoteCandidates ? (
         remoteCandidates.length ? (
-          remoteCandidates.map((candidate, index) => {
-            return (
-            <div
-              className="grid min-h-16 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-3 py-3"
-              key={candidate.id}
-            >
-              <ProfileBadge friend={candidate} />
-              <div className="min-w-0">
-                <p className="truncate font-semibold">{candidate.handle}</p>
-                <p className="truncate text-sm text-[var(--color-text-muted)]">
-                  {candidate.mutualFriendCount} mutual{" "}
-                  {candidate.mutualFriendCount === 1 ? "friend" : "friends"}
-                </p>
+          <PaginatedList
+            className="grid gap-2"
+            items={sortFriendCandidates(remoteCandidates)}
+            pageSize={10}
+            renderItem={(candidate, index) => (
+              <div
+                className="grid min-h-16 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-3 py-3"
+                key={candidate.id}
+              >
+                <ProfileBadge friend={candidate} />
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{candidate.handle}</p>
+                  <p className="truncate text-sm text-[var(--color-text-muted)]">
+                    {candidate.mutualFriendCount} mutual{" "}
+                    {candidate.mutualFriendCount === 1 ? "friend" : "friends"}
+                  </p>
+                </div>
+                {candidate.requestDirection === "incoming" ? (
+                  <button
+                    className="mac-focus h-11 rounded-lg border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)]"
+                    data-dialog-autofocus={index === 0 ? "" : undefined}
+                    onClick={onShowRequests}
+                    type="button"
+                  >
+                    View request
+                  </button>
+                ) : candidate.requestDirection === "outgoing" ? (
+                  <span className="inline-flex h-11 items-center gap-1.5 px-2 text-sm font-semibold text-[var(--color-text-muted)]">
+                    <Clock3 aria-hidden size={15} />
+                    Sent
+                  </span>
+                ) : (
+                  <button
+                    className="mac-focus h-11 rounded-lg border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-mac-yellow)] disabled:opacity-45"
+                    data-dialog-autofocus={index === 0 ? "" : undefined}
+                    onClick={() => onAddRemote(candidate.id)}
+                    type="button"
+                  >
+                    Request
+                  </button>
+                )}
               </div>
-              {candidate.requestDirection === "incoming" ? (
-                <button
-                  className="mac-focus h-11 rounded-lg border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)]"
-                  data-dialog-autofocus={index === 0 ? "" : undefined}
-                  onClick={onShowRequests}
-                  type="button"
-                >
-                  View request
-                </button>
-              ) : candidate.requestDirection === "outgoing" ? (
-                <span className="inline-flex h-11 items-center gap-1.5 px-2 text-sm font-semibold text-[var(--color-text-muted)]">
-                  <Clock3 aria-hidden size={15} />
-                  Sent
-                </span>
-              ) : (
-                <button
-                  className="mac-focus h-11 rounded-lg border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-mac-yellow)] disabled:opacity-45"
-                  data-dialog-autofocus={index === 0 ? "" : undefined}
-                  onClick={() => onAddRemote(candidate.id)}
-                  type="button"
-                >
-                  Request
-                </button>
-              )}
-            </div>
-            );
-          })
+            )}
+            resetKey="friend-candidates"
+          />
         ) : (
           <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
             No new profiles available.
@@ -1197,4 +1216,12 @@ function uniqueFriends(friends: SocialFriend[]) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function sortFriendCandidates(candidates: RemoteFriendCandidate[]) {
+  return [...candidates].sort(
+    (first, second) =>
+      second.mutualFriendCount - first.mutualFriendCount ||
+      first.handle.localeCompare(second.handle),
+  );
 }

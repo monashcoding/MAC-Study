@@ -166,7 +166,7 @@ begin
   values (current_user_id, target_user_id)
   returning id into new_request_id;
 
-  select coalesce(nullif(trim(display_name), ''), username, 'A MAC member')
+  select coalesce(nullif(trim(display_name), ''), username, 'A student')
   into actor_name
   from public.profiles
   where id = current_user_id;
@@ -245,7 +245,7 @@ begin
       (target_request.recipient_id, target_request.sender_id)
     on conflict do nothing;
 
-    select coalesce(nullif(trim(display_name), ''), username, 'A MAC member')
+    select coalesce(nullif(trim(display_name), ''), username, 'A student')
     into actor_name
     from public.profiles
     where id = current_user_id;

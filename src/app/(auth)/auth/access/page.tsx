@@ -45,7 +45,7 @@ export default async function AccessPage({ searchParams }: AccessPageProps) {
           <span>
             <span className="block text-xl font-semibold">MAC Study</span>
             <span className="text-sm text-[var(--color-text-muted)]">
-              MAC-only access
+              Student access
             </span>
           </span>
         </Link>
@@ -55,11 +55,11 @@ export default async function AccessPage({ searchParams }: AccessPageProps) {
             Invite required
           </p>
           <h1 className="mt-1 text-2xl font-semibold">
-            Confirm you&apos;re part of MAC
+            Enter your access code
           </h1>
           <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-            You are signed in as {authState.user.email ?? "a MAC member"}, but
-            this account still needs an invite code before sessions count.
+            You are signed in as {authState.user.email ?? "a student"}, but this
+            account still needs an invite code before sessions count.
           </p>
 
           <form action={redeemInvite} className="mt-6 space-y-3">
@@ -72,7 +72,7 @@ export default async function AccessPage({ searchParams }: AccessPageProps) {
               className="mac-focus h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
               id="inviteCode"
               name="inviteCode"
-              placeholder="MAC-FOUNDING"
+              placeholder="STUDY-ACCESS"
               required
             />
             <button
@@ -80,7 +80,7 @@ export default async function AccessPage({ searchParams }: AccessPageProps) {
               type="submit"
             >
               <TicketCheck aria-hidden size={18} />
-              Unlock MAC Study
+              Continue to study
             </button>
           </form>
 

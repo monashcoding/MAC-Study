@@ -23,8 +23,8 @@ export const groups = [
   {
     id: "exam-sprint",
     name: "Exam Sprint",
-    description: "MAC members pushing through final revision blocks.",
-    inviteCode: "MAC-3159",
+    description: "Students pushing through final revision blocks.",
+    inviteCode: "STUDY-3159",
     activeNow: 5,
     memberCount: 18,
     rank: 2,
@@ -50,7 +50,7 @@ export const demoLeaderboard = [
   {
     rank: 2,
     name: "You",
-    subject: "MAC Study",
+    subject: "General study",
     seconds: 84 * 60,
   },
   {

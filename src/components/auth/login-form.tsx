@@ -42,7 +42,7 @@ export function LoginForm({
 
         if (caughtError instanceof MacSignInRequiredError) {
           if (returnedFromProvider) {
-            setError("MAC sign-in did not complete. Please try again.");
+            setError("Sign-in did not complete. Please try again.");
           }
           return;
         }
@@ -91,7 +91,7 @@ export function LoginForm({
         type="button"
       >
         <LogIn aria-hidden size={18} />
-        Continue with Google via MAC
+        Continue with Google
       </button>
 
       <button
@@ -101,7 +101,7 @@ export function LoginForm({
         type="button"
       >
         <LogIn aria-hidden size={18} />
-        Continue with Microsoft via MAC
+        Continue with Microsoft
       </button>
 
       <div className="flex items-start gap-2 rounded-md border border-[rgb(66_211_146/0.3)] bg-[rgb(66_211_146/0.06)] p-3 text-sm text-[var(--color-text-muted)]">
@@ -110,9 +110,7 @@ export function LoginForm({
           className="mt-0.5 shrink-0 text-[var(--color-success)]"
           size={17}
         />
-        <span>
-          One MAC account signs you into participating MAC websites and apps.
-        </span>
+        <span>One account signs you into participating websites and apps.</span>
       </div>
 
       {error ? (

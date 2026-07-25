@@ -23,6 +23,7 @@ export type UnitCohortMember = {
   handle: string;
   id: string;
   isFriend: boolean;
+  mutualFriendCount: number;
   sharedGroupIds: string[];
   studyIcon: string;
 };
@@ -68,6 +69,10 @@ export function normalizeUnitNickname(value: string) {
 
 export function getTeachingPeriodLabel(period: TeachingPeriod) {
   return periodLabels[period];
+}
+
+export function getTeachingPeriodShortLabel(period: TeachingPeriod) {
+  return periodShortLabels[period].replace(/^Sem(\d)$/, "Sem $1");
 }
 
 export function getCohortLabel({

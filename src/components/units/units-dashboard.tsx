@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
+import { PaginatedList } from "@/components/paginated-list";
 import { TransientToast } from "@/components/transient-toast";
 import {
   addRemoteFriend,
@@ -46,6 +47,7 @@ import {
   getCohortLabel,
   getDefaultTeachingPeriod,
   getTeachingPeriodLabel,
+  getTeachingPeriodShortLabel,
   getUnitYearOptions,
   isPastUnitEnrollment,
   isValidUnitCode,
@@ -179,7 +181,11 @@ export function UnitsDashboard() {
   useEffect(() => {
     if (!remoteClient || dataMode !== "remote") return;
 
-    return subscribeToRemoteAppChanges(remoteClient, () => {
+    return subscribeToRemoteAppChanges(remoteClient, (table) => {
+      if (table === "friend_requests" || table === "app_notifications") {
+        return;
+      }
+
       void refreshRemote(remoteClient);
     });
   }, [dataMode, refreshRemote, remoteClient]);
@@ -243,6 +249,7 @@ export function UnitsDashboard() {
       .sort(
         (first, second) =>
           Number(second.isFriend) - Number(first.isFriend) ||
+          second.mutualFriendCount - first.mutualFriendCount ||
           first.displayName.localeCompare(second.displayName),
       );
   }, [cohort, scope, search]);
@@ -320,10 +327,7 @@ export function UnitsDashboard() {
     }
   }
 
-  async function linkSubject(
-    subjectId: string,
-    offeringId: string | null,
-  ) {
+  async function linkSubject(subjectId: string, offeringId: string | null) {
     setBusyKey(`link:${subjectId}`);
     setFeedback(null);
 
@@ -346,8 +350,7 @@ export function UnitsDashboard() {
                   offeringId === null
                     ? undefined
                     : current.enrollments.find(
-                        (enrollment) =>
-                          enrollment.offeringId === offeringId,
+                        (enrollment) => enrollment.offeringId === offeringId,
                       )?.code,
                 unitOfferingId: offeringId,
               };
@@ -389,7 +392,6 @@ export function UnitsDashboard() {
     try {
       if (remoteClient) {
         await addRemoteFriend({ friendId: memberId, supabase: remoteClient });
-        await refreshRemote(remoteClient);
       }
     } catch (error) {
       setSentFriendRequestIds((current) =>
@@ -547,8 +549,11 @@ function EnrollmentSection({
     <section className="space-y-3">
       <h3 className="text-lg font-semibold">{title}</h3>
       {enrollments.length ? (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {enrollments.map((enrollment) => (
+        <PaginatedList
+          className="grid gap-3 lg:grid-cols-2"
+          items={enrollments}
+          pageSize={10}
+          renderItem={(enrollment) => (
             <button
               className="mac-focus grid min-h-24 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.035)] p-4 text-left transition hover:border-[rgb(255_227_48/0.35)] hover:bg-[rgb(255_255_255/0.05)]"
               key={enrollment.offeringId}
@@ -574,8 +579,9 @@ function EnrollmentSection({
                 </span>
               </span>
             </button>
-          ))}
-        </div>
+          )}
+          resetKey={title}
+        />
       ) : (
         <p className="rounded-md border border-dashed border-[var(--color-border)] p-5 text-sm text-[var(--color-text-muted)]">
           {empty}
@@ -624,11 +630,6 @@ function OfferingDetail({
   sentFriendRequestIds: string[];
   subjects: RemoteUnitState["subjects"];
 }) {
-  const unitTitle = enrollment.nickname?.trim() || "Unit cohort";
-  const linkedSubject =
-    subjects.find(
-      (subject) => subject.unitOfferingId === enrollment.offeringId,
-    ) ?? null;
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
   const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
 
@@ -646,25 +647,18 @@ function OfferingDetail({
           </button>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-[var(--color-text-muted)]">
-              {unitTitle}
-            </p>
-            <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-              {enrollment.year} · {getTeachingPeriodLabel(enrollment.period)}
+              {enrollment.year} ·{" "}
+              {getTeachingPeriodShortLabel(enrollment.period)}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
-              className={cn(
-                "mac-focus inline-flex h-11 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition",
-                linkedSubject
-                  ? "border-[rgb(255_227_48/0.32)] bg-[rgb(255_227_48/0.07)] text-[var(--color-mac-yellow)]"
-                  : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
-              )}
+              className="mac-focus inline-flex h-11 items-center gap-1.5 rounded-xl bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] transition hover:brightness-105"
               onClick={() => setIsLinkDialogOpen(true)}
               type="button"
             >
               <Link2 aria-hidden size={14} />
-              Link
+              Link to timer
             </button>
             <button
               className="mac-focus inline-flex h-11 items-center rounded-xl border border-[rgb(255_107_107/0.42)] bg-[rgb(255_107_107/0.06)] px-3 text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.12)] disabled:opacity-45"
@@ -727,8 +721,11 @@ function OfferingDetail({
             Loading cohort…
           </p>
         ) : cohort.length ? (
-          <div className="grid lg:grid-cols-2 lg:gap-x-6">
-            {cohort.map((member) => (
+          <PaginatedList
+            className="grid lg:grid-cols-2 lg:gap-x-6"
+            items={cohort}
+            pageSize={12}
+            renderItem={(member) => (
               <CohortMemberCard
                 allGroups={allGroups}
                 busyKey={busyKey}
@@ -739,11 +736,12 @@ function OfferingDetail({
                 onAddToGroup={onAddToGroup}
                 requested={sentFriendRequestIds.includes(member.id)}
               />
-            ))}
-          </div>
+            )}
+            resetKey={`${enrollment.offeringId}:${scope}:${search}`}
+          />
         ) : (
           <p className="border-y border-dashed border-[var(--color-border)] py-5 text-sm text-[var(--color-text-muted)]">
-            No MAC members match this view yet.
+            No students match this view yet.
           </p>
         )}
       </section>
@@ -791,13 +789,10 @@ function StudyTimerLinkDialog({
       (subject) => subject.unitOfferingId === enrollment.offeringId,
     ) ?? null;
   const availableSubjects = subjects.filter(
-    (subject) =>
-      !subject.unitOfferingId || subject.id === linkedSubject?.id,
+    (subject) => !subject.unitOfferingId || subject.id === linkedSubject?.id,
   );
   const initialSubjectId = linkedSubject?.id ?? UNLINKED_SUBJECT_VALUE;
-  const [selectedSubjectId, setSelectedSubjectId] = useState(
-    initialSubjectId,
-  );
+  const [selectedSubjectId, setSelectedSubjectId] = useState(initialSubjectId);
   const isBusy = Boolean(busyKey?.startsWith("link:"));
   const isDirty = selectedSubjectId !== initialSubjectId;
 
@@ -963,6 +958,14 @@ function CohortMemberCard({
         </div>
         <p className="flex min-w-0 items-center gap-1 truncate text-xs text-[var(--color-text-muted)]">
           <span className="truncate">{member.handle}</span>
+          {member.mutualFriendCount ? (
+            <>
+              <span aria-hidden>·</span>
+              <span className="shrink-0">
+                {member.mutualFriendCount} mutual
+              </span>
+            </>
+          ) : null}
           {sharedGroupNames.length ? (
             <>
               <span aria-hidden>·</span>
@@ -1303,6 +1306,7 @@ function getDemoCohort(offeringId: string, groups: SocialGroup[]) {
       handle: friend.handle,
       id: friend.id,
       isFriend: index < 2,
+      mutualFriendCount: Math.max(0, 3 - index),
       sharedGroupIds: groups
         .filter((group) => group.memberIds.includes(friend.id))
         .map((group) => group.id),

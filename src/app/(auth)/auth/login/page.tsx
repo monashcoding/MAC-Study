@@ -53,17 +53,17 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               Welcome back
             </p>
             <h1 className="mt-1 text-2xl font-semibold">
-              Study with your MAC crew
+              Study with your crew
             </h1>
             <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-              Sign in through the central MAC account system. If you already
-              signed into another MAC app, you will continue automatically.
+              Sign in with your existing account. If you already signed in, you
+              will continue automatically.
             </p>
           </div>
 
           {params.signedOut === "1" ? (
             <p className="mt-5 rounded-md border border-[rgb(66_211_146/0.35)] bg-[rgb(66_211_146/0.07)] p-3 text-sm text-[var(--color-success)]">
-              You have been signed out of your MAC account.
+              You have been signed out of your account.
             </p>
           ) : null}
 

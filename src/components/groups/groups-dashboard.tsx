@@ -17,6 +17,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import { PaginatedList } from "@/components/paginated-list";
 import { useAppHeaderDetail } from "@/components/app-header-detail";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
@@ -719,8 +720,11 @@ export function GroupsDashboard() {
 
         {groupView === "class" ? (
           <section>
-            <div className="grid grid-cols-3 gap-2 py-1 sm:grid-cols-4 lg:grid-cols-6 lg:gap-3">
-              {members.map((member) => (
+            <PaginatedList
+              className="grid grid-cols-3 gap-2 py-1 sm:grid-cols-4 lg:grid-cols-6 lg:gap-3"
+              items={members}
+              pageSize={12}
+              renderItem={(member) => (
                 <button
                   className={cn(
                     "mac-focus min-w-0 rounded-xl border px-2 py-3 text-center transition hover:bg-[rgb(255_255_255/0.045)] active:scale-[0.98]",
@@ -750,8 +754,9 @@ export function GroupsDashboard() {
                     {formatDuration(getLiveRankingSeconds(member, "day", now))}
                   </p>
                 </button>
-              ))}
-            </div>
+              )}
+              resetKey={`${selectedGroup.id}:class`}
+            />
           </section>
         ) : null}
 
@@ -810,8 +815,11 @@ export function GroupsDashboard() {
 
         {groupView === "rankings" ? (
           <section className="space-y-3">
-            <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
-              {ranking.map((member, index) => (
+            <PaginatedList
+              className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+              items={ranking}
+              pageSize={12}
+              renderItem={(member, _index, absoluteIndex) => (
                 <button
                   className="mac-focus grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2.5 text-left transition active:scale-[0.99]"
                   key={member.id}
@@ -821,7 +829,7 @@ export function GroupsDashboard() {
                   type="button"
                 >
                   <span className="font-mono text-sm font-semibold text-[var(--color-text-muted)]">
-                    #{index + 1}
+                    #{absoluteIndex + 1}
                   </span>
                   <div className="min-w-0">
                     <p className="truncate font-semibold">{member.name}</p>
@@ -835,8 +843,9 @@ export function GroupsDashboard() {
                     )}
                   </p>
                 </button>
-              ))}
-            </div>
+              )}
+              resetKey={`${selectedGroup.id}:${rankingWindow}`}
+            />
           </section>
         ) : null}
 
@@ -899,8 +908,11 @@ export function GroupsDashboard() {
           </button>
         </div>
 
-        <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
-          {groupSummaries.map(({ group, activeNow, memberCount }) => (
+        <PaginatedList
+          className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+          items={groupSummaries}
+          pageSize={10}
+          renderItem={({ group, activeNow, memberCount }) => (
             <button
               className="mac-focus grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
               key={group.id}
@@ -929,8 +941,9 @@ export function GroupsDashboard() {
                 </p>
               </div>
             </button>
-          ))}
-        </div>
+          )}
+          resetKey="groups"
+        />
       </section>
 
       {publicGroups.length ? (
@@ -946,8 +959,11 @@ export function GroupsDashboard() {
               {publicGroupFeedback}
             </p>
           ) : null}
-          <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
-            {publicGroups.map((group) => (
+          <PaginatedList
+            className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+            items={publicGroups}
+            pageSize={10}
+            renderItem={(group) => (
               <div
                 className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
                 key={group.id}
@@ -968,8 +984,9 @@ export function GroupsDashboard() {
                   {joiningPublicGroupId === group.id ? "Joining…" : "Join"}
                 </button>
               </div>
-            ))}
-          </div>
+            )}
+            resetKey="public-groups"
+          />
         </section>
       ) : null}
 

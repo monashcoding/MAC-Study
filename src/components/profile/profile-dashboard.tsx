@@ -15,7 +15,7 @@ export function ProfileDashboard({
     <div className="space-y-6 lg:grid lg:grid-cols-[minmax(17rem,0.72fr)_minmax(0,1.28fr)] lg:items-start lg:gap-6 lg:space-y-0">
       <section className="overflow-hidden rounded-lg border border-[rgb(255_255_255/0.07)] bg-[radial-gradient(circle_at_top_right,rgb(255_227_48/0.14),transparent_45%),linear-gradient(145deg,rgb(255_255_255/0.05),rgb(255_255_255/0.018))] p-5 lg:p-6">
         <span className="inline-flex rounded-full border border-[rgb(255_227_48/0.24)] bg-[rgb(255_227_48/0.08)] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-mac-yellow)]">
-          MAC account
+          Account
         </span>
         <div className="mt-6 flex items-center gap-4 lg:mt-10 lg:flex-col lg:items-start">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414] shadow-[0_14px_34px_rgb(255_227_48/0.12)] lg:h-20 lg:w-20">
@@ -42,7 +42,7 @@ export function ProfileDashboard({
           <PushNotificationSettings />
           <SettingRow
             icon={<ShieldCheck aria-hidden size={19} />}
-            title="MAC access"
+            title="Account access"
             value="Invite only"
           />
           <a

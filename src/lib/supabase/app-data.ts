@@ -185,6 +185,7 @@ type UnitEnrollmentRow = {
 type UnitCohortRow = {
   display_name: string | null;
   is_friend: boolean;
+  mutual_friend_count: number | string;
   profile_color: string | null;
   shared_group_ids: string[] | null;
   study_icon: string | null;
@@ -335,9 +336,7 @@ export async function fetchRemoteTimerState(
 
   return {
     subjects,
-    unitEnrollments: (
-      (enrolmentsResult.data ?? []) as UnitEnrollmentRow[]
-    )
+    unitEnrollments: ((enrolmentsResult.data ?? []) as UnitEnrollmentRow[])
       .map(unitEnrollmentFromRow)
       .filter((value): value is UnitEnrollment => Boolean(value)),
     activeSession: activeRow
@@ -661,7 +660,7 @@ export async function fetchRemoteUnitCohort({
   }
 
   const [cohortResult, friendshipsResult] = await Promise.all([
-    supabase.rpc("get_unit_cohort", {
+    supabase.rpc("get_unit_cohort_v2", {
       input_offering_id: offeringId,
     }),
     supabase.from("friendships").select("friend_id").eq("user_id", userId),
@@ -678,10 +677,11 @@ export async function fetchRemoteUnitCohort({
 
   return ((cohortResult.data ?? []) as UnitCohortRow[]).map((member) => ({
     color: member.profile_color || "#FFE330",
-    displayName: member.display_name || member.username || "MAC member",
-    handle: member.username ? `@${member.username}` : "@mac_member",
+    displayName: member.display_name || member.username || "Student",
+    handle: member.username ? `@${member.username}` : "@student",
     id: member.user_id,
     isFriend: member.is_friend || friendIds.has(member.user_id),
+    mutualFriendCount: Number(member.mutual_friend_count) || 0,
     sharedGroupIds: member.shared_group_ids ?? [],
     studyIcon: member.study_icon || "flame-desk",
   }));
@@ -1269,59 +1269,59 @@ export async function markRemoteAppNotificationRead({
 
 export function subscribeToRemoteAppChanges(
   supabase: SupabaseClient,
-  onChange: () => void,
+  onChange: (table?: string) => void,
 ) {
   const channel = supabase
     .channel(`mac-study-app-data-${Math.random().toString(36).slice(2)}`)
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "study_sessions" },
-      onChange,
+      () => onChange("study_sessions"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "group_members" },
-      onChange,
+      () => onChange("group_members"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "friendships" },
-      onChange,
+      () => onChange("friendships"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "friend_requests" },
-      onChange,
+      () => onChange("friend_requests"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "app_notifications" },
-      onChange,
+      () => onChange("app_notifications"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "groups" },
-      onChange,
+      () => onChange("groups"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "profiles" },
-      onChange,
+      () => onChange("profiles"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "nudges" },
-      onChange,
+      () => onChange("nudges"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "subjects" },
-      onChange,
+      () => onChange("subjects"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "unit_enrolments" },
-      onChange,
+      () => onChange("unit_enrolments"),
     )
     .subscribe();
 
@@ -1486,15 +1486,15 @@ function friendFromProfile(
 
   return {
     id: profile.id,
-    name: profile.display_name || profile.username || "MAC member",
+    name: profile.display_name || profile.username || "Student",
     handle: profile.username
       ? `@${profile.username}`
       : `@user_${profile.id.slice(0, 6)}`,
-    initials: getInitials(profile.display_name || profile.username || "MAC"),
+    initials: getInitials(profile.display_name || profile.username || "ST"),
     color: normalizeProfileColor(profile.profile_color),
     personIcon: normalizePersonIcon(profile.study_icon),
     studying: userSessions.some((session) => session.status === "active"),
-    currentSubject: "MAC Study",
+    currentSubject: "General study",
     daySeconds: totals.day,
     weekSeconds: totals.week,
     monthSeconds: totals.month,
