@@ -76,8 +76,8 @@ const periodOptions = [
 ] satisfies { id: StatsPeriod; label: string }[];
 
 const chartOptions = [
-  { id: "column", label: "Columns" },
-  { id: "pie", label: "Pie" },
+  { id: "column", label: "Activity" },
+  { id: "pie", label: "Subjects" },
 ] satisfies { id: ChartView; label: string }[];
 
 export function StatisticsDashboard() {
@@ -212,9 +212,8 @@ export function StatisticsDashboard() {
     stats.previousTotalSeconds,
     selectedPeriod,
   );
-  const periodLabel =
-    periodOptions.find((period) => period.id === selectedPeriod)?.label ??
-    "Weekly";
+  const showAverage = average.seconds >= 60;
+  const showSummaryDetails = Boolean(comparison.label) || showAverage;
 
   return (
     <div className="space-y-5 pt-1 lg:pt-0">
@@ -245,27 +244,35 @@ export function StatisticsDashboard() {
           })}
         </div>
 
-        <div className="mt-5 flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-mac-yellow)]">
-              {periodLabel}
-            </p>
-            <h2 className="mt-1.5 text-4xl font-semibold leading-none tracking-[-0.025em] lg:text-5xl">
-              {formatRoundedStudyTime(totalSeconds)}
-            </h2>
-            <p
-              className={`mt-2 text-xs font-semibold sm:text-sm ${comparison.className}`}
-            >
-              {comparison.label}
-            </p>
-            <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)] sm:text-sm">
-              Avg {average.label}: {formatRoundedStudyTime(average.seconds)}
-            </p>
-          </div>
+        <div className="mt-5 min-w-0">
+          <h2 className="text-4xl font-semibold leading-none tracking-[-0.025em] lg:text-5xl">
+            {formatRoundedStudyTime(totalSeconds)}
+          </h2>
+          {showSummaryDetails ? (
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm">
+              {comparison.label ? (
+                <p className={`font-semibold ${comparison.className}`}>
+                  {comparison.label}
+                </p>
+              ) : null}
+              {comparison.label && showAverage ? (
+                <span aria-hidden className="text-[var(--color-text-muted)]">
+                  ·
+                </span>
+              ) : null}
+              {showAverage ? (
+                <p className="font-medium text-[var(--color-text-muted)]">
+                  Avg {average.label}: {formatRoundedStudyTime(average.seconds)}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
 
+        {totalSeconds > 0 ? (
           <div
             aria-label="Chart type"
-            className="flex shrink-0 items-center gap-0.5"
+            className="mt-4 grid grid-cols-2 border-b border-[rgb(255_255_255/0.08)]"
             role="group"
           >
             {chartOptions.map((option) => {
@@ -274,10 +281,10 @@ export function StatisticsDashboard() {
               return (
                 <button
                   aria-pressed={active}
-                  className={`mac-focus min-h-11 rounded-full px-3 text-xs font-semibold transition ${
+                  className={`mac-focus min-h-11 border-b-2 px-3 text-sm font-semibold transition ${
                     active
-                      ? "bg-[rgb(255_255_255/0.1)] text-[var(--color-text)]"
-                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                      ? "border-[var(--color-mac-yellow)] text-[var(--color-text)]"
+                      : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                   }`}
                   key={option.id}
                   onClick={() => setChartView(option.id)}
@@ -288,7 +295,7 @@ export function StatisticsDashboard() {
               );
             })}
           </div>
-        </div>
+        ) : null}
       </section>
 
       {totalSeconds <= 0 ? (
@@ -439,39 +446,35 @@ function ColumnChart({
   const maxSeconds = Math.max(...buckets.map((bucket) => bucket.seconds), 1);
   const scaleMaxSeconds = getNiceScaleMax(maxSeconds);
   const yTicks = [scaleMaxSeconds, scaleMaxSeconds / 2, 0];
-  const selectedBucket = buckets.find(
-    (bucket) => getBucketKey(bucket) === selectedBucketKey,
-  );
+  const selectedBucket =
+    buckets.find((bucket) => getBucketKey(bucket) === selectedBucketKey) ??
+    getLargestBucket(buckets);
 
   return (
     <section className="rounded-lg border border-[rgb(255_255_255/0.06)] bg-[rgb(255_255_255/0.025)] p-4 lg:p-5">
-      <div className="flex min-h-11 items-center gap-2">
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
-          <Icon aria-hidden size={16} />
-        </span>
-        <h2 className="text-lg font-semibold">{title}</h2>
+      <div className="flex min-h-11 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+            <Icon aria-hidden size={16} />
+          </span>
+          <h2 className="truncate text-lg font-semibold">{title}</h2>
+        </div>
+        <p
+          aria-live="polite"
+          className="shrink-0 text-xs font-semibold text-[var(--color-text-muted)]"
+        >
+          {selectedBucket ? (
+            <>
+              {selectedBucket.label} ·{" "}
+              <span className="text-[var(--color-text)]">
+                {formatRoundedStudyTime(selectedBucket.seconds)}
+              </span>
+            </>
+          ) : null}
+        </p>
       </div>
 
-      <div
-        aria-live="polite"
-        className="mt-2 flex min-h-9 items-center rounded-md bg-[rgb(255_255_255/0.035)] px-3 text-xs font-medium"
-      >
-        {selectedBucket ? (
-          <span>
-            <span className="text-[var(--color-text-muted)]">
-              {selectedBucket.label}
-            </span>
-            <span className="mx-2 text-[var(--color-text-muted)]">·</span>
-            <span>{formatRoundedStudyTime(selectedBucket.seconds)}</span>
-          </span>
-        ) : (
-          <span className="text-[var(--color-text-muted)]">
-            Tap a bar to view its value
-          </span>
-        )}
-      </div>
-
-      <div className="mt-4 grid grid-cols-[2.25rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2.5rem_minmax(0,1fr)]">
+      <div className="mt-3 grid grid-cols-[2.25rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2.5rem_minmax(0,1fr)]">
         <div className="relative h-32 lg:h-52">
           {yTicks.map((tick) => (
             <p
@@ -508,6 +511,7 @@ function ColumnChart({
                     aria-label={`${bucket.label}: ${formatRoundedStudyTime(bucket.seconds)}`}
                     aria-pressed={isSelected}
                     className="mac-focus group flex h-full min-w-0 flex-1 flex-col justify-end rounded-sm"
+                    disabled={bucket.seconds <= 0}
                     key={bucketKey}
                     onClick={() => setSelectedBucketKey(bucketKey)}
                     type="button"
@@ -569,11 +573,13 @@ function EmptyStatistics({ period }: { period: StatsPeriod }) {
 }
 
 function formatRoundedStudyTime(totalSeconds: number) {
-  const minutes = Math.round(totalSeconds / 60);
+  const seconds = Math.max(0, Math.round(totalSeconds));
 
-  if (minutes <= 0) {
-    return "0 min";
+  if (seconds < 60) {
+    return `${seconds} sec`;
   }
+
+  const minutes = Math.round(seconds / 60);
 
   if (minutes < 60) {
     return `${minutes} min`;
@@ -590,6 +596,10 @@ function formatAxisTick(totalSeconds: number) {
     return "0";
   }
 
+  if (totalSeconds < 60) {
+    return `${Math.round(totalSeconds)}s`;
+  }
+
   const minutes = Math.round(totalSeconds / 60);
 
   if (minutes < 60) {
@@ -602,13 +612,13 @@ function formatAxisTick(totalSeconds: number) {
 }
 
 function getNiceScaleMax(maxSeconds: number) {
-  const maxMinutes = Math.max(15, Math.ceil(maxSeconds / 60));
   const candidates = [
-    15, 30, 60, 90, 120, 180, 240, 300, 360, 480, 600, 720, 960, 1200, 1440,
+    30, 60, 120, 240, 600, 1200, 1800, 3600, 7200, 14400, 21600, 28800, 43200,
+    57600, 86400,
   ];
-  const candidate = candidates.find((value) => value >= maxMinutes);
+  const candidate = candidates.find((value) => value >= maxSeconds);
 
-  return (candidate ?? Math.ceil(maxMinutes / 240) * 240) * 60;
+  return candidate ?? Math.ceil(maxSeconds / 14400) * 14400;
 }
 
 function buildPeriodStats({
@@ -870,21 +880,44 @@ function getComparisonStat(
   const periodName =
     period === "week" ? "week" : period === "month" ? "month" : "year";
 
-  if (previousTotalSeconds <= 0) {
-    return totalSeconds > 0
-      ? {
-          className: "text-[var(--color-success)]",
-          label: `New activity this ${periodName}`,
-        }
-      : {
-          className: "text-[var(--color-text-muted)]",
-          label: `No activity last ${periodName}`,
-        };
+  if (totalSeconds < 5 * 60) {
+    return {
+      className: "text-[var(--color-text-muted)]",
+      label: totalSeconds <= 0 ? `No sessions this ${periodName}` : null,
+    };
   }
 
-  const percent = Math.round(
-    ((totalSeconds - previousTotalSeconds) / previousTotalSeconds) * 100,
-  );
+  if (previousTotalSeconds <= 0) {
+    return {
+      className: "text-[var(--color-success)]",
+      label: `New activity this ${periodName}`,
+    };
+  }
+
+  if (previousTotalSeconds < 5 * 60) {
+    return {
+      className: "text-[var(--color-success)]",
+      label: `More than previous ${periodName}`,
+    };
+  }
+
+  const rawPercent =
+    ((totalSeconds - previousTotalSeconds) / previousTotalSeconds) * 100;
+  const percent = Math.round(rawPercent / 5) * 5;
+
+  if (Math.abs(percent) > 300) {
+    return {
+      className:
+        percent > 0
+          ? "text-[var(--color-success)]"
+          : "text-[var(--color-danger)]",
+      label:
+        percent > 0
+          ? `More than previous ${periodName}`
+          : `Less than previous ${periodName}`,
+    };
+  }
+
   const prefix = percent > 0 ? "+" : "";
 
   return {
@@ -912,6 +945,14 @@ function getChartTitle(period: StatsPeriod) {
 
 function getBucketKey(bucket: ChartBucket) {
   return `${bucket.label}-${bucket.start.toISOString()}`;
+}
+
+function getLargestBucket(buckets: ChartBucket[]) {
+  return buckets.reduce<ChartBucket | undefined>(
+    (largest, bucket) =>
+      !largest || bucket.seconds > largest.seconds ? bucket : largest,
+    undefined,
+  );
 }
 
 function startOfDay(date: Date) {
