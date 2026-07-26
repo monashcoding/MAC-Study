@@ -62,6 +62,7 @@ export type RemoteSocialSnapshot = {
   socialState: SocialState;
   availableFriends: RemoteFriendCandidate[];
   friendRequests: RemoteFriendRequest[];
+  groupInvites: RemoteGroupInvite[];
   currentUserId: string;
 };
 
@@ -73,6 +74,17 @@ export type RemoteFriendCandidate = SocialFriend & {
 export type RemoteFriendRequest = {
   createdAt: string;
   direction: "incoming" | "outgoing";
+  id: string;
+  user: SocialFriend;
+};
+
+export type RemoteGroupInvite = {
+  createdAt: string;
+  direction: "incoming" | "outgoing";
+  group: {
+    id: string;
+    name: string;
+  };
   id: string;
   user: SocialFriend;
 };
@@ -232,6 +244,20 @@ type FriendRequestRow = {
   display_name: string | null;
   profile_color: string | null;
   request_id: string;
+  study_icon: string | null;
+  user_id: string;
+  username: string | null;
+};
+
+type GroupInviteRow = {
+  avatar_url: string | null;
+  created_at: string;
+  direction: "incoming" | "outgoing";
+  display_name: string | null;
+  group_id: string;
+  group_name: string;
+  invite_id: string;
+  profile_color: string | null;
   study_icon: string | null;
   user_id: string;
   username: string | null;
@@ -563,6 +589,19 @@ export async function saveRemoteSubjects({
     if (error) {
       throw error;
     }
+  } else {
+    const { error } = await supabase
+      .from("subjects")
+      .update({
+        archived_at: new Date().toISOString(),
+        unit_offering_id: null,
+      })
+      .eq("user_id", userId)
+      .is("archived_at", null);
+
+    if (error) {
+      throw error;
+    }
   }
 
   for (const change of linkChanges) {
@@ -769,6 +808,7 @@ export async function fetchRemoteSocialSnapshot(
     sessionsResult,
     friendCandidatesResult,
     friendRequestsResult,
+    groupInvitesResult,
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -797,6 +837,7 @@ export async function fetchRemoteSocialSnapshot(
       .limit(1000),
     supabase.rpc("list_friend_candidates"),
     supabase.rpc("list_friend_requests"),
+    supabase.rpc("list_group_invites"),
   ]);
 
   if (profilesResult.error) throw profilesResult.error;
@@ -867,11 +908,17 @@ export async function fetchRemoteSocialSnapshot(
     : ((friendRequestsResult.data ?? []) as FriendRequestRow[]).map(
         friendRequestFromRow,
       );
+  const groupInvites = groupInvitesResult.error
+    ? []
+    : ((groupInvitesResult.data ?? []) as GroupInviteRow[]).map(
+        groupInviteFromRow,
+      );
 
   return {
     currentUserId: userId,
     availableFriends,
     friendRequests,
+    groupInvites,
     socialState: {
       friends: remoteFriends,
       groups: socialGroups.filter((group) => group.currentUserRole),
@@ -1375,6 +1422,24 @@ export async function inviteRemoteFriendToGroup({
   }
 }
 
+export async function updateRemoteGroupInvite({
+  action,
+  requestId,
+}: {
+  action: "accept" | "cancel" | "decline";
+  requestId: string;
+}) {
+  const response = await fetch("/api/groups/invites", {
+    body: JSON.stringify({ action, requestId }),
+    headers: { "Content-Type": "application/json" },
+    method: "PATCH",
+  });
+
+  if (!response.ok) {
+    throw new Error(await getResponseError(response));
+  }
+}
+
 export async function sendRemoteNudge({
   groupId = null,
   recipientId,
@@ -1497,6 +1562,11 @@ export function subscribeToRemoteAppChanges(
       "postgres_changes",
       { event: "*", schema: "public", table: "friend_requests" },
       () => onChange("friend_requests"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "group_invites" },
+      () => onChange("group_invites"),
     )
     .on(
       "postgres_changes",
@@ -1632,6 +1702,32 @@ function friendRequestFromRow(row: FriendRequestRow): RemoteFriendRequest {
         [],
       ),
       isFriend: false,
+    },
+  };
+}
+
+function groupInviteFromRow(row: GroupInviteRow): RemoteGroupInvite {
+  return {
+    createdAt: row.created_at,
+    direction: row.direction,
+    group: {
+      id: row.group_id,
+      name: row.group_name,
+    },
+    id: row.invite_id,
+    user: {
+      ...friendFromProfile(
+        {
+          avatar_url: row.avatar_url,
+          display_name: row.display_name,
+          id: row.user_id,
+          profile_color: row.profile_color,
+          study_icon: row.study_icon,
+          username: row.username,
+        },
+        [],
+      ),
+      isFriend: true,
     },
   };
 }

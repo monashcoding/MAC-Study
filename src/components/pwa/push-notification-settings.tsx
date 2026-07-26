@@ -43,10 +43,13 @@ export function PushNotificationSettings() {
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
+    async function refreshStatus() {
       const status = await getPushStatus();
       if (!cancelled) setPushStatus(status);
+    }
 
+    async function load() {
+      await refreshStatus();
       try {
         const supabase = createSupabaseBrowserClient();
         const nextPreferences =
@@ -57,9 +60,22 @@ export function PushNotificationSettings() {
       }
     }
 
+    function refreshWhenVisible() {
+      if (document.visibilityState === "visible") void refreshStatus();
+    }
+
     void load();
+    window.addEventListener("focus", refreshStatus);
+    window.addEventListener("pageshow", refreshStatus);
+    window.addEventListener("mac-push-status-changed", refreshStatus);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", refreshStatus);
+      window.removeEventListener("pageshow", refreshStatus);
+      window.removeEventListener("mac-push-status-changed", refreshStatus);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, []);
 

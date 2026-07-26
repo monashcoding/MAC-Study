@@ -1,12 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ArrowLeft,
   BellOff,
   Check,
   CircleStop,
+  Clock3,
   Crown,
   LoaderCircle,
   Lock,
@@ -54,7 +61,9 @@ import {
   stopRemoteStudySession,
   subscribeToRemoteAppChanges,
   transferRemoteGroupLeadership,
+  updateRemoteGroupInvite,
   type RemoteActiveSession,
+  type RemoteGroupInvite,
   type RemoteGroupNotificationSettings,
   type RemoteSubject,
   updateRemoteGroupDetails,
@@ -101,6 +110,10 @@ export function GroupsDashboard() {
   const [rankingWindow, setRankingWindow] = useState<RankingWindow>("day");
   const [groupName, setGroupName] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<"groups" | "requests">("groups");
+  const [groupInvites, setGroupInvites] = useState<RemoteGroupInvite[]>([]);
+  const [requestBusyKey, setRequestBusyKey] = useState<string | null>(null);
+  const [requestFeedback, setRequestFeedback] = useState<string | null>(null);
   const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
@@ -113,6 +126,7 @@ export function GroupsDashboard() {
       cacheRemoteSocialSnapshot(snapshot);
       setCurrentUserId(snapshot.currentUserId);
       setSocialState(snapshot.socialState);
+      setGroupInvites(snapshot.groupInvites ?? []);
     }
   }, []);
 
@@ -143,6 +157,7 @@ export function GroupsDashboard() {
       if (cachedSocial) {
         setCurrentUserId(cachedSocial.currentUserId);
         setSocialState(cachedSocial.socialState);
+        setGroupInvites(cachedSocial.groupInvites ?? []);
         setIsLoaded(true);
       }
 
@@ -165,6 +180,7 @@ export function GroupsDashboard() {
           cacheRemoteSocialSnapshot(snapshot);
           setCurrentUserId(snapshot.currentUserId);
           setSocialState(snapshot.socialState);
+          setGroupInvites(snapshot.groupInvites ?? []);
           if (timerState) {
             cacheRemoteTimerState(timerState);
             setTimerSubjects(timerState.subjects);
@@ -259,6 +275,22 @@ export function GroupsDashboard() {
       () => undefined,
     );
   }, [remoteClient, selectedGroupId]);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "requests") {
+      setSelectedGroupId(null);
+      setActiveTab("requests");
+    }
+
+    const openRequests = () => {
+      setSelectedGroupId(null);
+      setActiveTab("requests");
+    };
+    window.addEventListener("mac-open-group-requests", openRequests);
+
+    return () =>
+      window.removeEventListener("mac-open-group-requests", openRequests);
+  }, []);
   useAppHeaderDetail("/app/groups", selectedGroup?.name ?? null);
   const friendsById = useMemo(
     () => new Map(socialState.friends.map((friend) => [friend.id, friend])),
@@ -281,6 +313,36 @@ export function GroupsDashboard() {
   const uniqueMemberCount = new Set(
     socialState.groups.flatMap((group) => group.memberIds),
   ).size;
+  const incomingGroupInvites = groupInvites.filter(
+    (invite) => invite.direction === "incoming",
+  );
+  const outgoingGroupInvites = groupInvites.filter(
+    (invite) => invite.direction === "outgoing",
+  );
+
+  async function updateGroupInvite(
+    invite: RemoteGroupInvite,
+    action: "accept" | "cancel" | "decline",
+  ) {
+    const previousInvites = groupInvites;
+    setGroupInvites((current) =>
+      current.filter((item) => item.id !== invite.id),
+    );
+    setRequestBusyKey(`${action}:${invite.id}`);
+    setRequestFeedback(null);
+
+    try {
+      await updateRemoteGroupInvite({ action, requestId: invite.id });
+      if (remoteClient) await refreshRemoteSocial(remoteClient);
+    } catch (error) {
+      setGroupInvites(previousInvites);
+      setRequestFeedback(
+        getErrorMessage(error, "Could not update that group invitation."),
+      );
+    } finally {
+      setRequestBusyKey(null);
+    }
+  }
 
   async function createGroup() {
     const name = groupName.trim();
@@ -322,13 +384,8 @@ export function GroupsDashboard() {
       id: `group-${crypto.randomUUID()}`,
       name,
       icon: "users",
-      memberIds: uniqueIds(["you", ...invitedMemberIds]),
-      memberRoles: Object.fromEntries(
-        uniqueIds(["you", ...invitedMemberIds]).map((id) => [
-          id,
-          id === "you" ? "owner" : "member",
-        ]),
-      ),
+      memberIds: ["you"],
+      memberRoles: { you: "owner" },
       currentUserRole: "owner",
       visibility: "private",
     };
@@ -895,58 +952,177 @@ export function GroupsDashboard() {
         <SummaryStat label="Members" value={`${uniqueMemberCount}`} />
       </section>
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-medium text-[var(--color-text-muted)]">
-            {socialState.groups.length
-              ? `${socialState.groups.length} ${socialState.groups.length === 1 ? "group" : "groups"}`
-              : "Create a group to study together"}
-          </p>
-          <button
-            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
-            onClick={() => setIsCreating(true)}
-            type="button"
-          >
-            <Plus aria-hidden size={17} />
-            Create
-          </button>
-        </div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-medium text-[var(--color-text-muted)]">
+          {socialState.groups.length
+            ? `${socialState.groups.length} ${socialState.groups.length === 1 ? "group" : "groups"}`
+            : "No groups yet"}
+        </p>
+        <button
+          className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+          onClick={() => setIsCreating(true)}
+          type="button"
+        >
+          <Plus aria-hidden size={17} />
+          Create
+        </button>
+      </div>
 
-        <PaginatedList
-          className="grid gap-2 lg:grid-cols-2 lg:gap-3"
-          items={groupSummaries}
-          pageSize={10}
-          renderItem={({ group, activeNow, memberCount }) => (
-            <button
-              className="mac-focus grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
-              key={group.id}
-              onClick={() => {
-                setGroupView("class");
-                setSelectedGroupId(group.id);
-              }}
-              type="button"
-            >
-              <div className="min-w-0">
-                <h3 className="truncate text-lg font-semibold">{group.name}</h3>
-                <div className="mt-1 flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
-                  <span>{activeNow} active</span>
-                  <span aria-hidden>·</span>
-                  <span>Private</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-xl font-semibold tabular-nums">
-                  {memberCount}
-                </p>
-                <p className="text-xs font-medium text-[var(--color-text-muted)]">
-                  members
-                </p>
-              </div>
-            </button>
+      <div
+        aria-label="Groups view"
+        className="grid grid-cols-2 rounded-xl bg-[rgb(255_255_255/0.04)] p-1"
+        role="tablist"
+      >
+        <button
+          aria-selected={activeTab === "groups"}
+          className={cn(
+            "mac-focus h-11 rounded-lg text-sm font-semibold transition",
+            activeTab === "groups"
+              ? "bg-[var(--color-surface-raised)] text-[var(--color-text)]"
+              : "text-[var(--color-text-muted)]",
           )}
-          resetKey="groups"
-        />
-      </section>
+          onClick={() => setActiveTab("groups")}
+          role="tab"
+          type="button"
+        >
+          Groups
+        </button>
+        <button
+          aria-selected={activeTab === "requests"}
+          className={cn(
+            "mac-focus flex h-11 items-center justify-center gap-2 rounded-lg text-sm font-semibold transition",
+            activeTab === "requests"
+              ? "bg-[var(--color-surface-raised)] text-[var(--color-text)]"
+              : "text-[var(--color-text-muted)]",
+          )}
+          onClick={() => setActiveTab("requests")}
+          role="tab"
+          type="button"
+        >
+          Requests
+          {incomingGroupInvites.length ? (
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-danger)] px-1 text-[10px] font-bold text-white">
+              {incomingGroupInvites.length}
+            </span>
+          ) : null}
+        </button>
+      </div>
+
+      {requestFeedback ? (
+        <p
+          className="rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
+          role="status"
+        >
+          {requestFeedback}
+        </p>
+      ) : null}
+
+      {activeTab === "groups" ? (
+        <section className="space-y-3" role="tabpanel">
+          {groupSummaries.length ? (
+            <PaginatedList
+              className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+              items={groupSummaries}
+              pageSize={10}
+              renderItem={({ group, activeNow, memberCount }) => (
+                <button
+                  className="mac-focus grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
+                  key={group.id}
+                  onClick={() => {
+                    setGroupView("class");
+                    setSelectedGroupId(group.id);
+                  }}
+                  type="button"
+                >
+                  <div className="min-w-0">
+                    <h3 className="truncate text-lg font-semibold">
+                      {group.name}
+                    </h3>
+                    <div className="mt-1 flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
+                      <span>{activeNow} active</span>
+                      <span aria-hidden>·</span>
+                      <span>Private</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-semibold tabular-nums">
+                      {memberCount}
+                    </p>
+                    <p className="text-xs font-medium text-[var(--color-text-muted)]">
+                      members
+                    </p>
+                  </div>
+                </button>
+              )}
+              resetKey="groups"
+            />
+          ) : (
+            <div className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-8 text-center">
+              <p className="font-semibold">No groups yet</p>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Create one and invite friends when you are ready.
+              </p>
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className="space-y-6" role="tabpanel">
+          {incomingGroupInvites.length ? (
+            <GroupInviteSection
+              title={`Incoming (${incomingGroupInvites.length})`}
+            >
+              <PaginatedList
+                className="grid gap-2"
+                items={incomingGroupInvites}
+                pageSize={10}
+                renderItem={(invite) => (
+                  <GroupInviteRow
+                    busyKey={requestBusyKey}
+                    invite={invite}
+                    key={invite.id}
+                    onAction={(action) =>
+                      void updateGroupInvite(invite, action)
+                    }
+                  />
+                )}
+                resetKey="incoming-group-invites"
+              />
+            </GroupInviteSection>
+          ) : null}
+
+          {outgoingGroupInvites.length ? (
+            <GroupInviteSection
+              title={`Sent (${outgoingGroupInvites.length})`}
+            >
+              <PaginatedList
+                className="grid gap-2"
+                items={outgoingGroupInvites}
+                pageSize={10}
+                renderItem={(invite) => (
+                  <GroupInviteRow
+                    busyKey={requestBusyKey}
+                    invite={invite}
+                    key={invite.id}
+                    onAction={(action) =>
+                      void updateGroupInvite(invite, action)
+                    }
+                  />
+                )}
+                resetKey="outgoing-group-invites"
+              />
+            </GroupInviteSection>
+          ) : null}
+
+          {!groupInvites.length ? (
+            <div className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-8 text-center">
+              <p className="font-semibold">No group invitations</p>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Incoming and sent invitations will appear here.
+              </p>
+            </div>
+          ) : null}
+        </section>
+      )}
 
       {isCreating ? (
         <CreateGroupDialog
@@ -965,6 +1141,84 @@ export function GroupsDashboard() {
         />
       ) : null}
     </div>
+  );
+}
+
+function GroupInviteSection({
+  children,
+  title,
+}: {
+  children: ReactNode;
+  title: string;
+}) {
+  return (
+    <div className="space-y-2.5">
+      <h2 className="px-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+        {title}
+      </h2>
+      {children}
+    </div>
+  );
+}
+
+function GroupInviteRow({
+  busyKey,
+  invite,
+  onAction,
+}: {
+  busyKey: string | null;
+  invite: RemoteGroupInvite;
+  onAction: (action: "accept" | "cancel" | "decline") => void;
+}) {
+  const isBusy = busyKey?.endsWith(`:${invite.id}`) ?? false;
+
+  return (
+    <article className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-[rgb(255_255_255/0.065)] bg-[rgb(255_255_255/0.028)] p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+      <ProfileBadge friend={invite.user} />
+      <div className="min-w-0">
+        <p className="truncate font-semibold">{invite.group.name}</p>
+        <p className="truncate text-sm text-[var(--color-text-muted)]">
+          {invite.direction === "incoming" ? "From" : "Sent to"}{" "}
+          {invite.user.handle}
+        </p>
+      </div>
+
+      {invite.direction === "incoming" ? (
+        <div className="col-span-2 grid grid-cols-2 gap-2 sm:col-span-1 sm:flex">
+          <button
+            className="mac-focus h-11 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] disabled:opacity-45"
+            disabled={isBusy}
+            onClick={() => onAction("accept")}
+            type="button"
+          >
+            Accept
+          </button>
+          <button
+            className="mac-focus h-11 rounded-md border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-text-muted)] disabled:opacity-45"
+            disabled={isBusy}
+            onClick={() => onAction("decline")}
+            type="button"
+          >
+            Decline
+          </button>
+        </div>
+      ) : (
+        <div className="col-span-2 flex items-center justify-between gap-3 sm:col-span-1 sm:justify-end">
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-muted)]">
+            <Clock3 aria-hidden size={15} />
+            Pending
+          </span>
+          <button
+            className="mac-focus h-11 rounded-md px-3 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
+            disabled={isBusy}
+            onClick={() => onAction("cancel")}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </article>
   );
 }
 

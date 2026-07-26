@@ -1225,7 +1225,6 @@ function UnitCodeInput({
           onChange(event.target.value);
           setIsOpen(true);
         }}
-        onFocus={() => setIsOpen(true)}
         placeholder="FIT3077"
         role="combobox"
         value={value}
