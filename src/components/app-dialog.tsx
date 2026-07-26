@@ -29,15 +29,17 @@ export function AppDialog({
   maxWidthClassName = "max-w-xl",
   onClose,
   title,
+  variant = "default",
 }: {
   bodyClassName?: string;
-  children: ReactNode;
+  children?: ReactNode;
   closeLabel?: string;
   footer?: ReactNode;
   isDirty?: boolean;
   maxWidthClassName?: string;
   onClose: () => void;
   title: string;
+  variant?: "confirmation" | "default";
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -154,18 +156,33 @@ export function AppDialog({
     >
       <div
         className={cn(
-          "flex max-h-[min(88dvh,720px)] w-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl",
+          "flex max-h-[min(88dvh,720px)] w-full flex-col overflow-hidden shadow-2xl",
+          variant === "confirmation"
+            ? "rounded-lg bg-[var(--color-background)]"
+            : "rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)]",
           maxWidthClassName,
         )}
+        data-dialog-variant={variant}
         ref={panelRef}
       >
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[rgb(20_20_20/0.96)] px-4 py-3 backdrop-blur-xl">
+        <div
+          className={cn(
+            "flex shrink-0 items-center justify-between gap-3 px-4 py-3",
+            variant === "default" &&
+              "border-b border-[var(--color-border)] bg-[rgb(20_20_20/0.96)] backdrop-blur-xl",
+          )}
+        >
           <h2 className="min-w-0 truncate text-lg font-semibold" id={titleId}>
             {title}
           </h2>
           <button
             aria-label={closeLabel}
-            className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.06)] hover:text-[var(--color-text)]"
+            className={cn(
+              "mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]",
+              variant === "confirmation"
+                ? "rounded-md hover:bg-[rgb(255_255_255/0.045)]"
+                : "rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] hover:bg-[rgb(255_255_255/0.06)]",
+            )}
             data-dialog-close
             onClick={requestClose}
             ref={closeButtonRef}
@@ -175,14 +192,16 @@ export function AppDialog({
           </button>
         </div>
 
-        <div
-          className={cn(
-            "min-h-0 flex-1 overflow-y-auto overscroll-contain p-4",
-            bodyClassName,
-          )}
-        >
-          {children}
-        </div>
+        {children ? (
+          <div
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto overscroll-contain p-4",
+              bodyClassName,
+            )}
+          >
+            {children}
+          </div>
+        ) : null}
 
         {showDiscardPrompt ? (
           <div
@@ -209,7 +228,13 @@ export function AppDialog({
             </div>
           </div>
         ) : footer ? (
-          <div className="shrink-0 border-t border-[var(--color-border)] bg-[rgb(20_20_20/0.96)] p-4 backdrop-blur-xl">
+          <div
+            className={cn(
+              "shrink-0 p-4",
+              variant === "default" &&
+                "border-t border-[var(--color-border)] bg-[rgb(20_20_20/0.96)] backdrop-blur-xl",
+            )}
+          >
             {footer}
           </div>
         ) : null}

@@ -47,6 +47,7 @@ export type SocialFriend = {
   weekSeconds: number;
   monthSeconds: number;
   allTimeSeconds: number;
+  dailyStudySeconds?: Record<string, number>;
   activeStartedAt?: string | null;
   activeUpdatedAt?: string | null;
   subjectSeconds: Record<string, number>;
@@ -260,6 +261,9 @@ function normalizeFriend(value: unknown) {
     weekSeconds: asNumber(value.weekSeconds),
     monthSeconds: asNumber(value.monthSeconds),
     allTimeSeconds: asNumber(value.allTimeSeconds),
+    dailyStudySeconds: isObject(value.dailyStudySeconds)
+      ? normalizeDailyStudySeconds(value.dailyStudySeconds)
+      : {},
     activeStartedAt: asNullableString(value.activeStartedAt),
     activeUpdatedAt: asNullableString(value.activeUpdatedAt),
     subjectSeconds: isObject(value.subjectSeconds)
@@ -333,6 +337,16 @@ function normalizeSubjectSeconds(value: Record<string, unknown>) {
     Object.entries(value)
       .map(([subjectId, seconds]) => [subjectId, asNumber(seconds)] as const)
       .filter(([, seconds]) => seconds > 0),
+  );
+}
+
+function normalizeDailyStudySeconds(value: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([date, seconds]) => [date, asNumber(seconds)] as const)
+      .filter(
+        ([date, seconds]) => /^\d{4}-\d{2}-\d{2}$/.test(date) && seconds > 0,
+      ),
   );
 }
 

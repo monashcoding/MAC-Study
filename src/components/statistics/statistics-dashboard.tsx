@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, CalendarDays } from "lucide-react";
 import { PaginatedList } from "@/components/paginated-list";
+import { StudyHeatmap } from "@/components/study-heatmap";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   cacheRemoteTimerState,
@@ -10,9 +11,29 @@ import {
 } from "@/lib/client-cache";
 import { fetchRemoteTimerState } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { getElapsedSeconds, getSessionSeconds } from "@/lib/timer";
+import {
+  getElapsedSeconds,
+  getLocalDateKey,
+  getSessionSeconds,
+} from "@/lib/timer";
 
 const TIMER_STORAGE_KEY = "mac-study-demo-state";
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAY_SHORT_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 type StudySubject = {
   id: string;
@@ -26,7 +47,7 @@ type StoredSession = {
   startedAt: string;
   endedAt: string;
   status: "completed" | "needs_confirmation";
-  source: "timer";
+  source: "manual_adjustment" | "timer";
 };
 
 type ActiveSession = {
@@ -40,7 +61,7 @@ type StoredTimerState = {
   subjects?: Partial<StudySubject>[];
 };
 
-type StatsPeriod = "week" | "month" | "annual";
+type StatsPeriod = "day" | "week" | "month" | "annual";
 type ChartView = "column" | "pie";
 
 type StudyEntry = {
@@ -70,6 +91,7 @@ const fallbackSubjectTotals: Record<string, number> = {
 };
 
 const periodOptions = [
+  { id: "day", label: "Daily" },
   { id: "week", label: "Weekly" },
   { id: "month", label: "Monthly" },
   { id: "annual", label: "Annual" },
@@ -214,13 +236,20 @@ export function StatisticsDashboard() {
   );
   const showAverage = average.seconds >= 60;
   const showSummaryDetails = Boolean(comparison.label) || showAverage;
+  const dailyStudySeconds = useMemo(
+    () =>
+      isLoaded && useDemoData
+        ? buildDemoDailyStudySeconds(now)
+        : buildDailyStudySeconds({ activeSession, now, sessions }),
+    [activeSession, isLoaded, now, sessions, useDemoData],
+  );
 
   return (
     <div className="space-y-5 pt-1 lg:pt-0">
       <section className="border-b border-[rgb(255_255_255/0.08)] pb-5">
         <div
           aria-label="Statistics period"
-          className="grid grid-cols-3 gap-2"
+          className="grid grid-cols-4 gap-1.5 sm:gap-2"
           role="group"
         >
           {periodOptions.map((period) => {
@@ -303,7 +332,11 @@ export function StatisticsDashboard() {
       ) : chartView === "column" ? (
         <ColumnChart
           buckets={stats.buckets}
-          icon={selectedPeriod === "week" ? CalendarDays : BarChart3}
+          icon={
+            selectedPeriod === "day" || selectedPeriod === "week"
+              ? CalendarDays
+              : BarChart3
+          }
           title={getChartTitle(selectedPeriod)}
         />
       ) : (
@@ -314,6 +347,8 @@ export function StatisticsDashboard() {
           topSubject={topSubject}
         />
       )}
+
+      <StudyHeatmap dailySeconds={dailyStudySeconds} />
     </div>
   );
 }
@@ -557,7 +592,13 @@ function ColumnChart({
 
 function EmptyStatistics({ period }: { period: StatsPeriod }) {
   const periodName =
-    period === "week" ? "week" : period === "month" ? "month" : "year";
+    period === "day"
+      ? "day"
+      : period === "week"
+        ? "week"
+        : period === "month"
+          ? "month"
+          : "year";
 
   return (
     <section className="flex min-h-60 flex-col items-center justify-center rounded-lg border border-dashed border-[rgb(255_255_255/0.1)] bg-[rgb(255_255_255/0.02)] px-6 py-10 text-center">
@@ -727,7 +768,52 @@ function getStudyEntries({
   return entries;
 }
 
+function buildDailyStudySeconds({
+  activeSession,
+  now,
+  sessions,
+}: {
+  activeSession: ActiveSession | null;
+  now: Date;
+  sessions: StoredSession[];
+}) {
+  const totals = sessions.reduce<Record<string, number>>((result, session) => {
+    const key = getLocalDateKey(new Date(session.startedAt));
+    result[key] = (result[key] ?? 0) + getSessionSeconds(session);
+    return result;
+  }, {});
+
+  if (activeSession) {
+    const key = getLocalDateKey(new Date(activeSession.startedAt));
+    totals[key] =
+      (totals[key] ?? 0) + getElapsedSeconds(activeSession.startedAt, now);
+  }
+
+  return totals;
+}
+
+function buildDemoDailyStudySeconds(now: Date) {
+  const totals: Record<string, number> = {};
+
+  for (let offset = 0; offset < 364; offset += 1) {
+    const date = addDays(startOfDay(now), -offset);
+    const pattern = (offset * 17 + date.getMonth() * 7) % 11;
+
+    if (pattern < 5) {
+      totals[getLocalDateKey(date)] = (pattern + 1) * 18 * 60;
+    }
+  }
+
+  return totals;
+}
+
 function getPeriodRange(period: StatsPeriod, now: Date) {
+  if (period === "day") {
+    const start = startOfDay(now);
+
+    return { start, end: addDays(start, 1) };
+  }
+
   if (period === "week") {
     const start = startOfDay(now);
     start.setDate(now.getDate() - 6);
@@ -756,6 +842,15 @@ function getPeriodRange(period: StatsPeriod, now: Date) {
 }
 
 function getPreviousPeriodRange(period: StatsPeriod, now: Date) {
+  if (period === "day") {
+    const currentStart = startOfDay(now);
+
+    return {
+      start: addDays(currentStart, -1),
+      end: currentStart,
+    };
+  }
+
   if (period === "week") {
     const currentStart = getPeriodRange(period, now).start;
 
@@ -779,6 +874,23 @@ function getPreviousPeriodRange(period: StatsPeriod, now: Date) {
 }
 
 function buildBuckets(period: StatsPeriod, now: Date): ChartBucket[] {
+  if (period === "day") {
+    const dayStart = startOfDay(now);
+
+    return Array.from({ length: 8 }, (_, index) => {
+      const hour = index * 3;
+      const bucketStart = new Date(dayStart);
+      bucketStart.setHours(hour);
+
+      return {
+        label: formatHourLabel(hour),
+        seconds: 0,
+        start: bucketStart,
+        end: new Date(bucketStart.getTime() + 3 * 60 * 60 * 1000),
+      };
+    });
+  }
+
   if (period === "week") {
     const { start } = getPeriodRange(period, now);
 
@@ -786,10 +898,8 @@ function buildBuckets(period: StatsPeriod, now: Date): ChartBucket[] {
       const bucketStart = addDays(start, index);
 
       return {
-        label: bucketStart.toLocaleDateString(undefined, { weekday: "short" }),
-        shortLabel: bucketStart.toLocaleDateString(undefined, {
-          weekday: "narrow",
-        }),
+        label: WEEKDAY_LABELS[bucketStart.getDay()],
+        shortLabel: WEEKDAY_SHORT_LABELS[bucketStart.getDay()],
         seconds: 0,
         start: bucketStart,
         end: addDays(bucketStart, 1),
@@ -827,10 +937,8 @@ function buildBuckets(period: StatsPeriod, now: Date): ChartBucket[] {
       const bucketStart = new Date(now.getFullYear(), month, 1);
 
       return {
-        label: bucketStart.toLocaleDateString(undefined, { month: "short" }),
-        shortLabel: bucketStart.toLocaleDateString(undefined, {
-          month: "narrow",
-        }),
+        label: MONTH_LABELS[month],
+        shortLabel: MONTH_LABELS[month][0],
         seconds: 0,
         start: bucketStart,
         end: new Date(now.getFullYear(), month + 1, 1),
@@ -842,10 +950,8 @@ function buildBuckets(period: StatsPeriod, now: Date): ChartBucket[] {
     const bucketStart = new Date(now.getFullYear(), month, 1);
 
     return {
-      label: bucketStart.toLocaleDateString(undefined, { month: "short" }),
-      shortLabel: bucketStart.toLocaleDateString(undefined, {
-        month: "narrow",
-      }),
+      label: MONTH_LABELS[month],
+      shortLabel: MONTH_LABELS[month][0],
       seconds: 0,
       start: bucketStart,
       end: new Date(now.getFullYear(), month + 1, 1),
@@ -858,6 +964,10 @@ function getAverageStat(
   totalSeconds: number,
   buckets: ChartBucket[],
 ) {
+  if (period === "day") {
+    return { label: "per hour", seconds: Math.floor(totalSeconds / 24) };
+  }
+
   if (period === "month") {
     return {
       label: "per week",
@@ -878,7 +988,13 @@ function getComparisonStat(
   period: StatsPeriod,
 ) {
   const periodName =
-    period === "week" ? "week" : period === "month" ? "month" : "year";
+    period === "day"
+      ? "day"
+      : period === "week"
+        ? "week"
+        : period === "month"
+          ? "month"
+          : "year";
 
   if (totalSeconds < 5 * 60) {
     return {
@@ -932,6 +1048,10 @@ function getComparisonStat(
 }
 
 function getChartTitle(period: StatsPeriod) {
+  if (period === "day") {
+    return "Hourly breakdown";
+  }
+
   if (period === "month") {
     return "Weekly breakdown";
   }
@@ -941,6 +1061,12 @@ function getChartTitle(period: StatsPeriod) {
   }
 
   return "Daily breakdown";
+}
+
+function formatHourLabel(hour: number) {
+  if (hour === 0) return "12am";
+  if (hour === 12) return "12pm";
+  return hour < 12 ? `${hour}am` : `${hour - 12}pm`;
 }
 
 function getBucketKey(bucket: ChartBucket) {

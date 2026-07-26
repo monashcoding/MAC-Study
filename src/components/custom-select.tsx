@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 
 export type CustomSelectOption<T extends string | number> = {
   label: string;
+  swatchColor?: string;
   value: T;
 };
 
@@ -24,16 +25,22 @@ export function CustomSelect<T extends string | number>({
   className?: string;
   disabled?: boolean;
   onChange: (value: T) => void;
-  options: CustomSelectOption<T>[];
+  options: readonly CustomSelectOption<T>[];
   placeholder?: string;
   placement?: "bottom" | "top";
   size?: "compact" | "default";
   value: T | null;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
   const listboxId = useId();
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const optionsRef = useRef(options);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const valueRef = useRef(value);
+  optionsRef.current = options;
+  valueRef.current = value;
   const selectedOption =
     options.find((option) => option.value === value) ?? null;
 
@@ -54,6 +61,22 @@ export function CustomSelect<T extends string | number>({
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const selectedIndex = optionsRef.current.findIndex(
+      (option) => option.value === valueRef.current,
+    );
+    const nextIndex = selectedIndex >= 0 ? selectedIndex : 0;
+    setActiveIndex(nextIndex);
+
+    const frame = window.requestAnimationFrame(() => {
+      optionRefs.current[nextIndex]?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isOpen]);
+
   return (
     <div
       className={cn("relative", isOpen && "z-40", className)}
@@ -63,6 +86,30 @@ export function CustomSelect<T extends string | number>({
           event.stopPropagation();
           setIsOpen(false);
           triggerRef.current?.focus();
+          return;
+        }
+
+        if (!isOpen || !options.length) return;
+
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const direction = event.key === "ArrowDown" ? 1 : -1;
+          const nextIndex =
+            (activeIndex + direction + options.length) % options.length;
+          setActiveIndex(nextIndex);
+          optionRefs.current[nextIndex]?.focus();
+        } else if (event.key === "Home" || event.key === "End") {
+          event.preventDefault();
+          const nextIndex = event.key === "Home" ? 0 : options.length - 1;
+          setActiveIndex(nextIndex);
+          optionRefs.current[nextIndex]?.focus();
+        } else if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onChange(options[activeIndex].value);
+          setIsOpen(false);
+          triggerRef.current?.focus();
+        } else if (event.key === "Tab") {
+          setIsOpen(false);
         }
       }}
       ref={rootRef}
@@ -74,9 +121,7 @@ export function CustomSelect<T extends string | number>({
         aria-label={ariaLabel}
         className={cn(
           "mac-focus grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border bg-[var(--color-surface)] text-left font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
-          size === "compact"
-            ? "h-9 px-2.5 text-xs"
-            : "h-11 px-3 text-sm",
+          size === "compact" ? "h-10 px-2.5 text-xs" : "h-11 px-3 text-sm",
           isOpen
             ? "border-[var(--color-mac-yellow)] ring-2 ring-[rgb(255_227_48/0.18)]"
             : "border-[var(--color-border)] hover:border-[rgb(255_255_255/0.18)]",
@@ -92,13 +137,22 @@ export function CustomSelect<T extends string | number>({
         ref={triggerRef}
         type="button"
       >
-        <span
-          className={cn(
-            "truncate",
-            !selectedOption && "text-[var(--color-text-muted)]",
-          )}
-        >
-          {selectedOption?.label ?? placeholder}
+        <span className="flex min-w-0 items-center gap-2.5">
+          {selectedOption?.swatchColor ? (
+            <span
+              aria-hidden
+              className="h-4 w-4 shrink-0 rounded-full border border-black/15"
+              style={{ backgroundColor: selectedOption.swatchColor }}
+            />
+          ) : null}
+          <span
+            className={cn(
+              "truncate",
+              !selectedOption && "text-[var(--color-text-muted)]",
+            )}
+          >
+            {selectedOption?.label ?? placeholder}
+          </span>
         </span>
         <ChevronDown
           aria-hidden
@@ -124,6 +178,7 @@ export function CustomSelect<T extends string | number>({
         >
           {options.map((option) => {
             const selected = option.value === value;
+            const optionIndex = options.indexOf(option);
 
             return (
               <button
@@ -140,10 +195,24 @@ export function CustomSelect<T extends string | number>({
                   setIsOpen(false);
                   triggerRef.current?.focus();
                 }}
+                onFocus={() => setActiveIndex(optionIndex)}
+                ref={(element) => {
+                  optionRefs.current[optionIndex] = element;
+                }}
                 role="option"
+                tabIndex={activeIndex === optionIndex ? 0 : -1}
                 type="button"
               >
-                <span className="truncate font-medium">{option.label}</span>
+                <span className="flex min-w-0 items-center gap-2.5">
+                  {option.swatchColor ? (
+                    <span
+                      aria-hidden
+                      className="h-4 w-4 shrink-0 rounded-full border border-black/15"
+                      style={{ backgroundColor: option.swatchColor }}
+                    />
+                  ) : null}
+                  <span className="truncate font-medium">{option.label}</span>
+                </span>
                 {selected ? (
                   <Check
                     aria-hidden

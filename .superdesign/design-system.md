@@ -11,7 +11,7 @@ MAC Study is a mobile-first accountability and study-tracking PWA for a private 
 - Primary text `#f7f7f2`; muted text `#a9a99f`; borders `#34342f`.
 - Status colors: success `#42d392`, danger `#ff6b6b`, info `#6cb6ff`.
 - Prefer restrained solid surfaces over decorative gradients. The desktop background may use extremely subtle yellow/blue radial ambience.
-- Medium radius `14px`; large panels `20px`; dialogs `24px`.
+- Keep edges slightly squared with restrained rounding: controls `8px`, large panels `10px`, dialogs `12px`. Reserve fully rounded shapes for avatars, status dots, and intentional pills.
 - Use thin borders, low-contrast inset highlights, and subtle shadows. Avoid heavy card nesting.
 
 ## Typography
@@ -53,4 +53,3 @@ MAC Study is a mobile-first accountability and study-tracking PWA for a private 
 - Touch targets are at least 44px where practical.
 - Respect safe-area insets and reduced motion.
 - Use semantic headings, labelled controls, and useful empty/loading/error states.
-

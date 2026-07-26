@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerStudySession } from "@/lib/auth/server-session";
 import { sendWebPush } from "@/lib/push/send-web-push";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  createSupabaseAdminClient,
+  createSupabaseServerClient,
+} from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -94,18 +97,46 @@ export async function POST(request: Request) {
     );
   }
 
-  const pushResult = await sendPushNotifications(nudge);
+  const pushResult = await sendPushNotifications(nudge, session.sub);
 
   return NextResponse.json({ ok: true, push: pushResult });
 }
 
-async function sendPushNotifications(nudge: NudgeRow) {
+async function sendPushNotifications(nudge: NudgeRow, senderId: string) {
+  if (nudge.group_id) {
+    const admin = createSupabaseAdminClient();
+
+    if (admin) {
+      const [groupMute, senderMute] = await Promise.all([
+        admin
+          .from("user_group_notification_settings")
+          .select("nudges_muted")
+          .eq("user_id", nudge.recipient_id)
+          .eq("group_id", nudge.group_id)
+          .maybeSingle<{ nudges_muted: boolean }>(),
+        admin
+          .from("user_nudge_mutes")
+          .select("muted_user_id")
+          .eq("user_id", nudge.recipient_id)
+          .eq("muted_user_id", senderId)
+          .eq("group_id", nudge.group_id)
+          .maybeSingle(),
+      ]);
+
+      if (groupMute.data?.nudges_muted || senderMute.data) {
+        return { sent: 0, skipped: "disabled" as const };
+      }
+    }
+  }
+
   return sendWebPush({
     body: nudge.message ?? "Someone woke you up!",
     category: "nudge",
     tag: `mac-study-nudge-${nudge.id}`,
     title: "MAC Study",
-    url: nudge.group_id ? "/app/groups" : "/app/friends",
+    url: nudge.group_id
+      ? `/app/groups?group=${encodeURIComponent(nudge.group_id)}`
+      : `/app/friends?friend=${encodeURIComponent(senderId)}`,
     userId: nudge.recipient_id,
   });
 }
