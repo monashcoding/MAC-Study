@@ -246,11 +246,9 @@ body {
 @keyframes mac-view-enter {
   from {
     opacity: 0;
-    transform: translateY(2px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -340,14 +338,16 @@ textarea::placeholder {
 
 @media (max-width: 40rem) {
   [role="dialog"] {
-    align-items: flex-end;
-    padding-inline: 0.5rem;
-    padding-bottom: max(0.5rem, var(--safe-area-bottom));
+    align-items: center;
+    padding-inline: 0.75rem;
+    padding-bottom: max(0.75rem, var(--safe-area-bottom));
   }
 
   [role="dialog"] > div {
-    max-height: calc(var(--app-viewport-height) - var(--safe-area-top) - 1rem);
-    border-radius: 1.5rem 1.5rem 1rem 1rem;
+    max-height: calc(
+      var(--app-viewport-height) - var(--safe-area-top) - 1.5rem
+    );
+    border-radius: 1.5rem;
   }
 }
 

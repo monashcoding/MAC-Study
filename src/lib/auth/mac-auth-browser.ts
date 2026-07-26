@@ -19,7 +19,7 @@ export type BrowserStudySession = {
 
 export class MacSignInRequiredError extends Error {
   constructor() {
-    super("Sign in with MAC to continue.");
+    super("Sign in to continue.");
     this.name = "MacSignInRequiredError";
   }
 }
@@ -60,7 +60,7 @@ export async function completeMacSignIn() {
   });
 
   if (!response.ok) {
-    throw new Error(await getResponseError(response, "MAC sign-in failed."));
+    throw new Error(await getResponseError(response, "Sign-in failed."));
   }
 
   cachedSession = (await response.json()) as BrowserStudySession;
@@ -88,14 +88,14 @@ export async function startMacSignIn(provider: MacProvider, nextPath: string) {
 
   if (!response.ok) {
     throw new Error(
-      await getResponseError(response, "Could not start MAC sign-in."),
+      await getResponseError(response, "Could not start sign-in."),
     );
   }
 
   const body = (await response.json()) as { url?: string };
 
   if (!body.url) {
-    throw new Error("MAC Auth did not return a sign-in URL.");
+    throw new Error("Authentication did not return a sign-in URL.");
   }
 
   window.location.assign(body.url);
@@ -131,14 +131,17 @@ async function getCentralMacToken() {
 
   if (!response.ok) {
     throw new Error(
-      await getResponseError(response, "MAC Auth is currently unavailable."),
+      await getResponseError(
+        response,
+        "Authentication is currently unavailable.",
+      ),
     );
   }
 
   const body = (await response.json()) as { token?: string };
 
   if (!body.token) {
-    throw new Error("MAC Auth did not return a login token.");
+    throw new Error("Authentication did not return a login token.");
   }
 
   return body.token;

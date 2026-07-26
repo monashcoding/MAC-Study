@@ -244,8 +244,7 @@ function normalizeFriend(value: unknown) {
 
   return {
     id: asString(value.id) || makeStableId(name),
-    isFriend:
-      typeof value.isFriend === "boolean" ? value.isFriend : undefined,
+    isFriend: typeof value.isFriend === "boolean" ? value.isFriend : undefined,
     name,
     handle: asString(value.handle) || `@${makeStableId(name)}`,
     initials: getInitials(asString(value.initials) || name),
@@ -256,7 +255,7 @@ function normalizeFriend(value: unknown) {
       ? (asString(value.personIcon) as PersonIconKey)
       : "flame-desk",
     studying: Boolean(value.studying),
-    currentSubject: asString(value.currentSubject) || "MAC Study",
+    currentSubject: asString(value.currentSubject) || "General study",
     daySeconds: asNumber(value.daySeconds),
     weekSeconds: asNumber(value.weekSeconds),
     monthSeconds: asNumber(value.monthSeconds),

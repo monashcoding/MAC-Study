@@ -34,7 +34,7 @@ export default function LogoutPage() {
           className="animate-spin text-[var(--color-mac-yellow)]"
           size={20}
         />
-        Signing out of your MAC account…
+        Signing out of your account…
       </div>
     </main>
   );

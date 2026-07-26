@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Check, CircleStop, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import { CustomSelect } from "@/components/custom-select";
+import { PaginatedList } from "@/components/paginated-list";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   cacheRemoteTimerState,
@@ -27,9 +29,12 @@ import {
   sumCompletedSeconds,
 } from "@/lib/timer";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
+import { TransientToast } from "@/components/transient-toast";
+import { getTeachingPeriodLabel, type UnitEnrollment } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "mac-study-demo-state";
+const UNLINKED_UNIT_VALUE = "__unlinked__";
 const SUBJECT_COLORS = [
   "#FFE330",
   "#6CB6FF",
@@ -89,6 +94,7 @@ export function TimerDashboard() {
     null,
   );
   const [sessions, setSessions] = useState<StoredSession[]>([]);
+  const [unitEnrollments, setUnitEnrollments] = useState<UnitEnrollment[]>([]);
   const [now, setNow] = useState(() => new Date());
   const [isLoaded, setIsLoaded] = useState(false);
   const [isEditingSubjects, setIsEditingSubjects] = useState(false);
@@ -102,6 +108,7 @@ export function TimerDashboard() {
   const applyRemoteTimerState = useCallback((remoteState: RemoteTimerState) => {
     setSubjects(remoteState.subjects);
     setDraftSubjects(remoteState.subjects);
+    setUnitEnrollments(remoteState.unitEnrollments ?? []);
     setActiveSession(remoteState.activeSession);
     setSessions(remoteState.sessions);
   }, []);
@@ -341,6 +348,16 @@ export function TimerDashboard() {
     });
   }
 
+  function restoreDraftSubject(subject: StudySubject, index: number) {
+    setDraftSubjects((current) => {
+      if (current.some((item) => item.id === subject.id)) return current;
+
+      const next = [...current];
+      next.splice(Math.min(index, next.length), 0, subject);
+      return next;
+    });
+  }
+
   async function saveSubjects() {
     const cleanedSubjects = normalizeSubjects(draftSubjects);
     const subjectIds = new Set(cleanedSubjects.map((subject) => subject.id));
@@ -414,8 +431,11 @@ export function TimerDashboard() {
           </button>
         </div>
 
-        <div className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)] lg:mt-4 lg:rounded-md lg:border lg:bg-[rgb(255_255_255/0.02)] lg:px-3">
-          {subjects.map((subject) => {
+        <PaginatedList
+          className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)] lg:mt-4 lg:rounded-md lg:border lg:bg-[rgb(255_255_255/0.02)] lg:px-3"
+          items={subjects}
+          pageSize={12}
+          renderItem={(subject) => {
             const isActive = activeSession?.subjectId === subject.id;
             const subjectSeconds =
               (subjectTotals[subject.id] ?? 0) +
@@ -468,8 +488,9 @@ export function TimerDashboard() {
                 </button>
               </div>
             );
-          })}
-        </div>
+          }}
+          resetKey="timer-subjects"
+        />
       </section>
 
       {isEditingSubjects ? (
@@ -482,8 +503,10 @@ export function TimerDashboard() {
             setInitialEditingSubjectId(null);
           }}
           onDelete={deleteDraftSubject}
+          onRestore={restoreDraftSubject}
           onSave={saveSubjects}
           onUpdate={updateDraftSubject}
+          unitEnrollments={unitEnrollments}
         />
       ) : null}
 
@@ -504,23 +527,42 @@ function SubjectEditor({
   onAdd,
   onClose,
   onDelete,
+  onRestore,
   onSave,
   onUpdate,
+  unitEnrollments,
 }: {
   draftSubjects: StudySubject[];
   initialSubjectId: string | null;
   onAdd: () => string;
   onClose: () => void;
   onDelete: (subjectId: string) => void;
+  onRestore: (subject: StudySubject, index: number) => void;
   onSave: () => void;
   onUpdate: (subjectId: string, updates: Partial<StudySubject>) => void;
+  unitEnrollments: UnitEnrollment[];
 }) {
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(
     initialSubjectId,
   );
+  const [deletedSubjects, setDeletedSubjects] = useState<
+    { index: number; subject: StudySubject }[]
+  >([]);
   const initialSubjectsRef = useRef(JSON.stringify(draftSubjects));
   const editingSubject =
     draftSubjects.find((subject) => subject.id === editingSubjectId) ?? null;
+  const linkedByOtherSubjects = new Set(
+    draftSubjects
+      .filter((subject) => subject.id !== editingSubjectId)
+      .map((subject) => subject.unitOfferingId)
+      .filter((offeringId): offeringId is string => Boolean(offeringId)),
+  );
+  const availableUnitEnrollments = unitEnrollments.filter(
+    (enrollment) =>
+      !linkedByOtherSubjects.has(enrollment.offeringId) ||
+      enrollment.offeringId === editingSubject?.unitOfferingId,
+  );
+  const lastDeleted = deletedSubjects.at(-1) ?? null;
   const isDirty = JSON.stringify(draftSubjects) !== initialSubjectsRef.current;
 
   function addAndEditSubject() {
@@ -532,142 +574,200 @@ function SubjectEditor({
     setEditingSubjectId(null);
   }
 
+  function quickDeleteSubject(subject: StudySubject) {
+    const index = draftSubjects.findIndex((item) => item.id === subject.id);
+    if (index < 0) return;
+
+    setDeletedSubjects((current) => [...current, { index, subject }]);
+    onDelete(subject.id);
+  }
+
+  function undoLastDelete() {
+    if (!lastDeleted) return;
+
+    onRestore(lastDeleted.subject, lastDeleted.index);
+    setDeletedSubjects((current) => current.slice(0, -1));
+  }
+
   return (
-    <AppDialog
-      bodyClassName={editingSubject ? "space-y-6 p-5" : "p-0"}
-      closeLabel="Close subject editor"
-      footer={
-        <div
-          className={cn(
-            "flex flex-col gap-2 sm:flex-row",
-            editingSubject ? "sm:justify-end" : "sm:justify-between",
-          )}
-        >
-          {editingSubject ? null : (
-            <button
-              className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)]"
-              onClick={addAndEditSubject}
-              type="button"
-            >
-              <Plus aria-hidden size={17} />
-              Add subject
-            </button>
-          )}
-          <button
-            className="mac-focus inline-flex h-11 items-center justify-center rounded-xl bg-[var(--color-mac-yellow)] px-5 text-sm font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.99]"
-            onClick={onSave}
-            type="button"
+    <>
+      <AppDialog
+        bodyClassName={editingSubject ? "space-y-6 p-5" : "p-0"}
+        closeLabel="Close subject editor"
+        footer={
+          <div
+            className={cn(
+              "flex flex-col gap-2 sm:flex-row",
+              editingSubject ? "sm:justify-end" : "sm:justify-between",
+            )}
           >
-            Save changes
-          </button>
-        </div>
-      }
-      isDirty={isDirty}
-      maxWidthClassName="max-w-lg"
-      onClose={onClose}
-      title={editingSubject ? "Subject details" : "Edit subjects"}
-    >
-      {editingSubject ? (
-        <>
-          {editingSubject.unitOfferingId ? (
-            <div className="rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] p-3.5">
-              <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
-                Canonical unit code
-              </p>
-              <p className="mt-1 font-mono font-semibold text-[var(--color-mac-yellow)]">
-                {editingSubject.canonicalCode}
-              </p>
-            </div>
-          ) : null}
-
-          <label className="block text-sm font-medium">
-            {editingSubject.unitOfferingId ? "Personal name" : "Name"}
-            <input
-              className="mac-focus mt-2 h-12 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 font-semibold text-[var(--color-text)] transition hover:border-[rgb(255_255_255/0.15)]"
-              data-dialog-autofocus
-              maxLength={60}
-              onChange={(event) =>
-                onUpdate(editingSubject.id, { name: event.target.value })
-              }
-              value={editingSubject.name}
-            />
-          </label>
-
-          <div>
-            <p className="text-sm font-medium">Play colour</p>
-            <div className="mt-2 grid grid-cols-6 gap-2 rounded-2xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.02)] p-2">
-              {SUBJECT_COLORS.map((color) => {
-                const selected = color === editingSubject.color;
-
-                return (
-                  <button
-                    aria-pressed={selected}
-                    aria-label={`Use colour ${color}`}
-                    className={cn(
-                      "mac-focus flex aspect-square min-w-0 items-center justify-center rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:brightness-110",
-                      selected
-                        ? "border-white/80 ring-2 ring-white/80 ring-offset-2 ring-offset-[var(--color-background)]"
-                        : "border-white/10",
-                    )}
-                    key={color}
-                    onClick={() => onUpdate(editingSubject.id, { color })}
-                    style={{ backgroundColor: color }}
-                    type="button"
-                  >
-                    {selected ? (
-                      <span
-                        className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/20"
-                        style={{
-                          color: color === "#FFE330" ? "#141414" : "white",
-                        }}
-                      >
-                        <Check aria-hidden size={13} strokeWidth={3} />
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <button
-            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[rgb(255_107_107/0.35)] bg-[rgb(255_107_107/0.035)] px-3 text-sm font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-35"
-            disabled={draftSubjects.length <= 1}
-            onClick={() => deleteSubject(editingSubject.id)}
-            type="button"
-          >
-            <Trash2 aria-hidden size={16} />
-            Delete subject
-          </button>
-        </>
-      ) : (
-        <div className="divide-y divide-[var(--color-border)]">
-          {draftSubjects.map((subject) => (
-            <div
-              className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3"
-              key={subject.id}
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <span
-                  aria-hidden
-                  className="h-3.5 w-3.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: subject.color }}
-                />
-                <p className="truncate font-semibold">{subject.name}</p>
-              </div>
+            {editingSubject ? null : (
               <button
-                className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)]"
-                onClick={() => setEditingSubjectId(subject.id)}
+                className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)]"
+                onClick={addAndEditSubject}
                 type="button"
               >
-                <Pencil aria-hidden size={16} />
-                <span className="sr-only">Edit {subject.name}</span>
+                <Plus aria-hidden size={17} />
+                Add subject
               </button>
+            )}
+            <button
+              className="mac-focus inline-flex h-11 items-center justify-center rounded-xl bg-[var(--color-mac-yellow)] px-5 text-sm font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.99]"
+              onClick={onSave}
+              type="button"
+            >
+              Save changes
+            </button>
+          </div>
+        }
+        isDirty={isDirty}
+        maxWidthClassName="max-w-lg"
+        onClose={onClose}
+        title={editingSubject ? "Subject details" : "Edit subjects"}
+      >
+        {editingSubject ? (
+          <>
+            <label className="block text-sm font-medium">
+              {editingSubject.unitOfferingId ? "Personal name" : "Name"}
+              <input
+                className="mac-focus mt-2 h-12 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 font-semibold text-[var(--color-text)] transition hover:border-[rgb(255_255_255/0.15)]"
+                data-dialog-autofocus
+                maxLength={60}
+                onChange={(event) =>
+                  onUpdate(editingSubject.id, { name: event.target.value })
+                }
+                value={editingSubject.name}
+              />
+            </label>
+
+            <div>
+              <p className="mb-2 text-sm font-medium">Linked unit</p>
+              <CustomSelect
+                ariaLabel={`Linked unit for ${editingSubject.name}`}
+                onChange={(offeringId) => {
+                  const enrollment = availableUnitEnrollments.find(
+                    (item) => item.offeringId === offeringId,
+                  );
+
+                  onUpdate(editingSubject.id, {
+                    canonicalCode: enrollment?.code,
+                    unitOfferingId:
+                      offeringId === UNLINKED_UNIT_VALUE ? null : offeringId,
+                  });
+                }}
+                options={[
+                  { label: "Not linked", value: UNLINKED_UNIT_VALUE },
+                  ...availableUnitEnrollments.map((enrollment) => ({
+                    label: `${enrollment.code} · ${enrollment.year} ${getTeachingPeriodLabel(enrollment.period)}`,
+                    value: enrollment.offeringId,
+                  })),
+                ]}
+                value={editingSubject.unitOfferingId ?? UNLINKED_UNIT_VALUE}
+              />
             </div>
-          ))}
-        </div>
-      )}
-    </AppDialog>
+
+            <div>
+              <p className="text-sm font-medium">Play colour</p>
+              <div className="mt-2 grid grid-cols-6 gap-2 rounded-2xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.02)] p-2">
+                {SUBJECT_COLORS.map((color) => {
+                  const selected = color === editingSubject.color;
+
+                  return (
+                    <button
+                      aria-pressed={selected}
+                      aria-label={`Use colour ${color}`}
+                      className={cn(
+                        "mac-focus flex aspect-square min-w-0 items-center justify-center rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:brightness-110",
+                        selected
+                          ? "border-white/80 ring-2 ring-white/80 ring-offset-2 ring-offset-[var(--color-background)]"
+                          : "border-white/10",
+                      )}
+                      key={color}
+                      onClick={() => onUpdate(editingSubject.id, { color })}
+                      style={{ backgroundColor: color }}
+                      type="button"
+                    >
+                      {selected ? (
+                        <span
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/20"
+                          style={{
+                            color: color === "#FFE330" ? "#141414" : "white",
+                          }}
+                        >
+                          <Check aria-hidden size={13} strokeWidth={3} />
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <button
+              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[rgb(255_107_107/0.35)] bg-[rgb(255_107_107/0.035)] px-3 text-sm font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-35"
+              disabled={draftSubjects.length <= 1}
+              onClick={() => deleteSubject(editingSubject.id)}
+              type="button"
+            >
+              <Trash2 aria-hidden size={16} />
+              Delete subject
+            </button>
+          </>
+        ) : (
+          <PaginatedList
+            className="divide-y divide-[var(--color-border)]"
+            items={draftSubjects}
+            pageSize={10}
+            renderItem={(subject) => (
+              <div
+                className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3"
+                key={subject.id}
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <span
+                    aria-hidden
+                    className="h-3.5 w-3.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: subject.color }}
+                  />
+                  <p className="truncate font-semibold">{subject.name}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+                    onClick={() => setEditingSubjectId(subject.id)}
+                    type="button"
+                  >
+                    <Pencil aria-hidden size={16} />
+                    <span className="sr-only">Edit {subject.name}</span>
+                  </button>
+                  <button
+                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[rgb(255_107_107/0.35)] text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:cursor-not-allowed disabled:opacity-30"
+                    disabled={draftSubjects.length <= 1}
+                    onClick={() => quickDeleteSubject(subject)}
+                    type="button"
+                  >
+                    <Trash2 aria-hidden size={16} />
+                    <span className="sr-only">Delete {subject.name}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+            resetKey="subject-editor"
+          />
+        )}
+      </AppDialog>
+
+      {lastDeleted ? (
+        <TransientToast
+          actionLabel="Undo"
+          durationMs={6000}
+          key={lastDeleted.subject.id}
+          message={`${lastDeleted.subject.name} removed`}
+          onAction={undoLastDelete}
+          onDismiss={() => setDeletedSubjects([])}
+        />
+      ) : null}
+    </>
   );
 }
 

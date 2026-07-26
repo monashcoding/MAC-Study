@@ -33,7 +33,12 @@ export async function redeemInvite(formData: FormData) {
   });
 
   if (error || data !== true) {
-    redirect(`/auth/access?error=invalid&next=${encodeURIComponent(next)}`);
+    const query = new URLSearchParams({
+      code: inviteCode,
+      error: "invalid",
+      next,
+    });
+    redirect(`/auth/access?${query.toString()}`);
   }
 
   redirect(next);

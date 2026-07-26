@@ -15,9 +15,9 @@ import {
   Plus,
   Settings,
   UserPlus,
-  Users,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import { PaginatedList } from "@/components/paginated-list";
 import { useAppHeaderDetail } from "@/components/app-header-detail";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
@@ -720,8 +720,11 @@ export function GroupsDashboard() {
 
         {groupView === "class" ? (
           <section>
-            <div className="grid grid-cols-3 gap-2 py-1 sm:grid-cols-4 lg:grid-cols-6 lg:gap-3">
-              {members.map((member) => (
+            <PaginatedList
+              className="grid grid-cols-3 gap-2 py-1 sm:grid-cols-4 lg:grid-cols-6 lg:gap-3"
+              items={members}
+              pageSize={12}
+              renderItem={(member) => (
                 <button
                   className={cn(
                     "mac-focus min-w-0 rounded-xl border px-2 py-3 text-center transition hover:bg-[rgb(255_255_255/0.045)] active:scale-[0.98]",
@@ -751,8 +754,9 @@ export function GroupsDashboard() {
                     {formatDuration(getLiveRankingSeconds(member, "day", now))}
                   </p>
                 </button>
-              ))}
-            </div>
+              )}
+              resetKey={`${selectedGroup.id}:class`}
+            />
           </section>
         ) : null}
 
@@ -811,8 +815,11 @@ export function GroupsDashboard() {
 
         {groupView === "rankings" ? (
           <section className="space-y-3">
-            <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
-              {ranking.map((member, index) => (
+            <PaginatedList
+              className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+              items={ranking}
+              pageSize={12}
+              renderItem={(member, _index, absoluteIndex) => (
                 <button
                   className="mac-focus grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2.5 text-left transition active:scale-[0.99]"
                   key={member.id}
@@ -822,7 +829,7 @@ export function GroupsDashboard() {
                   type="button"
                 >
                   <span className="font-mono text-sm font-semibold text-[var(--color-text-muted)]">
-                    #{index + 1}
+                    #{absoluteIndex + 1}
                   </span>
                   <div className="min-w-0">
                     <p className="truncate font-semibold">{member.name}</p>
@@ -836,8 +843,9 @@ export function GroupsDashboard() {
                     )}
                   </p>
                 </button>
-              ))}
-            </div>
+              )}
+              resetKey={`${selectedGroup.id}:${rankingWindow}`}
+            />
           </section>
         ) : null}
 
@@ -876,8 +884,8 @@ export function GroupsDashboard() {
   }
 
   return (
-    <div className="space-y-5 pt-1 lg:space-y-6 lg:pt-0">
-      <section className="grid grid-cols-3 gap-2 lg:gap-4">
+    <div className="space-y-4 lg:space-y-6">
+      <section className="hidden grid-cols-3 gap-4 lg:grid">
         <SummaryStat label="Groups" value={`${socialState.groups.length}`} />
         <SummaryStat label="Active" value={`${activeTotal}`} />
         <SummaryStat label="Members" value={`${uniqueMemberCount}`} />
@@ -900,10 +908,13 @@ export function GroupsDashboard() {
           </button>
         </div>
 
-        <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
-          {groupSummaries.map(({ group, activeNow, memberCount }) => (
+        <PaginatedList
+          className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+          items={groupSummaries}
+          pageSize={10}
+          renderItem={({ group, activeNow, memberCount }) => (
             <button
-              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
+              className="mac-focus grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
               key={group.id}
               onClick={() => {
                 setGroupView("class");
@@ -911,7 +922,6 @@ export function GroupsDashboard() {
               }}
               type="button"
             >
-              <GroupIconBadge />
               <div className="min-w-0">
                 <h3 className="truncate text-lg font-semibold">{group.name}</h3>
                 <div className="mt-1 flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
@@ -931,8 +941,9 @@ export function GroupsDashboard() {
                 </p>
               </div>
             </button>
-          ))}
-        </div>
+          )}
+          resetKey="groups"
+        />
       </section>
 
       {publicGroups.length ? (
@@ -948,13 +959,15 @@ export function GroupsDashboard() {
               {publicGroupFeedback}
             </p>
           ) : null}
-          <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
-            {publicGroups.map((group) => (
+          <PaginatedList
+            className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+            items={publicGroups}
+            pageSize={10}
+            renderItem={(group) => (
               <div
-                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
                 key={group.id}
               >
-                <GroupIconBadge />
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{group.name}</p>
                   <p className="mt-1 text-xs text-[var(--color-text-muted)]">
@@ -963,7 +976,7 @@ export function GroupsDashboard() {
                   </p>
                 </div>
                 <button
-                  className="mac-focus h-9 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
+                  className="mac-focus h-11 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
                   disabled={joiningPublicGroupId === group.id}
                   onClick={() => void joinPublicGroup(group.id)}
                   type="button"
@@ -971,8 +984,9 @@ export function GroupsDashboard() {
                   {joiningPublicGroupId === group.id ? "Joining…" : "Join"}
                 </button>
               </div>
-            ))}
-          </div>
+            )}
+            resetKey="public-groups"
+          />
         </section>
       ) : null}
 
@@ -1176,14 +1190,6 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
         {label}
       </p>
     </div>
-  );
-}
-
-function GroupIconBadge() {
-  return (
-    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414]">
-      <Users aria-hidden size={20} />
-    </span>
   );
 }
 
