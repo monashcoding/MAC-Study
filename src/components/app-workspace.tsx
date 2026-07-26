@@ -32,8 +32,8 @@ export function AppWorkspace({
   const activeView = getWorkspaceView(activePathname);
   const displayName =
     authState.mode === "authenticated"
-      ? authState.profile.display_name?.trim() || "MAC member"
-      : "MAC member";
+      ? authState.profile.display_name?.trim() || "Student"
+      : "Student";
   const username =
     authState.mode === "authenticated" ? authState.profile.username : null;
 

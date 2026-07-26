@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   BarChart3,
   BookOpen,
@@ -27,6 +27,8 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { AppWorkspace } from "@/components/app-workspace";
 import { AppHeaderDetailProvider } from "@/components/app-header-detail";
+import { NotificationOnboarding } from "@/components/pwa/notification-onboarding";
+import { AppNotifications } from "@/components/social/app-notifications";
 import { NudgeNotifications } from "@/components/social/nudge-notifications";
 import { cn } from "@/lib/utils";
 
@@ -87,25 +89,39 @@ export function AppShell({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [displayPathname, setDisplayPathname] = useState(pathname);
-  const [headerDetail, setHeaderDetail] = useState<string | null>(null);
+  const [headerDetails, setHeaderDetails] = useState<
+    Record<string, string | null>
+  >({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const currentNav =
     navItems.find((item) => isActive(displayPathname, item.href)) ??
     navItems[0];
-  const isGroupDetail =
-    isActive(displayPathname, "/app/groups") && Boolean(headerDetail);
-  const currentTitle = isGroupDetail ? headerDetail : currentNav.title;
+  const headerDetail = headerDetails[currentNav.href] ?? null;
+  const isNestedDetail =
+    Boolean(headerDetail) &&
+    (isActive(displayPathname, "/app/groups") ||
+      isActive(displayPathname, "/app/units"));
+  const currentTitle = isNestedDetail ? headerDetail : currentNav.title;
   const accountName =
     authState.mode === "authenticated"
-      ? authState.profile.display_name?.trim() || "MAC member"
+      ? authState.profile.display_name?.trim() || "Student"
       : "Demo member";
   const accountHandle =
     authState.mode === "authenticated" && authState.profile.username
       ? `@${authState.profile.username}`
       : authState.mode === "authenticated"
-        ? "MAC member"
+        ? "Student"
         : "Local workspace";
+  const handleHeaderDetailChange = useCallback(
+    (scope: string, detail: string | null) => {
+      setHeaderDetails((current) => {
+        if (current[scope] === detail) return current;
+        return { ...current, [scope]: detail };
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -236,7 +252,7 @@ export function AppShell({
   }
 
   return (
-    <AppHeaderDetailProvider onChange={setHeaderDetail}>
+    <AppHeaderDetailProvider onChange={handleHeaderDetailChange}>
       <>
         <div className="mac-desktop-shell fixed inset-0 flex flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
           <div
@@ -279,7 +295,7 @@ export function AppShell({
                     <h1
                       className={cn(
                         "min-w-0 truncate text-xl font-semibold",
-                        isGroupDetail &&
+                        isNestedDetail &&
                           "pointer-events-none absolute left-1/2 max-w-[calc(100%-7rem)] -translate-x-1/2 text-center",
                       )}
                     >
@@ -295,11 +311,6 @@ export function AppShell({
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {isActive(displayPathname, "/app/units") && headerDetail ? (
-                      <span className="max-w-28 truncate font-mono text-sm font-semibold text-[var(--color-mac-yellow)] lg:hidden">
-                        {headerDetail}
-                      </span>
-                    ) : null}
                     <span className="hidden h-10 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] px-3 text-xs font-semibold text-[var(--color-text-muted)] xl:inline-flex">
                       <span
                         className={cn(
@@ -373,7 +384,11 @@ export function AppShell({
         </div>
 
         {authState.mode === "authenticated" ? (
-          <NudgeNotifications userId={authState.user.id} />
+          <>
+            <AppNotifications userId={authState.user.id} />
+            <NudgeNotifications userId={authState.user.id} />
+            <NotificationOnboarding userId={authState.user.id} />
+          </>
         ) : null}
       </>
     </AppHeaderDetailProvider>

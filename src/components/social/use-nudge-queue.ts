@@ -26,7 +26,7 @@ const emptyQueueState: TargetQueueState = {
 };
 
 export function useNudgeQueue(enabled: boolean) {
-  const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const queuesRef = useRef<Record<string, Promise<void>>>({});
   const recentTapsRef = useRef<Record<string, number[]>>({});
   const [targetStates, setTargetStates] = useState<
     Record<string, TargetQueueState>
@@ -106,7 +106,8 @@ export function useNudgeQueue(enabled: boolean) {
         });
       };
 
-      queueRef.current = queueRef.current.then(send, send);
+      const currentQueue = queuesRef.current[target.key] ?? Promise.resolve();
+      queuesRef.current[target.key] = currentQueue.then(send, send);
     },
     [enabled],
   );

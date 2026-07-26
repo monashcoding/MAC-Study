@@ -3,26 +3,65 @@
 import { useEffect, useState } from "react";
 import { BellRing, X } from "lucide-react";
 import {
+  fetchRemoteNotificationPreferences,
   subscribeToRemoteNudges,
+  type RemoteNotificationPreferences,
   type RemoteNudgeNotification,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 export function NudgeNotifications({ userId }: { userId: string }) {
   const [nudges, setNudges] = useState<RemoteNudgeNotification[]>([]);
+  const [enabled, setEnabled] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+
     try {
       const supabase = createSupabaseBrowserClient();
 
+      void fetchRemoteNotificationPreferences(supabase)
+        .then((preferences) => {
+          if (!cancelled) setEnabled(preferences.nudgeNotifications);
+        })
+        .catch(() => undefined);
+    } catch {
+      return;
+    }
+
+    function handlePreferenceChange(event: Event) {
+      const preferences = (event as CustomEvent<RemoteNotificationPreferences>)
+        .detail;
+      setEnabled(preferences.nudgeNotifications);
+      if (!preferences.nudgeNotifications) setNudges([]);
+    }
+
+    window.addEventListener(
+      "mac-notification-preferences-changed",
+      handlePreferenceChange,
+    );
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(
+        "mac-notification-preferences-changed",
+        handlePreferenceChange,
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    try {
+      const supabase = createSupabaseBrowserClient();
       return subscribeToRemoteNudges(supabase, userId, (nudge) => {
         setNudges((current) => [nudge, ...current].slice(0, 3));
-        showSystemNotification(nudge.message);
       });
     } catch {
       return;
     }
-  }, [userId]);
+  }, [enabled, userId]);
 
   if (!nudges.length) {
     return null;
@@ -52,14 +91,39 @@ function NudgeToast({
   nudge: RemoteNudgeNotification;
   onDismiss: () => void;
 }) {
+  const [paused, setPaused] = useState(false);
+
   useEffect(() => {
+    if (paused) return;
+
     const timeout = window.setTimeout(onDismiss, 5200);
 
     return () => window.clearTimeout(timeout);
-  }, [nudge.id, onDismiss]);
+  }, [nudge.id, onDismiss, paused]);
+
+  const destination = nudge.groupId
+    ? `/app/groups?group=${encodeURIComponent(nudge.groupId)}`
+    : `/app/friends?friend=${encodeURIComponent(nudge.senderId)}`;
 
   return (
-    <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-[rgb(255_227_48/0.35)] bg-[rgb(23_23_23/0.96)] px-3 py-2 text-sm shadow-[0_18px_42px_rgb(0_0_0/0.34)] backdrop-blur">
+    <div
+      className="pointer-events-auto flex cursor-pointer items-center gap-3 rounded-full border border-[rgb(255_227_48/0.35)] bg-[rgb(23_23_23/0.96)] px-3 py-2 text-sm shadow-[0_18px_42px_rgb(0_0_0/0.34)] backdrop-blur"
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
+      }}
+      onClick={() => window.location.assign(destination)}
+      onFocusCapture={() => setPaused(true)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          window.location.assign(destination);
+        }
+      }}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      role="link"
+      tabIndex={0}
+    >
       <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414]">
         <BellRing aria-hidden size={15} />
       </span>
@@ -67,8 +131,11 @@ function NudgeToast({
         {renderNudgeMessage(nudge.message)}
       </p>
       <button
-        className="mac-focus inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--color-text-muted)]"
-        onClick={onDismiss}
+        className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--color-text-muted)]"
+        onClick={(event) => {
+          event.stopPropagation();
+          onDismiss();
+        }}
         type="button"
       >
         <X aria-hidden size={15} />
@@ -91,17 +158,4 @@ function renderNudgeMessage(message: string) {
       {suffix}
     </>
   );
-}
-
-function showSystemNotification(message: string) {
-  if (
-    typeof window === "undefined" ||
-    !("Notification" in window) ||
-    Notification.permission !== "granted" ||
-    document.visibilityState === "visible"
-  ) {
-    return;
-  }
-
-  new Notification("MAC Study", { body: message });
 }

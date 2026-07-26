@@ -8,6 +8,7 @@ import { redeemInvite } from "./actions";
 
 type AccessPageProps = {
   searchParams: Promise<{
+    code?: string;
     error?: string;
     next?: string;
   }>;
@@ -45,7 +46,7 @@ export default async function AccessPage({ searchParams }: AccessPageProps) {
           <span>
             <span className="block text-xl font-semibold">MAC Study</span>
             <span className="text-sm text-[var(--color-text-muted)]">
-              MAC-only access
+              Student access
             </span>
           </span>
         </Link>
@@ -55,11 +56,11 @@ export default async function AccessPage({ searchParams }: AccessPageProps) {
             Invite required
           </p>
           <h1 className="mt-1 text-2xl font-semibold">
-            Confirm you&apos;re part of MAC
+            Enter your access code
           </h1>
           <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-            You are signed in as {authState.user.email ?? "a MAC member"}, but
-            this account still needs an invite code before sessions count.
+            You are signed in as {authState.user.email ?? "a student"}, but this
+            account still needs an invite code before sessions count.
           </p>
 
           <form action={redeemInvite} className="mt-6 space-y-3">
@@ -68,29 +69,33 @@ export default async function AccessPage({ searchParams }: AccessPageProps) {
               Invite code
             </label>
             <input
+              aria-describedby={params.error ? "invite-code-error" : undefined}
               autoComplete="one-time-code"
               className="mac-focus h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
+              defaultValue={params.code ?? ""}
               id="inviteCode"
               name="inviteCode"
-              placeholder="MAC-FOUNDING"
+              placeholder="STUDY-ACCESS"
               required
             />
+            {params.error ? (
+              <p
+                className="text-sm text-[var(--color-danger)]"
+                id="invite-code-error"
+              >
+                {params.error === "missing"
+                  ? "Enter an invite code to continue."
+                  : "That code is invalid, expired, or fully used."}
+              </p>
+            ) : null}
             <button
               className="mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414]"
               type="submit"
             >
               <TicketCheck aria-hidden size={18} />
-              Unlock MAC Study
+              Continue to study
             </button>
           </form>
-
-          {params.error ? (
-            <p className="mt-4 rounded-md border border-[rgb(255_107_107/0.45)] bg-[rgb(255_107_107/0.08)] p-3 text-sm text-[var(--color-danger)]">
-              {params.error === "missing"
-                ? "Enter an invite code to continue."
-                : "That invite code is invalid, expired, or fully used."}
-            </p>
-          ) : null}
 
           <a
             className="mac-focus mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text-muted)]"

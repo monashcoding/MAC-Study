@@ -12,7 +12,7 @@ import {
   type SocialGroup,
   type SocialState,
 } from "@/lib/social-state";
-import { getElapsedSeconds } from "@/lib/timer";
+import { getElapsedSeconds, getLocalDateKey } from "@/lib/timer";
 import {
   type TeachingPeriod,
   type UnitCohortMember,
@@ -31,6 +31,7 @@ export type RemoteSubject = {
 
 export type RemoteUnitState = {
   enrollments: UnitEnrollment[];
+  subjects: RemoteSubject[];
   suggestions: UnitSuggestion[];
 };
 
@@ -47,20 +48,53 @@ export type RemoteStoredSession = {
   startedAt: string;
   endedAt: string;
   status: "completed" | "needs_confirmation";
-  source: "timer";
+  source: "manual_adjustment" | "timer";
 };
 
 export type RemoteTimerState = {
   subjects: RemoteSubject[];
+  unitEnrollments: UnitEnrollment[];
   activeSession: RemoteActiveSession | null;
   sessions: RemoteStoredSession[];
 };
 
 export type RemoteSocialSnapshot = {
   socialState: SocialState;
-  availableFriends: SocialFriend[];
+  availableFriends: RemoteFriendCandidate[];
+  friendRequests: RemoteFriendRequest[];
   publicGroups: RemotePublicGroup[];
   currentUserId: string;
+};
+
+export type RemoteFriendCandidate = SocialFriend & {
+  mutualFriendCount: number;
+  requestDirection: "incoming" | "outgoing" | null;
+};
+
+export type RemoteFriendRequest = {
+  createdAt: string;
+  direction: "incoming" | "outgoing";
+  id: string;
+  user: SocialFriend;
+};
+
+export type RemoteNotificationPreferences = {
+  friendNotifications: boolean;
+  nudgeNotifications: boolean;
+  otherNotifications: boolean;
+};
+
+export type RemoteGroupNotificationSettings = {
+  chatMuted: boolean;
+  nudgesMuted: boolean;
+};
+
+export type RemoteAppNotification = {
+  body: string;
+  createdAt: string;
+  id: string;
+  title: string;
+  type: "friend_accepted" | "friend_request" | "other";
 };
 
 export type RemotePublicGroup = {
@@ -77,6 +111,11 @@ export type RemoteGroupChatMessage = {
   createdAt: string;
 };
 
+export type RemoteGroupChatPage = {
+  hasMore: boolean;
+  messages: RemoteGroupChatMessage[];
+};
+
 export type RemoteNudgeNotification = {
   id: string;
   groupId: string | null;
@@ -88,7 +127,10 @@ export type RemoteNudgeNotification = {
 export type RemoteNudgeDelivery = {
   sent: number;
   skipped?:
-    "no_subscriptions" | "push_not_configured" | "subscriptions_unavailable";
+    | "disabled"
+    | "no_subscriptions"
+    | "push_not_configured"
+    | "subscriptions_unavailable";
 };
 
 export function getNudgeDeliveryMessage(delivery: RemoteNudgeDelivery) {
@@ -98,6 +140,10 @@ export function getNudgeDeliveryMessage(delivery: RemoteNudgeDelivery) {
 
   if (delivery.skipped === "no_subscriptions") {
     return "They need to enable nudge notifications.";
+  }
+
+  if (delivery.skipped === "disabled") {
+    return "They have nudge notifications muted.";
   }
 
   if (delivery.skipped === "push_not_configured") {
@@ -148,6 +194,7 @@ type UnitEnrollmentRow = {
 type UnitCohortRow = {
   display_name: string | null;
   is_friend: boolean;
+  mutual_friend_count: number | string;
   profile_color: string | null;
   shared_group_ids: string[] | null;
   study_icon: string | null;
@@ -172,6 +219,43 @@ type GroupMemberRow = {
 
 type FriendshipRow = {
   friend_id: string;
+};
+
+type FriendCandidateRow = {
+  avatar_url: string | null;
+  display_name: string | null;
+  mutual_friend_count: number | string;
+  profile_color: string | null;
+  request_direction: "incoming" | "outgoing" | null;
+  study_icon: string | null;
+  user_id: string;
+  username: string | null;
+};
+
+type FriendRequestRow = {
+  avatar_url: string | null;
+  created_at: string;
+  direction: "incoming" | "outgoing";
+  display_name: string | null;
+  profile_color: string | null;
+  request_id: string;
+  study_icon: string | null;
+  user_id: string;
+  username: string | null;
+};
+
+type NotificationPreferencesRow = {
+  friend_notifications: boolean;
+  nudge_notifications: boolean;
+  other_notifications: boolean;
+};
+
+type AppNotificationRow = {
+  body: string;
+  created_at: string;
+  id: string;
+  title: string;
+  type: "friend_accepted" | "friend_request" | "other";
 };
 
 type SessionRow = {
@@ -226,22 +310,31 @@ export async function fetchRemoteTimerState(
     return null;
   }
 
-  const subjects = await fetchRemoteSubjects(supabase, userId);
-  const { data, error } = await supabase
-    .from("study_sessions")
-    .select(
-      "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds",
-    )
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("started_at", { ascending: false })
-    .limit(250);
+  const [subjects, sessionsResult, enrolmentsResult] = await Promise.all([
+    fetchRemoteSubjects(supabase, userId),
+    supabase
+      .from("study_sessions")
+      .select(
+        "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds",
+      )
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .order("started_at", { ascending: false })
+      .limit(250),
+    supabase
+      .from("unit_enrolments")
+      .select(
+        "offering_id, nickname, joined_at, unit_offerings!inner(id, unit_id, study_year, teaching_period, units!inner(id, code))",
+      )
+      .eq("user_id", userId)
+      .is("left_at", null)
+      .order("joined_at", { ascending: false }),
+  ]);
 
-  if (error) {
-    throw error;
-  }
+  if (sessionsResult.error) throw sessionsResult.error;
+  if (enrolmentsResult.error) throw enrolmentsResult.error;
 
-  const rows = (data ?? []) as SessionRow[];
+  const rows = (sessionsResult.data ?? []) as SessionRow[];
   const activeRow =
     rows.find((row) => row.status === "active" && !row.ended_at) ?? null;
   const completedRows = rows.filter(
@@ -252,6 +345,9 @@ export async function fetchRemoteTimerState(
 
   return {
     subjects,
+    unitEnrollments: ((enrolmentsResult.data ?? []) as UnitEnrollmentRow[])
+      .map(unitEnrollmentFromRow)
+      .filter((value): value is UnitEnrollment => Boolean(value)),
     activeSession: activeRow
       ? {
           subjectId: activeRow.subject_id,
@@ -269,7 +365,7 @@ export async function fetchRemoteTimerState(
         row.status === "needs_confirmation"
           ? "needs_confirmation"
           : "completed",
-      source: "timer",
+      source: row.source,
     })),
   };
 }
@@ -310,17 +406,86 @@ export async function stopRemoteStudySession(supabase: SupabaseClient) {
     return;
   }
 
-  const endedAt = new Date().toISOString();
-  const { error } = await supabase
+  const { data: activeSession, error: activeError } = await supabase
     .from("study_sessions")
-    .update({ ended_at: endedAt, status: "completed" })
+    .select("id, started_at")
     .eq("user_id", userId)
     .is("ended_at", null)
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .maybeSingle<{ id: string; started_at: string }>();
+
+  if (activeError) throw activeError;
+  if (!activeSession) return null;
+
+  const endedAt = new Date();
+  const durationMs =
+    endedAt.getTime() - new Date(activeSession.started_at).getTime();
+  const status =
+    durationMs >= 6 * 60 * 60 * 1000 ? "needs_confirmation" : "completed";
+  const { error } = await supabase
+    .from("study_sessions")
+    .update({ ended_at: endedAt.toISOString(), status })
+    .eq("id", activeSession.id)
+    .eq("user_id", userId);
 
   if (error) {
     throw error;
   }
+
+  return { id: activeSession.id, status };
+}
+
+export async function updateRemoteStudySession({
+  endedAt,
+  sessionId,
+  startedAt,
+  subjectId,
+  supabase,
+}: {
+  endedAt: string;
+  sessionId: string;
+  startedAt: string;
+  subjectId: string | null;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+  if (!userId) return;
+
+  const { error } = await supabase
+    .from("study_sessions")
+    .update({
+      ended_at: endedAt,
+      source: "manual_adjustment",
+      started_at: startedAt,
+      status: "completed",
+      subject_id: subjectId,
+    })
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .not("ended_at", "is", null)
+    .is("deleted_at", null);
+
+  if (error) throw error;
+}
+
+export async function deleteRemoteStudySession({
+  sessionId,
+  supabase,
+}: {
+  sessionId: string;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+  if (!userId) return;
+
+  const { error } = await supabase
+    .from("study_sessions")
+    .update({ deleted_at: new Date().toISOString(), status: "voided" })
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .not("ended_at", "is", null);
+
+  if (error) throw error;
 }
 
 export async function saveRemoteSubjects({
@@ -337,6 +502,10 @@ export async function saveRemoteSubjects({
   }
 
   const savedSubjects: RemoteSubject[] = [];
+  const linkChanges: {
+    offeringId: string | null;
+    subjectId: string;
+  }[] = [];
 
   for (const subject of subjects) {
     if (isUuid(subject.id)) {
@@ -360,6 +529,12 @@ export async function saveRemoteSubjects({
       }
 
       savedSubjects.push(subjectFromRow(data));
+      if (subject.unitOfferingId !== undefined) {
+        linkChanges.push({
+          offeringId: subject.unitOfferingId,
+          subjectId: data.id,
+        });
+      }
     } else {
       const { data, error } = await supabase
         .from("subjects")
@@ -377,6 +552,12 @@ export async function saveRemoteSubjects({
       }
 
       savedSubjects.push(subjectFromRow(data));
+      if (subject.unitOfferingId !== undefined) {
+        linkChanges.push({
+          offeringId: subject.unitOfferingId,
+          subjectId: data.id,
+        });
+      }
     }
   }
 
@@ -385,7 +566,10 @@ export async function saveRemoteSubjects({
   if (keptIds.length) {
     const { error } = await supabase
       .from("subjects")
-      .update({ archived_at: new Date().toISOString() })
+      .update({
+        archived_at: new Date().toISOString(),
+        unit_offering_id: null,
+      })
       .eq("user_id", userId)
       .not("id", "in", `(${keptIds.join(",")})`);
 
@@ -394,7 +578,26 @@ export async function saveRemoteSubjects({
     }
   }
 
-  return savedSubjects;
+  for (const change of linkChanges) {
+    await setRemoteSubjectUnitOffering({
+      offeringId: change.offeringId,
+      subjectId: change.subjectId,
+      supabase,
+    });
+  }
+
+  const { data: refreshedSubjects, error: refreshError } = await supabase
+    .from("subjects")
+    .select("id, code, name, color, unit_offering_id")
+    .eq("user_id", userId)
+    .is("archived_at", null)
+    .order("created_at", { ascending: true });
+
+  if (refreshError) {
+    throw refreshError;
+  }
+
+  return ((refreshedSubjects ?? []) as SubjectRow[]).map(subjectFromRow);
 }
 
 export async function fetchRemoteUnitState(
@@ -447,11 +650,33 @@ export async function fetchRemoteUnitState(
 
   return {
     enrollments,
+    subjects: ((subjectsResult.data ?? []) as SubjectRow[]).map(subjectFromRow),
     suggestions: uniqueUnitSuggestions([
       ...subjectSuggestions,
       ...catalogueSuggestions,
     ]),
   };
+}
+
+export async function setRemoteSubjectUnitOffering({
+  offeringId,
+  subjectId,
+  supabase,
+}: {
+  offeringId: string | null;
+  subjectId: string;
+  supabase: SupabaseClient;
+}) {
+  const { data, error } = await supabase.rpc("set_subject_unit_offering", {
+    input_offering_id: offeringId,
+    input_subject_id: subjectId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return Boolean(data);
 }
 
 export async function upsertRemoteUnitEnrollment({
@@ -513,7 +738,7 @@ export async function fetchRemoteUnitCohort({
   }
 
   const [cohortResult, friendshipsResult] = await Promise.all([
-    supabase.rpc("get_unit_cohort", {
+    supabase.rpc("get_unit_cohort_v2", {
       input_offering_id: offeringId,
     }),
     supabase.from("friendships").select("friend_id").eq("user_id", userId),
@@ -530,10 +755,11 @@ export async function fetchRemoteUnitCohort({
 
   return ((cohortResult.data ?? []) as UnitCohortRow[]).map((member) => ({
     color: member.profile_color || "#FFE330",
-    displayName: member.display_name || member.username || "MAC member",
-    handle: member.username ? `@${member.username}` : "@mac_member",
+    displayName: member.display_name || member.username || "Student",
+    handle: member.username ? `@${member.username}` : "@student",
     id: member.user_id,
     isFriend: member.is_friend || friendIds.has(member.user_id),
+    mutualFriendCount: Number(member.mutual_friend_count) || 0,
     sharedGroupIds: member.shared_group_ids ?? [],
     studyIcon: member.study_icon || "flame-desk",
   }));
@@ -555,6 +781,8 @@ export async function fetchRemoteSocialSnapshot(
     membershipsResult,
     sessionsResult,
     publicGroupsResult,
+    friendCandidatesResult,
+    friendRequestsResult,
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -582,6 +810,8 @@ export async function fetchRemoteSocialSnapshot(
       .order("started_at", { ascending: false })
       .limit(1000),
     supabase.rpc("list_public_study_groups"),
+    supabase.rpc("list_friend_candidates"),
+    supabase.rpc("list_friend_requests"),
   ]);
 
   if (profilesResult.error) throw profilesResult.error;
@@ -633,16 +863,30 @@ export async function fetchRemoteSocialSnapshot(
     ),
     visibility: normalizeGroupVisibility(group.visibility),
   }));
-  const availableFriends = profiles
-    .filter((profile) => profile.id !== userId && !friendIds.has(profile.id))
-    .map((profile) => ({
-      ...friendFromProfile(profile, []),
-      isFriend: false,
-    }));
+  const availableFriends = friendCandidatesResult.error
+    ? profiles
+        .filter(
+          (profile) => profile.id !== userId && !friendIds.has(profile.id),
+        )
+        .map((profile) => ({
+          ...friendFromProfile(profile, []),
+          isFriend: false,
+          mutualFriendCount: 0,
+          requestDirection: null,
+        }))
+    : ((friendCandidatesResult.data ?? []) as FriendCandidateRow[]).map(
+        friendCandidateFromRow,
+      );
+  const friendRequests = friendRequestsResult.error
+    ? []
+    : ((friendRequestsResult.data ?? []) as FriendRequestRow[]).map(
+        friendRequestFromRow,
+      );
 
   return {
     currentUserId: userId,
     availableFriends,
+    friendRequests,
     publicGroups: (
       (publicGroupsResult.error
         ? []
@@ -744,6 +988,23 @@ export async function setRemoteGroupMemberRole({
   if (error) throw error;
 }
 
+export async function transferRemoteGroupLeadership({
+  groupId,
+  supabase,
+  userId,
+}: {
+  groupId: string;
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const { error } = await supabase.rpc("transfer_group_leadership", {
+    target_group_id: groupId,
+    target_user_id: userId,
+  });
+
+  if (error) throw error;
+}
+
 export async function removeRemoteGroupMember({
   groupId,
   supabase,
@@ -792,39 +1053,196 @@ export async function joinRemotePublicGroup({
 export async function fetchRemoteGroupChatMessages(
   supabase: SupabaseClient,
   groupId: string,
+  options: { before?: string; limit?: number } = {},
 ) {
-  const { data, error } = await supabase
+  const pageSize = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  let query = supabase
     .from("group_chat_messages")
     .select("id, group_id, user_id, body, created_at")
     .eq("group_id", groupId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true })
-    .limit(200);
+    .is("deleted_at", null);
+
+  if (options.before) {
+    query = query.lt("created_at", options.before);
+  }
+
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .limit(pageSize + 1);
 
   if (error) throw error;
 
-  return ((data ?? []) as GroupChatRow[]).map(groupChatMessageFromRow);
+  const rows = (data ?? []) as GroupChatRow[];
+
+  return {
+    hasMore: rows.length > pageSize,
+    messages: rows.slice(0, pageSize).map(groupChatMessageFromRow).reverse(),
+  } satisfies RemoteGroupChatPage;
 }
 
 export async function sendRemoteGroupChatMessage({
   body,
   groupId,
-  supabase,
 }: {
   body: string;
   groupId: string;
+}) {
+  const trimmedBody = body.trim();
+
+  if (!trimmedBody) return;
+
+  const response = await fetch("/api/groups/messages", {
+    body: JSON.stringify({ body: trimmedBody, groupId }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(await getResponseError(response));
+  }
+
+  const result = (await response.json()) as { messageId?: string };
+  return result.messageId ?? null;
+}
+
+export async function deleteRemoteGroupChatMessage({
+  messageId,
+  supabase,
+}: {
+  messageId: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("delete_group_chat_message", {
+    target_message_id: messageId,
+  });
+
+  if (error) throw error;
+}
+
+export async function reportRemoteGroupChatMessage({
+  messageId,
+  supabase,
+}: {
+  messageId: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("report_group_chat_message", {
+    target_message_id: messageId,
+  });
+
+  if (error) throw error;
+}
+
+export async function fetchRemoteGroupNotificationSettings({
+  groupId,
+  supabase,
+}: {
+  groupId: string;
+  supabase: SupabaseClient;
+}): Promise<RemoteGroupNotificationSettings> {
+  const userId = await getRemoteUserId();
+  if (!userId) return { chatMuted: false, nudgesMuted: false };
+
+  const { data, error } = await supabase
+    .from("user_group_notification_settings")
+    .select("chat_muted, nudges_muted")
+    .eq("user_id", userId)
+    .eq("group_id", groupId)
+    .maybeSingle<{ chat_muted: boolean; nudges_muted: boolean }>();
+
+  if (error) throw error;
+
+  return {
+    chatMuted: data?.chat_muted ?? false,
+    nudgesMuted: data?.nudges_muted ?? false,
+  };
+}
+
+export async function saveRemoteGroupNotificationSettings({
+  groupId,
+  settings,
+  supabase,
+}: {
+  groupId: string;
+  settings: RemoteGroupNotificationSettings;
   supabase: SupabaseClient;
 }) {
   const userId = await getRemoteUserId();
-  const trimmedBody = body.trim();
+  if (!userId) return;
 
-  if (!userId || !trimmedBody) return;
+  const { error } = await supabase
+    .from("user_group_notification_settings")
+    .upsert(
+      {
+        chat_muted: settings.chatMuted,
+        group_id: groupId,
+        nudges_muted: settings.nudgesMuted,
+        updated_at: new Date().toISOString(),
+        user_id: userId,
+      },
+      { onConflict: "user_id,group_id" },
+    );
 
-  const { error } = await supabase.from("group_chat_messages").insert({
-    body: trimmedBody,
-    group_id: groupId,
-    user_id: userId,
-  });
+  if (error) throw error;
+}
+
+export async function fetchRemoteUserNudgeMute({
+  groupId,
+  supabase,
+  userId,
+}: {
+  groupId: string;
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const currentUserId = await getRemoteUserId();
+  if (!currentUserId) return false;
+
+  const { data, error } = await supabase
+    .from("user_nudge_mutes")
+    .select("muted_user_id")
+    .eq("user_id", currentUserId)
+    .eq("muted_user_id", userId)
+    .eq("group_id", groupId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function setRemoteUserNudgeMute({
+  groupId,
+  muted,
+  supabase,
+  userId,
+}: {
+  groupId: string;
+  muted: boolean;
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const currentUserId = await getRemoteUserId();
+  if (!currentUserId) return;
+
+  if (muted) {
+    const { error } = await supabase.from("user_nudge_mutes").upsert(
+      {
+        group_id: groupId,
+        muted_user_id: userId,
+        user_id: currentUserId,
+      },
+      { onConflict: "user_id,muted_user_id,group_id" },
+    );
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase
+    .from("user_nudge_mutes")
+    .delete()
+    .eq("user_id", currentUserId)
+    .eq("muted_user_id", userId)
+    .eq("group_id", groupId);
 
   if (error) throw error;
 }
@@ -881,18 +1299,75 @@ export async function updateRemoteStudyIcon({
 
 export async function addRemoteFriend({
   friendId,
-  supabase,
 }: {
   friendId: string;
   supabase: SupabaseClient;
 }) {
-  const { error } = await supabase.rpc("add_friend", {
-    target_user_id: friendId,
+  return sendRemoteFriendRequest(friendId);
+}
+
+export async function sendRemoteFriendRequest(friendId: string) {
+  const response = await fetch("/api/friends/requests", {
+    body: JSON.stringify({ recipientId: friendId }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
   });
 
-  if (error) {
-    throw error;
+  if (!response.ok) {
+    throw new Error(await getResponseError(response));
   }
+}
+
+export async function updateRemoteFriendRequest({
+  action,
+  requestId,
+}: {
+  action: "accept" | "cancel" | "decline";
+  requestId: string;
+}) {
+  const response = await fetch("/api/friends/requests", {
+    body: JSON.stringify({ action, requestId }),
+    headers: { "Content-Type": "application/json" },
+    method: "PATCH",
+  });
+
+  if (!response.ok) {
+    throw new Error(await getResponseError(response));
+  }
+}
+
+export async function fetchRemoteNotificationPreferences(
+  supabase: SupabaseClient,
+): Promise<RemoteNotificationPreferences> {
+  const { data, error } = await supabase.rpc("get_notification_preferences");
+
+  if (error) throw error;
+
+  const row = ((data ?? []) as NotificationPreferencesRow[])[0];
+
+  return row
+    ? notificationPreferencesFromRow(row)
+    : {
+        friendNotifications: true,
+        nudgeNotifications: true,
+        otherNotifications: true,
+      };
+}
+
+export async function updateRemoteNotificationPreferences({
+  preferences,
+  supabase,
+}: {
+  preferences: RemoteNotificationPreferences;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("update_notification_preferences", {
+    next_friend_notifications: preferences.friendNotifications,
+    next_nudge_notifications: preferences.nudgeNotifications,
+    next_other_notifications: preferences.otherNotifications,
+  });
+
+  if (error) throw error;
 }
 
 export async function removeRemoteFriend({
@@ -914,19 +1389,24 @@ export async function removeRemoteFriend({
 export async function inviteRemoteFriendToGroup({
   friendId,
   groupId,
-  supabase,
+  supabase: _supabase,
 }: {
   friendId: string;
   groupId: string;
   supabase: SupabaseClient;
 }) {
-  const { error } = await supabase.rpc("invite_friend_to_group", {
-    target_group_id: groupId,
-    target_user_id: friendId,
+  const response = await fetch("/api/groups/invites", {
+    body: JSON.stringify({ friendId, groupId }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
   });
 
-  if (error) {
-    throw error;
+  const body = (await response.json().catch(() => null)) as {
+    message?: string;
+  } | null;
+
+  if (!response.ok) {
+    throw new Error(body?.message ?? "Could not send that group invitation.");
   }
 }
 
@@ -983,51 +1463,105 @@ export function subscribeToRemoteNudges(
   };
 }
 
+export function subscribeToRemoteAppNotifications(
+  supabase: SupabaseClient,
+  userId: string,
+  onNotification: (notification: RemoteAppNotification) => void,
+) {
+  const channel = supabase
+    .channel(
+      `mac-study-notifications-${userId}-${Math.random().toString(36).slice(2)}`,
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        filter: `user_id=eq.${userId}`,
+        schema: "public",
+        table: "app_notifications",
+      },
+      (payload) =>
+        onNotification(
+          appNotificationFromRow(payload.new as AppNotificationRow),
+        ),
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}
+
+export async function markRemoteAppNotificationRead({
+  notificationId,
+  supabase,
+}: {
+  notificationId: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase
+    .from("app_notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("id", notificationId);
+
+  if (error) throw error;
+}
+
 export function subscribeToRemoteAppChanges(
   supabase: SupabaseClient,
-  onChange: () => void,
+  onChange: (table?: string) => void,
 ) {
   const channel = supabase
     .channel(`mac-study-app-data-${Math.random().toString(36).slice(2)}`)
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "study_sessions" },
-      onChange,
+      () => onChange("study_sessions"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "group_members" },
-      onChange,
+      () => onChange("group_members"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "friendships" },
-      onChange,
+      () => onChange("friendships"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "friend_requests" },
+      () => onChange("friend_requests"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "app_notifications" },
+      () => onChange("app_notifications"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "groups" },
-      onChange,
+      () => onChange("groups"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "profiles" },
-      onChange,
+      () => onChange("profiles"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "nudges" },
-      onChange,
+      () => onChange("nudges"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "subjects" },
-      onChange,
+      () => onChange("subjects"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "unit_enrolments" },
-      onChange,
+      () => onChange("unit_enrolments"),
     )
     .subscribe();
 
@@ -1094,6 +1628,71 @@ function nudgeFromRow(row: NudgeRow): RemoteNudgeNotification {
   };
 }
 
+function friendCandidateFromRow(
+  row: FriendCandidateRow,
+): RemoteFriendCandidate {
+  return {
+    ...friendFromProfile(
+      {
+        avatar_url: row.avatar_url,
+        display_name: row.display_name,
+        id: row.user_id,
+        profile_color: row.profile_color,
+        study_icon: row.study_icon,
+        username: row.username,
+      },
+      [],
+    ),
+    isFriend: false,
+    mutualFriendCount: Number(row.mutual_friend_count) || 0,
+    requestDirection: row.request_direction,
+  };
+}
+
+function friendRequestFromRow(row: FriendRequestRow): RemoteFriendRequest {
+  return {
+    createdAt: row.created_at,
+    direction: row.direction,
+    id: row.request_id,
+    user: {
+      ...friendFromProfile(
+        {
+          avatar_url: row.avatar_url,
+          display_name: row.display_name,
+          id: row.user_id,
+          profile_color: row.profile_color,
+          study_icon: row.study_icon,
+          username: row.username,
+        },
+        [],
+      ),
+      isFriend: false,
+    },
+  };
+}
+
+function notificationPreferencesFromRow(
+  row: NotificationPreferencesRow,
+): RemoteNotificationPreferences {
+  return {
+    friendNotifications: row.friend_notifications,
+    nudgeNotifications: row.nudge_notifications,
+    otherNotifications: row.other_notifications,
+  };
+}
+
+function appNotificationFromRow(
+  row: AppNotificationRow,
+): RemoteAppNotification {
+  return {
+    body: row.body,
+    createdAt: row.created_at,
+    id: row.id,
+    title: row.title,
+    type: row.type,
+  };
+}
+
 function friendFromProfile(
   profile: ProfileRow,
   sessions: SessionRow[],
@@ -1108,19 +1707,20 @@ function friendFromProfile(
 
   return {
     id: profile.id,
-    name: profile.display_name || profile.username || "MAC member",
+    name: profile.display_name || profile.username || "Student",
     handle: profile.username
       ? `@${profile.username}`
       : `@user_${profile.id.slice(0, 6)}`,
-    initials: getInitials(profile.display_name || profile.username || "MAC"),
+    initials: getInitials(profile.display_name || profile.username || "ST"),
     color: normalizeProfileColor(profile.profile_color),
     personIcon: normalizePersonIcon(profile.study_icon),
     studying: userSessions.some((session) => session.status === "active"),
-    currentSubject: "MAC Study",
+    currentSubject: "General study",
     daySeconds: totals.day,
     weekSeconds: totals.week,
     monthSeconds: totals.month,
     allTimeSeconds: totals.allTime,
+    dailyStudySeconds: getDailySessionTotals(userSessions, now),
     activeStartedAt: activeSession?.started_at ?? null,
     activeUpdatedAt: activeSession ? now.toISOString() : null,
     subjectSeconds: {},
@@ -1164,6 +1764,23 @@ function getSessionTotals(sessions: SessionRow[], now = new Date()) {
     },
     { allTime: 0, day: 0, month: 0, week: 0 },
   );
+}
+
+function getDailySessionTotals(sessions: SessionRow[], now = new Date()) {
+  return sessions.reduce<Record<string, number>>((totals, session) => {
+    if (session.status === "voided") {
+      return totals;
+    }
+
+    const seconds = session.ended_at
+      ? (session.duration_seconds ??
+        getElapsedSeconds(session.started_at, new Date(session.ended_at)))
+      : getElapsedSeconds(session.started_at, now);
+    const key = getLocalDateKey(new Date(session.started_at));
+
+    totals[key] = (totals[key] ?? 0) + seconds;
+    return totals;
+  }, {});
 }
 
 function normalizeGroupIcon(icon: string | null | undefined): GroupIconKey {
@@ -1223,4 +1840,12 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
+}
+
+async function getResponseError(response: Response) {
+  const body = (await response.json().catch(() => null)) as {
+    message?: string;
+  } | null;
+
+  return body?.message ?? "That request could not be completed.";
 }

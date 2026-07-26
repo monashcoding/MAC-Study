@@ -185,6 +185,7 @@ What works:
 
 Improve:
 
+- Add a Daily statistics period alongside Weekly, Monthly, and Annual views.
 - Increase the Column/Subjects chart toggle hit areas; 28px is too small.
 - Add comparison context such as “+18% from last week” beneath the total.
 - Bars need a touch interaction or visible selected value; browser `title` text is not a mobile tooltip.
@@ -244,4 +245,3 @@ Logout:
 7. Destructive-action confirmation/undo.
 8. Statistics touch/readability improvements.
 9. Authentication and profile polish.
-

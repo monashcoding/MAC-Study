@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     template: "%s | MAC Study",
   },
   description:
-    "A MAC-first study timer, group leaderboard, and accountability PWA.",
+    "A study timer, group leaderboard, and accountability PWA for students.",
   applicationName: "MAC Study",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
@@ -29,8 +29,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover",
   themeColor: "#171717",
 };

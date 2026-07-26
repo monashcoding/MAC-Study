@@ -55,7 +55,7 @@ export async function createStudySessionToken(
   const expiresAt = Math.min(identity.mac.exp, now + 15 * 60);
 
   if (expiresAt <= now) {
-    throw new Error("The MAC login token has expired.");
+    throw new Error("The login token has expired.");
   }
 
   const token = await new SignJWT({

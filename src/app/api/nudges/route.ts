@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import webpush from "web-push";
 import { z } from "zod";
 import { getServerStudySession } from "@/lib/auth/server-session";
-import { getOptionalWebPushEnv } from "@/lib/supabase/env";
+import { sendWebPush } from "@/lib/push/send-web-push";
 import {
   createSupabaseAdminClient,
   createSupabaseServerClient,
@@ -14,12 +13,6 @@ const nudgeSchema = z.object({
   groupId: z.string().uuid().nullable().optional(),
   recipientId: z.string().uuid(),
 });
-
-type PushSubscriptionRow = {
-  auth: string;
-  endpoint: string;
-  p256dh: string;
-};
 
 type NudgeRow = {
   group_id: string | null;
@@ -104,100 +97,48 @@ export async function POST(request: Request) {
     );
   }
 
-  const pushResult = await sendPushNotifications(nudge);
+  const pushResult = await sendPushNotifications(nudge, session.sub);
 
   return NextResponse.json({ ok: true, push: pushResult });
 }
 
-async function sendPushNotifications(nudge: NudgeRow) {
-  const admin = createSupabaseAdminClient();
-  const pushEnv = getOptionalWebPushEnv();
+async function sendPushNotifications(nudge: NudgeRow, senderId: string) {
+  if (nudge.group_id) {
+    const admin = createSupabaseAdminClient();
 
-  if (!admin || !pushEnv) {
-    return { sent: 0, skipped: "push_not_configured" };
+    if (admin) {
+      const [groupMute, senderMute] = await Promise.all([
+        admin
+          .from("user_group_notification_settings")
+          .select("nudges_muted")
+          .eq("user_id", nudge.recipient_id)
+          .eq("group_id", nudge.group_id)
+          .maybeSingle<{ nudges_muted: boolean }>(),
+        admin
+          .from("user_nudge_mutes")
+          .select("muted_user_id")
+          .eq("user_id", nudge.recipient_id)
+          .eq("muted_user_id", senderId)
+          .eq("group_id", nudge.group_id)
+          .maybeSingle(),
+      ]);
+
+      if (groupMute.data?.nudges_muted || senderMute.data) {
+        return { sent: 0, skipped: "disabled" as const };
+      }
+    }
   }
 
-  const { data, error } = await admin
-    .from("push_subscriptions")
-    .select("endpoint, p256dh, auth")
-    .eq("user_id", nudge.recipient_id)
-    .is("revoked_at", null);
-
-  if (error) {
-    return { sent: 0, skipped: "subscriptions_unavailable" };
-  }
-
-  const subscriptions = (data ?? []) as PushSubscriptionRow[];
-
-  if (!subscriptions.length) {
-    return { sent: 0, skipped: "no_subscriptions" };
-  }
-
-  webpush.setVapidDetails(
-    pushEnv.VAPID_SUBJECT,
-    pushEnv.VAPID_PUBLIC_KEY,
-    pushEnv.VAPID_PRIVATE_KEY,
-  );
-
-  const payload = JSON.stringify({
+  return sendWebPush({
     body: nudge.message ?? "Someone woke you up!",
+    category: "nudge",
     tag: `mac-study-nudge-${nudge.id}`,
     title: "MAC Study",
-    url: nudge.group_id ? "/app/groups" : "/app/friends",
+    url: nudge.group_id
+      ? `/app/groups?group=${encodeURIComponent(nudge.group_id)}`
+      : `/app/friends?friend=${encodeURIComponent(senderId)}`,
+    userId: nudge.recipient_id,
   });
-
-  const results = await Promise.allSettled(
-    subscriptions.map((subscription) =>
-      webpush.sendNotification(
-        {
-          endpoint: subscription.endpoint,
-          keys: {
-            auth: subscription.auth,
-            p256dh: subscription.p256dh,
-          },
-        },
-        payload,
-      ),
-    ),
-  );
-
-  const revokedEndpoints = subscriptions
-    .filter((subscription, index) => {
-      const result = results[index];
-
-      return (
-        result.status === "rejected" && isExpiredPushSubscription(result.reason)
-      );
-    })
-    .map((subscription) => subscription.endpoint);
-
-  if (revokedEndpoints.length) {
-    await admin
-      .from("push_subscriptions")
-      .update({ revoked_at: new Date().toISOString() })
-      .in("endpoint", revokedEndpoints);
-  }
-
-  const sent = results.filter((result) => result.status === "fulfilled").length;
-
-  if (sent > 0) {
-    await admin
-      .from("nudges")
-      .update({ delivered_at: new Date().toISOString() })
-      .eq("id", nudge.id);
-  }
-
-  return { sent };
-}
-
-function isExpiredPushSubscription(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "statusCode" in error &&
-    ((error as { statusCode?: number }).statusCode === 404 ||
-      (error as { statusCode?: number }).statusCode === 410)
-  );
 }
 
 function getNudgeRetryAfterSeconds(message: string) {

@@ -2,15 +2,37 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, CalendarDays } from "lucide-react";
+import { PaginatedList } from "@/components/paginated-list";
+import { StudyHeatmap } from "@/components/study-heatmap";
 import {
   cacheRemoteTimerState,
   getCachedRemoteTimerState,
 } from "@/lib/client-cache";
 import { fetchRemoteTimerState } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { getElapsedSeconds, getSessionSeconds } from "@/lib/timer";
+import {
+  getElapsedSeconds,
+  getLocalDateKey,
+  getSessionSeconds,
+} from "@/lib/timer";
 
 const TIMER_STORAGE_KEY = "mac-study-demo-state";
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAY_SHORT_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 type StudySubject = {
   id: string;
@@ -24,7 +46,7 @@ type StoredSession = {
   startedAt: string;
   endedAt: string;
   status: "completed" | "needs_confirmation";
-  source: "timer";
+  source: "manual_adjustment" | "timer";
 };
 
 type ActiveSession = {
@@ -38,7 +60,7 @@ type StoredTimerState = {
   subjects?: Partial<StudySubject>[];
 };
 
-type StatsPeriod = "week" | "month" | "annual";
+type StatsPeriod = "day" | "week" | "month" | "annual";
 type ChartView = "column" | "pie";
 
 type StudyEntry = {
@@ -60,14 +82,15 @@ const fallbackSubjects: StudySubject[] = [];
 const fallbackSubjectTotals: Record<string, number> = {};
 
 const periodOptions = [
+  { id: "day", label: "Daily" },
   { id: "week", label: "Weekly" },
   { id: "month", label: "Monthly" },
   { id: "annual", label: "Annual" },
 ] satisfies { id: StatsPeriod; label: string }[];
 
 const chartOptions = [
-  { id: "column", label: "Columns" },
-  { id: "pie", label: "Pie" },
+  { id: "column", label: "Activity" },
+  { id: "pie", label: "Subjects" },
 ] satisfies { id: ChartView; label: string }[];
 
 export function StatisticsDashboard() {
@@ -156,7 +179,15 @@ export function StatisticsDashboard() {
 
     return isLoaded && useDemoData
       ? buildDemoPeriodStats(selectedPeriod, now)
-      : periodStats;
+      : {
+          ...periodStats,
+          previousTotalSeconds: getPreviousPeriodTotal({
+            activeSession,
+            now,
+            period: selectedPeriod,
+            sessions,
+          }),
+        };
   }, [activeSession, isLoaded, now, selectedPeriod, sessions, useDemoData]);
   const subjectTotals = stats.subjectTotals;
   const totalSeconds = stats.totalSeconds;
@@ -189,16 +220,27 @@ export function StatisticsDashboard() {
   const topSubject = subjectRows[0];
   const pieGradient = makePieGradient(subjectRows, subjectTotal);
   const average = getAverageStat(selectedPeriod, totalSeconds, stats.buckets);
-  const periodLabel =
-    periodOptions.find((period) => period.id === selectedPeriod)?.label ??
-    "Weekly";
+  const comparison = getComparisonStat(
+    totalSeconds,
+    stats.previousTotalSeconds,
+    selectedPeriod,
+  );
+  const showAverage = average.seconds >= 60;
+  const showSummaryDetails = Boolean(comparison.label) || showAverage;
+  const dailyStudySeconds = useMemo(
+    () =>
+      isLoaded && useDemoData
+        ? buildDemoDailyStudySeconds(now)
+        : buildDailyStudySeconds({ activeSession, now, sessions }),
+    [activeSession, isLoaded, now, sessions, useDemoData],
+  );
 
   return (
     <div className="space-y-5 pt-1 lg:pt-0">
       <section className="border-b border-[rgb(255_255_255/0.08)] pb-5">
         <div
           aria-label="Statistics period"
-          className="grid grid-cols-3 gap-2"
+          className="grid grid-cols-4 gap-1.5 sm:gap-2"
           role="group"
         >
           {periodOptions.map((period) => {
@@ -222,22 +264,35 @@ export function StatisticsDashboard() {
           })}
         </div>
 
-        <div className="mt-5 flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-mac-yellow)]">
-              {periodLabel}
-            </p>
-            <h2 className="mt-1.5 text-4xl font-semibold leading-none tracking-[-0.025em] lg:text-5xl">
-              {formatRoundedStudyTime(totalSeconds)}
-            </h2>
-            <p className="mt-2 text-xs font-medium text-[var(--color-text-muted)] sm:text-sm">
-              Avg {average.label}: {formatRoundedStudyTime(average.seconds)}
-            </p>
-          </div>
+        <div className="mt-5 min-w-0">
+          <h2 className="text-4xl font-semibold leading-none tracking-[-0.025em] lg:text-5xl">
+            {formatRoundedStudyTime(totalSeconds)}
+          </h2>
+          {showSummaryDetails ? (
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm">
+              {comparison.label ? (
+                <p className={`font-semibold ${comparison.className}`}>
+                  {comparison.label}
+                </p>
+              ) : null}
+              {comparison.label && showAverage ? (
+                <span aria-hidden className="text-[var(--color-text-muted)]">
+                  ·
+                </span>
+              ) : null}
+              {showAverage ? (
+                <p className="font-medium text-[var(--color-text-muted)]">
+                  Avg {average.label}: {formatRoundedStudyTime(average.seconds)}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
 
+        {totalSeconds > 0 ? (
           <div
             aria-label="Chart type"
-            className="flex shrink-0 items-center gap-0.5"
+            className="mt-4 grid grid-cols-2 border-b border-[rgb(255_255_255/0.08)]"
             role="group"
           >
             {chartOptions.map((option) => {
@@ -246,10 +301,10 @@ export function StatisticsDashboard() {
               return (
                 <button
                   aria-pressed={active}
-                  className={`mac-focus h-7 rounded-full px-2.5 text-[11px] font-semibold transition ${
+                  className={`mac-focus min-h-11 border-b-2 px-3 text-sm font-semibold transition ${
                     active
-                      ? "bg-[rgb(255_255_255/0.1)] text-[var(--color-text)]"
-                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                      ? "border-[var(--color-mac-yellow)] text-[var(--color-text)]"
+                      : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                   }`}
                   key={option.id}
                   onClick={() => setChartView(option.id)}
@@ -260,13 +315,19 @@ export function StatisticsDashboard() {
               );
             })}
           </div>
-        </div>
+        ) : null}
       </section>
 
-      {chartView === "column" ? (
+      {totalSeconds <= 0 ? (
+        <EmptyStatistics period={selectedPeriod} />
+      ) : chartView === "column" ? (
         <ColumnChart
           buckets={stats.buckets}
-          icon={selectedPeriod === "week" ? CalendarDays : BarChart3}
+          icon={
+            selectedPeriod === "day" || selectedPeriod === "week"
+              ? CalendarDays
+              : BarChart3
+          }
           title={getChartTitle(selectedPeriod)}
         />
       ) : (
@@ -277,6 +338,8 @@ export function StatisticsDashboard() {
           topSubject={topSubject}
         />
       )}
+
+      <StudyHeatmap dailySeconds={dailyStudySeconds} />
     </div>
   );
 }
@@ -293,11 +356,11 @@ function SubjectSplit({
   topSubject?: StudySubject & { seconds: number };
 }) {
   return (
-    <section className="grid gap-5 rounded-lg border border-[rgb(255_255_255/0.06)] bg-[linear-gradient(145deg,rgb(255_255_255/0.04),rgb(255_255_255/0.018))] p-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:p-6">
+    <section className="grid gap-5 rounded-lg border border-[rgb(255_255_255/0.06)] bg-[rgb(255_255_255/0.025)] p-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:p-6">
       <div className="flex items-center justify-center">
         <div
           aria-label="Subject study split"
-          className="relative h-44 w-44 rounded-full shadow-[0_18px_42px_rgb(0_0_0/0.28)] lg:h-52 lg:w-52"
+          className="relative h-44 w-44 rounded-full lg:h-52 lg:w-52"
           role="img"
           style={{ background: pieGradient }}
         >
@@ -322,9 +385,12 @@ function SubjectSplit({
           </div>
         </div>
 
-        <div className="grid gap-1.5">
-          {subjectRows.length ? (
-            subjectRows.map((subject) => {
+        {subjectRows.length ? (
+          <PaginatedList
+            className="grid gap-1.5"
+            items={subjectRows}
+            pageSize={12}
+            renderItem={(subject) => {
               const percent = subjectTotal
                 ? (subject.seconds / subjectTotal) * 100
                 : 0;
@@ -364,13 +430,14 @@ function SubjectSplit({
                   </div>
                 </div>
               );
-            })
-          ) : (
-            <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
-              Start a session to fill your study split.
-            </p>
-          )}
-        </div>
+            }}
+            resetKey="subject-split"
+          />
+        ) : (
+          <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
+            Start a session to fill your study split.
+          </p>
+        )}
       </div>
     </section>
   );
@@ -399,24 +466,45 @@ function ColumnChart({
   icon: React.ComponentType<{ size?: number; "aria-hidden"?: boolean }>;
   title: string;
 }) {
+  const [selectedBucketKey, setSelectedBucketKey] = useState<string | null>(
+    null,
+  );
   const maxSeconds = Math.max(...buckets.map((bucket) => bucket.seconds), 1);
   const scaleMaxSeconds = getNiceScaleMax(maxSeconds);
   const yTicks = [scaleMaxSeconds, scaleMaxSeconds / 2, 0];
+  const selectedBucket =
+    buckets.find((bucket) => getBucketKey(bucket) === selectedBucketKey) ??
+    getLargestBucket(buckets);
 
   return (
-    <section className="rounded-lg border border-[rgb(255_255_255/0.06)] bg-[linear-gradient(145deg,rgb(255_255_255/0.04),rgb(255_255_255/0.018))] p-4 lg:p-5">
-      <div className="flex items-center gap-2">
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]">
-          <Icon aria-hidden size={15} />
-        </span>
-        <h2 className="text-lg font-semibold">{title}</h2>
+    <section className="rounded-lg border border-[rgb(255_255_255/0.06)] bg-[rgb(255_255_255/0.025)] p-4 lg:p-5">
+      <div className="flex min-h-11 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+            <Icon aria-hidden size={16} />
+          </span>
+          <h2 className="truncate text-lg font-semibold">{title}</h2>
+        </div>
+        <p
+          aria-live="polite"
+          className="shrink-0 text-xs font-semibold text-[var(--color-text-muted)]"
+        >
+          {selectedBucket ? (
+            <>
+              {selectedBucket.label} ·{" "}
+              <span className="text-[var(--color-text)]">
+                {formatRoundedStudyTime(selectedBucket.seconds)}
+              </span>
+            </>
+          ) : null}
+        </p>
       </div>
 
-      <div className="mt-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2rem_minmax(0,1fr)]">
+      <div className="mt-3 grid grid-cols-[2.25rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2.5rem_minmax(0,1fr)]">
         <div className="relative h-32 lg:h-52">
           {yTicks.map((tick) => (
             <p
-              className="absolute left-0 translate-y-1/2 text-left text-[10px] font-medium leading-none text-[var(--color-text-muted)]"
+              className="absolute left-0 translate-y-1/2 text-left text-xs font-medium leading-none text-[var(--color-text-muted)]"
               key={tick}
               style={{ bottom: `${(tick / scaleMaxSeconds) * 100}%` }}
             >
@@ -441,22 +529,32 @@ function ColumnChart({
                 const height = bucket.seconds
                   ? Math.max(3, (bucket.seconds / scaleMaxSeconds) * 100)
                   : 0;
+                const bucketKey = getBucketKey(bucket);
+                const isSelected = selectedBucketKey === bucketKey;
 
                 return (
-                  <div
-                    className="flex h-full min-w-0 flex-1 flex-col justify-end"
-                    key={`${bucket.label}-${bucket.start.toISOString()}`}
+                  <button
+                    aria-label={`${bucket.label}: ${formatRoundedStudyTime(bucket.seconds)}`}
+                    aria-pressed={isSelected}
+                    className="mac-focus group flex h-full min-w-0 flex-1 flex-col justify-end rounded-sm"
+                    disabled={bucket.seconds <= 0}
+                    key={bucketKey}
+                    onClick={() => setSelectedBucketKey(bucketKey)}
+                    type="button"
                   >
-                    <div
-                      aria-label={`${bucket.label}: ${formatRoundedStudyTime(bucket.seconds)}`}
-                      className="w-full rounded-t-lg bg-[linear-gradient(180deg,#fff06a_0%,var(--color-mac-yellow)_100%)] shadow-[0_0_20px_rgb(255_227_48/0.12)]"
+                    <span
+                      aria-hidden
+                      className={`w-full rounded-t-md bg-[var(--color-mac-yellow)] transition ${
+                        isSelected
+                          ? "ring-2 ring-white ring-offset-2 ring-offset-[var(--color-background)]"
+                          : "opacity-85 group-hover:opacity-100"
+                      }`}
                       style={{
                         height: `${height}%`,
                         minHeight: bucket.seconds ? "6px" : undefined,
                       }}
-                      title={formatRoundedStudyTime(bucket.seconds)}
                     />
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -468,7 +566,7 @@ function ColumnChart({
                 className="min-w-0 flex-1"
                 key={`${bucket.label}-${bucket.start.toISOString()}-label`}
               >
-                <p className="text-center text-[10px] font-medium leading-none text-[var(--color-text-muted)] sm:text-[11px]">
+                <p className="text-center text-xs font-medium leading-none text-[var(--color-text-muted)]">
                   <span className="sm:hidden">
                     {bucket.shortLabel ?? bucket.label}
                   </span>
@@ -483,12 +581,37 @@ function ColumnChart({
   );
 }
 
-function formatRoundedStudyTime(totalSeconds: number) {
-  const minutes = Math.round(totalSeconds / 60);
+function EmptyStatistics({ period }: { period: StatsPeriod }) {
+  const periodName =
+    period === "day"
+      ? "day"
+      : period === "week"
+        ? "week"
+        : period === "month"
+          ? "month"
+          : "year";
 
-  if (minutes <= 0) {
-    return "0 min";
+  return (
+    <section className="flex min-h-60 flex-col items-center justify-center rounded-lg border border-dashed border-[rgb(255_255_255/0.1)] bg-[rgb(255_255_255/0.02)] px-6 py-10 text-center">
+      <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+        <BarChart3 aria-hidden size={22} />
+      </span>
+      <h2 className="mt-4 text-lg font-semibold">No study time yet</h2>
+      <p className="mt-1 max-w-xs text-sm leading-6 text-[var(--color-text-muted)]">
+        Complete a study session to see your {periodName} take shape.
+      </p>
+    </section>
+  );
+}
+
+function formatRoundedStudyTime(totalSeconds: number) {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+
+  if (seconds < 60) {
+    return `${seconds} sec`;
   }
+
+  const minutes = Math.round(seconds / 60);
 
   if (minutes < 60) {
     return `${minutes} min`;
@@ -505,6 +628,10 @@ function formatAxisTick(totalSeconds: number) {
     return "0";
   }
 
+  if (totalSeconds < 60) {
+    return `${Math.round(totalSeconds)}s`;
+  }
+
   const minutes = Math.round(totalSeconds / 60);
 
   if (minutes < 60) {
@@ -517,13 +644,13 @@ function formatAxisTick(totalSeconds: number) {
 }
 
 function getNiceScaleMax(maxSeconds: number) {
-  const maxMinutes = Math.max(15, Math.ceil(maxSeconds / 60));
   const candidates = [
-    15, 30, 60, 90, 120, 180, 240, 300, 360, 480, 600, 720, 960, 1200, 1440,
+    30, 60, 120, 240, 600, 1200, 1800, 3600, 7200, 14400, 21600, 28800, 43200,
+    57600, 86400,
   ];
-  const candidate = candidates.find((value) => value >= maxMinutes);
+  const candidate = candidates.find((value) => value >= maxSeconds);
 
-  return (candidate ?? Math.ceil(maxMinutes / 240) * 240) * 60;
+  return candidate ?? Math.ceil(maxSeconds / 14400) * 14400;
 }
 
 function buildPeriodStats({
@@ -582,9 +709,28 @@ function buildDemoPeriodStats(period: StatsPeriod, now: Date) {
 
   return {
     buckets,
+    previousTotalSeconds: Math.round(totalSeconds / 1.18),
     subjectTotals: { ...fallbackSubjectTotals },
     totalSeconds,
   };
+}
+
+function getPreviousPeriodTotal({
+  activeSession,
+  now,
+  period,
+  sessions,
+}: {
+  activeSession: ActiveSession | null;
+  now: Date;
+  period: StatsPeriod;
+  sessions: StoredSession[];
+}) {
+  const { end, start } = getPreviousPeriodRange(period, now);
+
+  return getStudyEntries({ activeSession, now, sessions })
+    .filter((entry) => entry.date >= start && entry.date < end)
+    .reduce((total, entry) => total + entry.seconds, 0);
 }
 
 function getStudyEntries({
@@ -613,7 +759,52 @@ function getStudyEntries({
   return entries;
 }
 
+function buildDailyStudySeconds({
+  activeSession,
+  now,
+  sessions,
+}: {
+  activeSession: ActiveSession | null;
+  now: Date;
+  sessions: StoredSession[];
+}) {
+  const totals = sessions.reduce<Record<string, number>>((result, session) => {
+    const key = getLocalDateKey(new Date(session.startedAt));
+    result[key] = (result[key] ?? 0) + getSessionSeconds(session);
+    return result;
+  }, {});
+
+  if (activeSession) {
+    const key = getLocalDateKey(new Date(activeSession.startedAt));
+    totals[key] =
+      (totals[key] ?? 0) + getElapsedSeconds(activeSession.startedAt, now);
+  }
+
+  return totals;
+}
+
+function buildDemoDailyStudySeconds(now: Date) {
+  const totals: Record<string, number> = {};
+
+  for (let offset = 0; offset < 364; offset += 1) {
+    const date = addDays(startOfDay(now), -offset);
+    const pattern = (offset * 17 + date.getMonth() * 7) % 11;
+
+    if (pattern < 5) {
+      totals[getLocalDateKey(date)] = (pattern + 1) * 18 * 60;
+    }
+  }
+
+  return totals;
+}
+
 function getPeriodRange(period: StatsPeriod, now: Date) {
+  if (period === "day") {
+    const start = startOfDay(now);
+
+    return { start, end: addDays(start, 1) };
+  }
+
   if (period === "week") {
     const start = startOfDay(now);
     start.setDate(now.getDate() - 6);
@@ -641,7 +832,56 @@ function getPeriodRange(period: StatsPeriod, now: Date) {
   };
 }
 
+function getPreviousPeriodRange(period: StatsPeriod, now: Date) {
+  if (period === "day") {
+    const currentStart = startOfDay(now);
+
+    return {
+      start: addDays(currentStart, -1),
+      end: currentStart,
+    };
+  }
+
+  if (period === "week") {
+    const currentStart = getPeriodRange(period, now).start;
+
+    return {
+      start: addDays(currentStart, -7),
+      end: currentStart,
+    };
+  }
+
+  if (period === "month") {
+    return {
+      start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      end: new Date(now.getFullYear(), now.getMonth(), 1),
+    };
+  }
+
+  return {
+    start: new Date(now.getFullYear() - 1, 0, 1),
+    end: new Date(now.getFullYear(), 0, 1),
+  };
+}
+
 function buildBuckets(period: StatsPeriod, now: Date): ChartBucket[] {
+  if (period === "day") {
+    const dayStart = startOfDay(now);
+
+    return Array.from({ length: 8 }, (_, index) => {
+      const hour = index * 3;
+      const bucketStart = new Date(dayStart);
+      bucketStart.setHours(hour);
+
+      return {
+        label: formatHourLabel(hour),
+        seconds: 0,
+        start: bucketStart,
+        end: new Date(bucketStart.getTime() + 3 * 60 * 60 * 1000),
+      };
+    });
+  }
+
   if (period === "week") {
     const { start } = getPeriodRange(period, now);
 
@@ -649,10 +889,8 @@ function buildBuckets(period: StatsPeriod, now: Date): ChartBucket[] {
       const bucketStart = addDays(start, index);
 
       return {
-        label: bucketStart.toLocaleDateString(undefined, { weekday: "short" }),
-        shortLabel: bucketStart.toLocaleDateString(undefined, {
-          weekday: "narrow",
-        }),
+        label: WEEKDAY_LABELS[bucketStart.getDay()],
+        shortLabel: WEEKDAY_SHORT_LABELS[bucketStart.getDay()],
         seconds: 0,
         start: bucketStart,
         end: addDays(bucketStart, 1),
@@ -690,10 +928,8 @@ function buildBuckets(period: StatsPeriod, now: Date): ChartBucket[] {
       const bucketStart = new Date(now.getFullYear(), month, 1);
 
       return {
-        label: bucketStart.toLocaleDateString(undefined, { month: "short" }),
-        shortLabel: bucketStart.toLocaleDateString(undefined, {
-          month: "narrow",
-        }),
+        label: MONTH_LABELS[month],
+        shortLabel: MONTH_LABELS[month][0],
         seconds: 0,
         start: bucketStart,
         end: new Date(now.getFullYear(), month + 1, 1),
@@ -705,10 +941,8 @@ function buildBuckets(period: StatsPeriod, now: Date): ChartBucket[] {
     const bucketStart = new Date(now.getFullYear(), month, 1);
 
     return {
-      label: bucketStart.toLocaleDateString(undefined, { month: "short" }),
-      shortLabel: bucketStart.toLocaleDateString(undefined, {
-        month: "narrow",
-      }),
+      label: MONTH_LABELS[month],
+      shortLabel: MONTH_LABELS[month][0],
       seconds: 0,
       start: bucketStart,
       end: new Date(now.getFullYear(), month + 1, 1),
@@ -721,6 +955,10 @@ function getAverageStat(
   totalSeconds: number,
   buckets: ChartBucket[],
 ) {
+  if (period === "day") {
+    return { label: "per hour", seconds: Math.floor(totalSeconds / 24) };
+  }
+
   if (period === "month") {
     return {
       label: "per week",
@@ -735,7 +973,76 @@ function getAverageStat(
   return { label: "per day", seconds: Math.floor(totalSeconds / 7) };
 }
 
+function getComparisonStat(
+  totalSeconds: number,
+  previousTotalSeconds: number,
+  period: StatsPeriod,
+) {
+  const periodName =
+    period === "day"
+      ? "day"
+      : period === "week"
+        ? "week"
+        : period === "month"
+          ? "month"
+          : "year";
+
+  if (totalSeconds < 5 * 60) {
+    return {
+      className: "text-[var(--color-text-muted)]",
+      label: totalSeconds <= 0 ? `No sessions this ${periodName}` : null,
+    };
+  }
+
+  if (previousTotalSeconds <= 0) {
+    return {
+      className: "text-[var(--color-success)]",
+      label: `New activity this ${periodName}`,
+    };
+  }
+
+  if (previousTotalSeconds < 5 * 60) {
+    return {
+      className: "text-[var(--color-success)]",
+      label: `More than previous ${periodName}`,
+    };
+  }
+
+  const rawPercent =
+    ((totalSeconds - previousTotalSeconds) / previousTotalSeconds) * 100;
+  const percent = Math.round(rawPercent / 5) * 5;
+
+  if (Math.abs(percent) > 300) {
+    return {
+      className:
+        percent > 0
+          ? "text-[var(--color-success)]"
+          : "text-[var(--color-danger)]",
+      label:
+        percent > 0
+          ? `More than previous ${periodName}`
+          : `Less than previous ${periodName}`,
+    };
+  }
+
+  const prefix = percent > 0 ? "+" : "";
+
+  return {
+    className:
+      percent > 0
+        ? "text-[var(--color-success)]"
+        : percent < 0
+          ? "text-[var(--color-danger)]"
+          : "text-[var(--color-text-muted)]",
+    label: `${prefix}${percent}% vs previous ${periodName}`,
+  };
+}
+
 function getChartTitle(period: StatsPeriod) {
+  if (period === "day") {
+    return "Hourly breakdown";
+  }
+
   if (period === "month") {
     return "Weekly breakdown";
   }
@@ -745,6 +1052,24 @@ function getChartTitle(period: StatsPeriod) {
   }
 
   return "Daily breakdown";
+}
+
+function formatHourLabel(hour: number) {
+  if (hour === 0) return "12am";
+  if (hour === 12) return "12pm";
+  return hour < 12 ? `${hour}am` : `${hour - 12}pm`;
+}
+
+function getBucketKey(bucket: ChartBucket) {
+  return `${bucket.label}-${bucket.start.toISOString()}`;
+}
+
+function getLargestBucket(buckets: ChartBucket[]) {
+  return buckets.reduce<ChartBucket | undefined>(
+    (largest, bucket) =>
+      !largest || bucket.seconds > largest.seconds ? bucket : largest,
+    undefined,
+  );
 }
 
 function startOfDay(date: Date) {

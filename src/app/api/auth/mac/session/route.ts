@@ -14,14 +14,14 @@ export async function POST(request: NextRequest) {
   const macToken = readBearerToken(request.headers.get("authorization"));
 
   if (!macToken) {
-    return noStoreJson({ message: "A MAC login token is required." }, 401);
+    return noStoreJson({ message: "A login token is required." }, 401);
   }
 
   const env = getOptionalStudySessionEnv();
 
   if (!env) {
     return noStoreJson(
-      { message: "The MAC Study session bridge is not configured." },
+      { message: "The study session bridge is not configured." },
       503,
     );
   }
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("MAC session exchange failed", error);
 
-    return noStoreJson({ message: "MAC login could not be verified." }, 401);
+    return noStoreJson({ message: "Login could not be verified." }, 401);
   }
 }
 
@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
 
   if (!token || !env) {
     return clearInvalidSession(
-      noStoreJson({ message: "No active MAC Study session." }, 401),
+      noStoreJson({ message: "No active study session." }, 401),
     );
   }
 
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
     });
   } catch {
     return clearInvalidSession(
-      noStoreJson({ message: "The MAC Study session has expired." }, 401),
+      noStoreJson({ message: "The study session has expired." }, 401),
     );
   }
 }
