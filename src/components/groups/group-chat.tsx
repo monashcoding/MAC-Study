@@ -1,8 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MessageCircle, Send } from "lucide-react";
+import { ArrowLeft, MessageCircle, Send } from "lucide-react";
 import type { SocialFriend } from "@/lib/social-state";
 import {
   fetchRemoteGroupChatMessages,
@@ -13,27 +19,51 @@ import {
 import { cn } from "@/lib/utils";
 
 const LOCAL_CHAT_KEY = "mac-study-group-chat";
+const remoteMessageCache = new Map<string, RemoteGroupChatMessage[]>();
+const remoteMessageRequests = new Map<
+  string,
+  Promise<RemoteGroupChatMessage[]>
+>();
+
+export function prefetchRemoteGroupChat(
+  remoteClient: SupabaseClient,
+  groupId: string,
+) {
+  return requestRemoteMessages(remoteClient, groupId, true);
+}
 
 export function GroupChat({
   currentUserId,
   groupId,
+  groupName,
   members,
+  onBack,
   remoteClient,
 }: {
   currentUserId: string | null;
   groupId: string;
+  groupName: string;
   members: SocialFriend[];
+  onBack: () => void;
   remoteClient: SupabaseClient | null;
 }) {
   const [messages, setMessages] = useState<RemoteGroupChatMessage[]>(() =>
-    remoteClient ? [] : readLocalMessages(groupId),
+    remoteClient
+      ? (remoteMessageCache.get(groupId) ?? [])
+      : readLocalMessages(groupId),
   );
+  const [isReady, setIsReady] = useState(
+    () => !remoteClient || remoteMessageCache.has(groupId),
+  );
+  const [isClosing, setIsClosing] = useState(false);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const chatRef = useRef<HTMLElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const hasPositionedMessagesRef = useRef(false);
   const messageListRef = useRef<HTMLDivElement>(null);
-  const composerFocusedRef = useRef(false);
   const selfId = currentUserId ?? "you";
   const memberById = new Map(members.map((member) => [member.id, member]));
 
@@ -41,10 +71,7 @@ export function GroupChat({
     if (!remoteClient) return;
 
     try {
-      const nextMessages = await fetchRemoteGroupChatMessages(
-        remoteClient,
-        groupId,
-      );
+      const nextMessages = await requestRemoteMessages(remoteClient, groupId);
       setMessages((current) => mergeMessages(current, nextMessages));
       setFeedback(null);
     } catch {
@@ -56,14 +83,18 @@ export function GroupChat({
     if (!remoteClient) return;
 
     let cancelled = false;
-    void fetchRemoteGroupChatMessages(remoteClient, groupId)
+    void requestRemoteMessages(remoteClient, groupId)
       .then((nextMessages) => {
         if (!cancelled) {
           setMessages((current) => mergeMessages(current, nextMessages));
+          setIsReady(true);
         }
       })
       .catch(() => {
-        if (!cancelled) setFeedback("Chat could not be loaded.");
+        if (!cancelled) {
+          setFeedback("Chat could not be loaded.");
+          setIsReady(true);
+        }
       });
 
     const unsubscribe = subscribeToRemoteGroupChat(
@@ -71,7 +102,12 @@ export function GroupChat({
       groupId,
       (message) => {
         if (!cancelled) {
-          setMessages((current) => mergeMessages(current, [message]));
+          setMessages((current) => {
+            const nextMessages = mergeMessages(current, [message]);
+            remoteMessageCache.set(groupId, nextMessages);
+            return nextMessages;
+          });
+          setIsReady(true);
         }
       },
     );
@@ -91,15 +127,19 @@ export function GroupChat({
     };
   }, [groupId, refresh, remoteClient]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!isReady) return;
+
     const messageList = messageListRef.current;
     if (!messageList) return;
 
+    const isInitialPosition = !hasPositionedMessagesRef.current;
+    hasPositionedMessagesRef.current = true;
     messageList.scrollTo({
-      behavior: "smooth",
+      behavior: isInitialPosition ? "auto" : "smooth",
       top: messageList.scrollHeight,
     });
-  }, [messages]);
+  }, [isReady, messages]);
 
   useEffect(() => {
     if (remoteClient) return;
@@ -131,16 +171,8 @@ export function GroupChat({
         }
 
         const viewportHeight = visualViewport?.height ?? window.innerHeight;
-        const navHeight =
-          document.querySelector<HTMLElement>(".mac-mobile-nav")
-            ?.offsetHeight ?? 0;
-        const bottomGap = composerFocusedRef.current ? 8 : navHeight + 12;
-        const availableHeight = Math.max(
-          composerFocusedRef.current ? 160 : 260,
-          viewportHeight - chat.getBoundingClientRect().top - bottomGap,
-        );
-
-        chat.style.height = `${availableHeight}px`;
+        chat.style.top = `${visualViewport?.offsetTop ?? 0}px`;
+        chat.style.height = `${viewportHeight}px`;
       });
     }
 
@@ -152,6 +184,9 @@ export function GroupChat({
 
     return () => {
       window.cancelAnimationFrame(frame);
+      if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+      chatRef.current?.style.removeProperty("top");
+      chatRef.current?.style.removeProperty("height");
       body.classList.remove("mac-chat-view-active", "mac-chat-composer-active");
       window.removeEventListener("resize", sizeChat);
       visualViewport?.removeEventListener("resize", sizeChat);
@@ -159,10 +194,24 @@ export function GroupChat({
     };
   }, []);
 
+  useEffect(() => {
+    const composer = composerRef.current;
+    if (!composer) return;
+
+    composer.style.height = "auto";
+    composer.style.height = `${Math.min(composer.scrollHeight, 112)}px`;
+  }, [draft]);
+
   function setComposerFocused(focused: boolean) {
-    composerFocusedRef.current = focused;
     document.body.classList.toggle("mac-chat-composer-active", focused);
     window.dispatchEvent(new Event("resize"));
+  }
+
+  function closeChat() {
+    if (isClosing) return;
+
+    setIsClosing(true);
+    closeTimerRef.current = window.setTimeout(onBack, 160);
   }
 
   async function sendMessage() {
@@ -206,53 +255,80 @@ export function GroupChat({
 
   return (
     <section
-      className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] lg:h-[min(52dvh,520px)]"
+      className={cn(
+        "fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] flex-col overflow-hidden bg-[var(--color-background)] lg:relative lg:inset-auto lg:z-auto lg:h-[calc(100dvh-11rem)] lg:min-h-[32rem] lg:max-h-[760px] lg:rounded-lg lg:border lg:border-[var(--color-border)]",
+        isClosing ? "mac-chat-screen-exit" : "mac-chat-screen-enter",
+      )}
       ref={chatRef}
     >
+      <header className="shrink-0 border-b border-[var(--color-border)] bg-[rgb(23_23_23/0.96)] px-3 pb-2 pt-[calc(var(--safe-area-top)+0.5rem)] backdrop-blur-xl lg:pt-2">
+        <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center">
+          <button
+            aria-label="Back to group"
+            className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+            onClick={closeChat}
+            type="button"
+          >
+            <ArrowLeft aria-hidden size={19} />
+          </button>
+          <div className="min-w-0 text-center">
+            <h2 className="truncate text-sm font-semibold">{groupName}</h2>
+            <p className="mt-0.5 text-[10px] font-medium text-[var(--color-text-muted)]">
+              {members.length} {members.length === 1 ? "member" : "members"}
+            </p>
+          </div>
+          <span aria-hidden />
+        </div>
+      </header>
+
       <div className="flex h-full min-h-0 flex-col">
         <div
-          className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 sm:p-4"
+          className={cn(
+            "min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-2.5 transition-opacity duration-150 sm:px-4",
+            isReady ? "opacity-100" : "opacity-0",
+          )}
           ref={messageListRef}
         >
           {messages.length ? (
-            messages.map((message) => {
+            messages.map((message, index) => {
               const isOwn = message.userId === selfId;
               const sender = memberById.get(message.userId);
+              const previousMessage = messages[index - 1];
+              const startsSenderGroup =
+                !previousMessage ||
+                previousMessage.userId !== message.userId ||
+                new Date(message.createdAt).getTime() -
+                  new Date(previousMessage.createdAt).getTime() >
+                  5 * 60 * 1000;
 
               return (
                 <div
                   className={cn(
                     "flex",
                     isOwn ? "justify-end" : "justify-start",
+                    startsSenderGroup && index > 0 && "pt-2",
                   )}
                   key={message.id}
                 >
                   <div
                     className={cn(
-                      "max-w-[84%] rounded-lg px-3 py-2",
+                      "w-fit max-w-[92%] rounded-2xl px-3 py-1.5 sm:max-w-[82%]",
                       isOwn
                         ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-                        : "bg-[var(--color-surface-raised)] text-[var(--color-text)]",
+                        : "border border-[rgb(255_255_255/0.055)] bg-[var(--color-surface-raised)] text-[var(--color-text)]",
                     )}
                   >
-                    {!isOwn ? (
-                      <div className="mb-1">
-                        <p className="text-xs font-semibold">
-                          {sender?.name ?? "Group member"}
-                        </p>
-                        {sender?.handle ? (
-                          <p className="text-[10px] text-[var(--color-text-muted)]">
-                            {sender.handle}
-                          </p>
-                        ) : null}
-                      </div>
+                    {!isOwn && startsSenderGroup ? (
+                      <p className="mb-0.5 text-[10px] font-semibold text-[var(--color-text-muted)]">
+                        {sender?.handle ?? "@member"}
+                      </p>
                     ) : null}
-                    <p className="whitespace-pre-wrap break-words text-sm">
+                    <p className="whitespace-pre-wrap break-words text-sm leading-snug">
                       {message.body}
                     </p>
                     <p
                       className={cn(
-                        "mt-1 text-right text-[10px]",
+                        "mt-0.5 text-right text-[9px]",
                         isOwn
                           ? "text-black/60"
                           : "text-[var(--color-text-muted)]",
@@ -278,7 +354,7 @@ export function GroupChat({
         </div>
 
         <form
-          className="border-t border-[var(--color-border)] p-3"
+          className="shrink-0 border-t border-[var(--color-border)] bg-[rgb(23_23_23/0.97)] px-2.5 pb-[max(0.625rem,var(--safe-area-bottom))] pt-2.5 backdrop-blur-xl"
           onSubmit={(event) => {
             event.preventDefault();
             void sendMessage();
@@ -292,20 +368,22 @@ export function GroupChat({
               {feedback}
             </p>
           ) : null}
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-            <input
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+            <textarea
               aria-label="Message"
-              className="mac-focus h-11 min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)]"
+              className="mac-focus min-h-11 min-w-0 resize-none overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[0.68rem] text-sm leading-snug text-[var(--color-text)]"
               maxLength={2000}
               onBlur={() => setComposerFocused(false)}
               onChange={(event) => setDraft(event.target.value)}
               onFocus={() => setComposerFocused(true)}
               placeholder="Message the group…"
+              ref={composerRef}
+              rows={1}
               value={draft}
             />
             <button
               aria-label="Send message"
-              className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414] disabled:opacity-45"
+              className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414] transition active:scale-[0.97] disabled:opacity-45"
               disabled={!draft.trim() || isSending}
               onPointerDown={(event) => event.preventDefault()}
               type="submit"
@@ -332,6 +410,36 @@ function mergeMessages(
       new Date(first.createdAt).getTime() -
       new Date(second.createdAt).getTime(),
   );
+}
+
+async function fetchAndCacheRemoteMessages(
+  remoteClient: SupabaseClient,
+  groupId: string,
+) {
+  const messages = mergeMessages(
+    remoteMessageCache.get(groupId) ?? [],
+    await fetchRemoteGroupChatMessages(remoteClient, groupId),
+  );
+  remoteMessageCache.set(groupId, messages);
+  return messages;
+}
+
+function requestRemoteMessages(
+  remoteClient: SupabaseClient,
+  groupId: string,
+  allowCached = false,
+) {
+  const cached = remoteMessageCache.get(groupId);
+  if (allowCached && cached) return Promise.resolve(cached);
+
+  const pending = remoteMessageRequests.get(groupId);
+  if (pending) return pending;
+
+  const request = fetchAndCacheRemoteMessages(remoteClient, groupId).finally(
+    () => remoteMessageRequests.delete(groupId),
+  );
+  remoteMessageRequests.set(groupId, request);
+  return request;
 }
 
 function formatMessageTime(value: string) {

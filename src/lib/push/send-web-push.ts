@@ -41,17 +41,23 @@ export async function sendWebPush({
     return { sent: 0, skipped: "push_not_configured" };
   }
 
-  const { data: preferences } = await admin
-    .from("user_notification_preferences")
-    .select(
-      "friend_notifications, nudge_notifications, other_notifications",
-    )
-    .eq("user_id", userId)
-    .maybeSingle<{
-      friend_notifications: boolean;
-      nudge_notifications: boolean;
-      other_notifications: boolean;
-    }>();
+  const [preferencesResult, subscriptionsResult] = await Promise.all([
+    admin
+      .from("user_notification_preferences")
+      .select("friend_notifications, nudge_notifications, other_notifications")
+      .eq("user_id", userId)
+      .maybeSingle<{
+        friend_notifications: boolean;
+        nudge_notifications: boolean;
+        other_notifications: boolean;
+      }>(),
+    admin
+      .from("push_subscriptions")
+      .select("endpoint, p256dh, auth")
+      .eq("user_id", userId)
+      .is("revoked_at", null),
+  ]);
+  const preferences = preferencesResult.data;
 
   const enabled =
     category === "friend"
@@ -64,11 +70,7 @@ export async function sendWebPush({
     return { sent: 0, skipped: "disabled" };
   }
 
-  const { data, error } = await admin
-    .from("push_subscriptions")
-    .select("endpoint, p256dh, auth")
-    .eq("user_id", userId)
-    .is("revoked_at", null);
+  const { data, error } = subscriptionsResult;
 
   if (error) {
     return { sent: 0, skipped: "subscriptions_unavailable" };
@@ -106,8 +108,7 @@ export async function sendWebPush({
       const result = results[index];
 
       return (
-        result.status === "rejected" &&
-        isExpiredPushSubscription(result.reason)
+        result.status === "rejected" && isExpiredPushSubscription(result.reason)
       );
     })
     .map((subscription) => subscription.endpoint);

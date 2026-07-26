@@ -13,7 +13,7 @@ import {
   type SocialGroup,
   type SocialState,
 } from "@/lib/social-state";
-import { getElapsedSeconds } from "@/lib/timer";
+import { getElapsedSeconds, getLocalDateKey } from "@/lib/timer";
 import {
   type TeachingPeriod,
   type UnitCohortMember,
@@ -1154,19 +1154,24 @@ export async function removeRemoteFriend({
 export async function inviteRemoteFriendToGroup({
   friendId,
   groupId,
-  supabase,
+  supabase: _supabase,
 }: {
   friendId: string;
   groupId: string;
   supabase: SupabaseClient;
 }) {
-  const { error } = await supabase.rpc("invite_friend_to_group", {
-    target_group_id: groupId,
-    target_user_id: friendId,
+  const response = await fetch("/api/groups/invites", {
+    body: JSON.stringify({ friendId, groupId }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
   });
 
-  if (error) {
-    throw error;
+  const body = (await response.json().catch(() => null)) as {
+    message?: string;
+  } | null;
+
+  if (!response.ok) {
+    throw new Error(body?.message ?? "Could not send that group invitation.");
   }
 }
 
@@ -1499,6 +1504,7 @@ function friendFromProfile(
     weekSeconds: totals.week,
     monthSeconds: totals.month,
     allTimeSeconds: totals.allTime,
+    dailyStudySeconds: getDailySessionTotals(userSessions, now),
     activeStartedAt: activeSession?.started_at ?? null,
     activeUpdatedAt: activeSession ? now.toISOString() : null,
     subjectSeconds: {},
@@ -1542,6 +1548,23 @@ function getSessionTotals(sessions: SessionRow[], now = new Date()) {
     },
     { allTime: 0, day: 0, month: 0, week: 0 },
   );
+}
+
+function getDailySessionTotals(sessions: SessionRow[], now = new Date()) {
+  return sessions.reduce<Record<string, number>>((totals, session) => {
+    if (session.status === "voided") {
+      return totals;
+    }
+
+    const seconds = session.ended_at
+      ? (session.duration_seconds ??
+        getElapsedSeconds(session.started_at, new Date(session.ended_at)))
+      : getElapsedSeconds(session.started_at, now);
+    const key = getLocalDateKey(new Date(session.started_at));
+
+    totals[key] = (totals[key] ?? 0) + seconds;
+    return totals;
+  }, {});
 }
 
 function normalizeGroupIcon(icon: string | null | undefined): GroupIconKey {

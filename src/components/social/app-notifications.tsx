@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { UserRoundPlus, X } from "lucide-react";
+import { UserRoundPlus, Users, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   markRemoteAppNotificationRead,
@@ -25,9 +25,7 @@ export function AppNotifications({ userId }: { userId: string }) {
         supabase,
         userId,
         (notification) => {
-          setNotifications((current) =>
-            [notification, ...current].slice(0, 3),
-          );
+          setNotifications((current) => [notification, ...current].slice(0, 3));
         },
       );
     } catch {
@@ -50,18 +48,17 @@ export function AppNotifications({ userId }: { userId: string }) {
       // The destination should still open if marking as read fails.
     }
 
-    if (
-      pathname === "/app/friends" &&
-      notification.type === "friend_request"
-    ) {
+    if (pathname === "/app/friends" && notification.type === "friend_request") {
       window.dispatchEvent(new Event("mac-open-friend-requests"));
       return;
     }
 
     router.push(
-      notification.type === "friend_request"
-        ? "/app/friends?tab=requests"
-        : "/app/friends",
+      notification.title === "Group invitation"
+        ? "/app/groups"
+        : notification.type === "friend_request"
+          ? "/app/friends?tab=requests"
+          : "/app/friends",
     );
   }
 
@@ -102,7 +99,11 @@ function NotificationToast({
   return (
     <div className="pointer-events-auto grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-[rgb(255_227_48/0.28)] bg-[rgb(23_23_23/0.97)] p-3 shadow-[0_18px_42px_rgb(0_0_0/0.38)] backdrop-blur">
       <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414]">
-        <UserRoundPlus aria-hidden size={18} />
+        {notification.title === "Group invitation" ? (
+          <Users aria-hidden size={18} />
+        ) : (
+          <UserRoundPlus aria-hidden size={18} />
+        )}
       </span>
       <button className="min-w-0 text-left" onClick={onOpen} type="button">
         <span className="block truncate text-sm font-semibold">

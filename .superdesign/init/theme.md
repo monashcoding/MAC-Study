@@ -10,7 +10,7 @@
 - Primary text: `#f7f7f2`; muted text: `#a9a99f`.
 - Brand/action yellow: `#ffe330` with dark foreground `#141414`.
 - Success: `#42d392`; danger: `#ff6b6b`; info: `#6cb6ff`.
-- Medium radius: `0.875rem`; large radius: `1.25rem`; dialogs use `1.5rem`.
+- Medium radius: `0.5rem`; large radius: `0.625rem`; dialogs use `0.75rem`.
 - Soft shadow: `0 1px 0 rgb(255 255 255 / 0.04)`.
 - Main responsive shell breakpoint: `64rem` / 1024px.
 - Mobile navigation content height: `3.75rem` plus safe-area inset.
@@ -26,8 +26,8 @@ Core variables:
 
 ```css
 :root {
-  --radius-md: 0.875rem;
-  --radius-lg: 1.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --app-viewport-height: 100vh;
@@ -45,4 +45,3 @@ Core variables:
   --shadow-soft: 0 1px 0 rgb(255 255 255 / 0.04);
 }
 ```
-

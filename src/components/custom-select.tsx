@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 
 export type CustomSelectOption<T extends string | number> = {
   label: string;
+  swatchColor?: string;
   value: T;
 };
 
@@ -24,7 +25,7 @@ export function CustomSelect<T extends string | number>({
   className?: string;
   disabled?: boolean;
   onChange: (value: T) => void;
-  options: CustomSelectOption<T>[];
+  options: readonly CustomSelectOption<T>[];
   placeholder?: string;
   placement?: "bottom" | "top";
   size?: "compact" | "default";
@@ -74,9 +75,7 @@ export function CustomSelect<T extends string | number>({
         aria-label={ariaLabel}
         className={cn(
           "mac-focus grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border bg-[var(--color-surface)] text-left font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
-          size === "compact"
-            ? "h-9 px-2.5 text-xs"
-            : "h-11 px-3 text-sm",
+          size === "compact" ? "h-9 px-2.5 text-xs" : "h-11 px-3 text-sm",
           isOpen
             ? "border-[var(--color-mac-yellow)] ring-2 ring-[rgb(255_227_48/0.18)]"
             : "border-[var(--color-border)] hover:border-[rgb(255_255_255/0.18)]",
@@ -92,13 +91,22 @@ export function CustomSelect<T extends string | number>({
         ref={triggerRef}
         type="button"
       >
-        <span
-          className={cn(
-            "truncate",
-            !selectedOption && "text-[var(--color-text-muted)]",
-          )}
-        >
-          {selectedOption?.label ?? placeholder}
+        <span className="flex min-w-0 items-center gap-2.5">
+          {selectedOption?.swatchColor ? (
+            <span
+              aria-hidden
+              className="h-4 w-4 shrink-0 rounded-full border border-black/15"
+              style={{ backgroundColor: selectedOption.swatchColor }}
+            />
+          ) : null}
+          <span
+            className={cn(
+              "truncate",
+              !selectedOption && "text-[var(--color-text-muted)]",
+            )}
+          >
+            {selectedOption?.label ?? placeholder}
+          </span>
         </span>
         <ChevronDown
           aria-hidden
@@ -143,7 +151,16 @@ export function CustomSelect<T extends string | number>({
                 role="option"
                 type="button"
               >
-                <span className="truncate font-medium">{option.label}</span>
+                <span className="flex min-w-0 items-center gap-2.5">
+                  {option.swatchColor ? (
+                    <span
+                      aria-hidden
+                      className="h-4 w-4 shrink-0 rounded-full border border-black/15"
+                      style={{ backgroundColor: option.swatchColor }}
+                    />
+                  ) : null}
+                  <span className="truncate font-medium">{option.label}</span>
+                </span>
                 {selected ? (
                   <Check
                     aria-hidden

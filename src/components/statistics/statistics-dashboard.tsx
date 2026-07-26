@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, CalendarDays } from "lucide-react";
 import { PaginatedList } from "@/components/paginated-list";
+import { StudyHeatmap } from "@/components/study-heatmap";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   cacheRemoteTimerState,
@@ -10,7 +11,11 @@ import {
 } from "@/lib/client-cache";
 import { fetchRemoteTimerState } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { getElapsedSeconds, getSessionSeconds } from "@/lib/timer";
+import {
+  getElapsedSeconds,
+  getLocalDateKey,
+  getSessionSeconds,
+} from "@/lib/timer";
 
 const TIMER_STORAGE_KEY = "mac-study-demo-state";
 
@@ -214,6 +219,13 @@ export function StatisticsDashboard() {
   );
   const showAverage = average.seconds >= 60;
   const showSummaryDetails = Boolean(comparison.label) || showAverage;
+  const dailyStudySeconds = useMemo(
+    () =>
+      isLoaded && useDemoData
+        ? buildDemoDailyStudySeconds(now)
+        : buildDailyStudySeconds({ activeSession, now, sessions }),
+    [activeSession, isLoaded, now, sessions, useDemoData],
+  );
 
   return (
     <div className="space-y-5 pt-1 lg:pt-0">
@@ -314,6 +326,8 @@ export function StatisticsDashboard() {
           topSubject={topSubject}
         />
       )}
+
+      <StudyHeatmap dailySeconds={dailyStudySeconds} />
     </div>
   );
 }
@@ -725,6 +739,45 @@ function getStudyEntries({
   }
 
   return entries;
+}
+
+function buildDailyStudySeconds({
+  activeSession,
+  now,
+  sessions,
+}: {
+  activeSession: ActiveSession | null;
+  now: Date;
+  sessions: StoredSession[];
+}) {
+  const totals = sessions.reduce<Record<string, number>>((result, session) => {
+    const key = getLocalDateKey(new Date(session.startedAt));
+    result[key] = (result[key] ?? 0) + getSessionSeconds(session);
+    return result;
+  }, {});
+
+  if (activeSession) {
+    const key = getLocalDateKey(new Date(activeSession.startedAt));
+    totals[key] =
+      (totals[key] ?? 0) + getElapsedSeconds(activeSession.startedAt, now);
+  }
+
+  return totals;
+}
+
+function buildDemoDailyStudySeconds(now: Date) {
+  const totals: Record<string, number> = {};
+
+  for (let offset = 0; offset < 364; offset += 1) {
+    const date = addDays(startOfDay(now), -offset);
+    const pattern = (offset * 17 + date.getMonth() * 7) % 11;
+
+    if (pattern < 5) {
+      totals[getLocalDateKey(date)] = (pattern + 1) * 18 * 60;
+    }
+  }
+
+  return totals;
 }
 
 function getPeriodRange(period: StatsPeriod, now: Date) {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { Check, CircleStop, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { CircleStop, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
 import { PaginatedList } from "@/components/paginated-list";
@@ -35,14 +35,17 @@ import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "mac-study-demo-state";
 const UNLINKED_UNIT_VALUE = "__unlinked__";
-const SUBJECT_COLORS = [
-  "#FFE330",
-  "#6CB6FF",
-  "#42D392",
-  "#FF8A65",
-  "#B388FF",
-  "#F06292",
-];
+const SUBJECT_COLOR_OPTIONS = [
+  { label: "Yellow", swatchColor: "#FFE330", value: "#FFE330" },
+  { label: "Blue", swatchColor: "#6CB6FF", value: "#6CB6FF" },
+  { label: "Green", swatchColor: "#42D392", value: "#42D392" },
+  { label: "Orange", swatchColor: "#FF8A65", value: "#FF8A65" },
+  { label: "Purple", swatchColor: "#B388FF", value: "#B388FF" },
+  { label: "Pink", swatchColor: "#F06292", value: "#F06292" },
+] as const;
+const SUBJECT_COLORS: string[] = SUBJECT_COLOR_OPTIONS.map(
+  (option) => option.value,
+);
 const defaultStudySubjects = defaultSubjects.map((subject) => ({
   id: subject.id,
   name: subject.code,
@@ -104,6 +107,11 @@ export function TimerDashboard() {
   >(null);
   const [dataMode, setDataMode] = useState<DataMode>("local");
   const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
+  const [subjectSaveError, setSubjectSaveError] = useState<string | null>(null);
+  const [subjectToastMessage, setSubjectToastMessage] = useState<string | null>(
+    null,
+  );
+  const isSavingSubjectsRef = useRef(false);
 
   const applyRemoteTimerState = useCallback((remoteState: RemoteTimerState) => {
     setSubjects(remoteState.subjects);
@@ -212,6 +220,7 @@ export function TimerDashboard() {
     }
 
     return subscribeToRemoteAppChanges(remoteClient, () => {
+      if (isSavingSubjectsRef.current) return;
       void refreshRemoteTimer(remoteClient);
     });
   }, [refreshRemoteTimer, remoteClient]);
@@ -308,6 +317,7 @@ export function TimerDashboard() {
 
   function openSubjectEditor(subjectId: string) {
     setDraftSubjects(subjects);
+    setSubjectSaveError(null);
     setInitialEditingSubjectId(subjectId);
     setIsEditingSubjects(true);
   }
@@ -358,28 +368,49 @@ export function TimerDashboard() {
     });
   }
 
-  async function saveSubjects() {
+  function saveSubjects() {
     const cleanedSubjects = normalizeSubjects(draftSubjects);
     const subjectIds = new Set(cleanedSubjects.map((subject) => subject.id));
+    const previousSubjects = subjects;
+    const previousActiveSession = activeSession;
+    const removedActiveSubject = Boolean(
+      activeSession?.subjectId && !subjectIds.has(activeSession.subjectId),
+    );
 
-    if (dataMode === "remote" && remoteClient) {
-      const savedSubjects = await saveRemoteSubjects({
-        subjects: cleanedSubjects,
-        supabase: remoteClient,
-      });
+    setSubjects(cleanedSubjects);
+    setDraftSubjects(cleanedSubjects);
+    setSubjectSaveError(null);
+    setSubjectToastMessage("Changes saved");
 
-      setSubjects(savedSubjects);
-      setDraftSubjects(savedSubjects);
-    } else {
-      setSubjects(cleanedSubjects);
-    }
-
-    if (activeSession?.subjectId && !subjectIds.has(activeSession.subjectId)) {
+    if (removedActiveSubject) {
       setActiveSession(null);
     }
 
     setIsEditingSubjects(false);
     setInitialEditingSubjectId(null);
+
+    if (dataMode !== "remote" || !remoteClient) return;
+
+    isSavingSubjectsRef.current = true;
+    void saveRemoteSubjects({
+      subjects: cleanedSubjects,
+      supabase: remoteClient,
+    })
+      .then((savedSubjects) => {
+        setSubjects(savedSubjects);
+        setDraftSubjects(savedSubjects);
+      })
+      .catch(() => {
+        setSubjects(previousSubjects);
+        setDraftSubjects(cleanedSubjects);
+        if (removedActiveSubject) setActiveSession(previousActiveSession);
+        setSubjectToastMessage(null);
+        setSubjectSaveError("Changes could not be saved. Try again.");
+        setIsEditingSubjects(true);
+      })
+      .finally(() => {
+        isSavingSubjectsRef.current = false;
+      });
   }
 
   return (
@@ -421,6 +452,7 @@ export function TimerDashboard() {
             className="mac-focus inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)]"
             onClick={() => {
               setDraftSubjects(subjects);
+              setSubjectSaveError(null);
               setInitialEditingSubjectId(null);
               setIsEditingSubjects(true);
             }}
@@ -506,6 +538,7 @@ export function TimerDashboard() {
           onRestore={restoreDraftSubject}
           onSave={saveSubjects}
           onUpdate={updateDraftSubject}
+          saveError={subjectSaveError}
           unitEnrollments={unitEnrollments}
         />
       ) : null}
@@ -517,6 +550,11 @@ export function TimerDashboard() {
           subjects={subjects}
         />
       ) : null}
+
+      <TransientToast
+        message={subjectToastMessage}
+        onDismiss={() => setSubjectToastMessage(null)}
+      />
     </div>
   );
 }
@@ -530,6 +568,7 @@ function SubjectEditor({
   onRestore,
   onSave,
   onUpdate,
+  saveError,
   unitEnrollments,
 }: {
   draftSubjects: StudySubject[];
@@ -540,6 +579,7 @@ function SubjectEditor({
   onRestore: (subject: StudySubject, index: number) => void;
   onSave: () => void;
   onUpdate: (subjectId: string, updates: Partial<StudySubject>) => void;
+  saveError: string | null;
   unitEnrollments: UnitEnrollment[];
 }) {
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(
@@ -625,6 +665,15 @@ function SubjectEditor({
         onClose={onClose}
         title={editingSubject ? "Subject details" : "Edit subjects"}
       >
+        {saveError ? (
+          <p
+            className="rounded-lg border border-[rgb(255_107_107/0.3)] bg-[rgb(255_107_107/0.07)] px-3 py-2 text-sm font-medium text-[var(--color-danger)]"
+            role="alert"
+          >
+            {saveError}
+          </p>
+        ) : null}
+
         {editingSubject ? (
           <>
             <label className="block text-sm font-medium">
@@ -667,40 +716,15 @@ function SubjectEditor({
             </div>
 
             <div>
-              <p className="text-sm font-medium">Play colour</p>
-              <div className="mt-2 grid grid-cols-6 gap-2 rounded-2xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.02)] p-2">
-                {SUBJECT_COLORS.map((color) => {
-                  const selected = color === editingSubject.color;
-
-                  return (
-                    <button
-                      aria-pressed={selected}
-                      aria-label={`Use colour ${color}`}
-                      className={cn(
-                        "mac-focus flex aspect-square min-w-0 items-center justify-center rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:brightness-110",
-                        selected
-                          ? "border-white/80 ring-2 ring-white/80 ring-offset-2 ring-offset-[var(--color-background)]"
-                          : "border-white/10",
-                      )}
-                      key={color}
-                      onClick={() => onUpdate(editingSubject.id, { color })}
-                      style={{ backgroundColor: color }}
-                      type="button"
-                    >
-                      {selected ? (
-                        <span
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/20"
-                          style={{
-                            color: color === "#FFE330" ? "#141414" : "white",
-                          }}
-                        >
-                          <Check aria-hidden size={13} strokeWidth={3} />
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
+              <p className="mb-2 text-sm font-medium">Play colour</p>
+              <CustomSelect
+                ariaLabel={`Play colour for ${editingSubject.name}`}
+                onChange={(color) =>
+                  onUpdate(editingSubject.id, { color: String(color) })
+                }
+                options={SUBJECT_COLOR_OPTIONS}
+                value={editingSubject.color}
+              />
             </div>
 
             <button
@@ -709,7 +733,6 @@ function SubjectEditor({
               onClick={() => deleteSubject(editingSubject.id)}
               type="button"
             >
-              <Trash2 aria-hidden size={16} />
               Delete subject
             </button>
           </>

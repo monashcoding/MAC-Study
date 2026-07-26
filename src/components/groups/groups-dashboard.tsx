@@ -62,7 +62,10 @@ import { useNudgeQueue } from "@/components/social/use-nudge-queue";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
 import { formatDuration, isLongSession } from "@/lib/timer";
 import { cn } from "@/lib/utils";
-import { GroupChat } from "@/components/groups/group-chat";
+import {
+  GroupChat,
+  prefetchRemoteGroupChat,
+} from "@/components/groups/group-chat";
 
 const rankingWindows = [
   { id: "day", label: "Day" },
@@ -250,6 +253,13 @@ export function GroupsDashboard() {
   const selectedGroup = socialState.groups.find(
     (group) => group.id === selectedGroupId,
   );
+  useEffect(() => {
+    if (!remoteClient || !selectedGroupId) return;
+
+    void prefetchRemoteGroupChat(remoteClient, selectedGroupId).catch(
+      () => undefined,
+    );
+  }, [remoteClient, selectedGroupId]);
   useAppHeaderDetail("/app/groups", selectedGroup?.name ?? null);
   const friendsById = useMemo(
     () => new Map(socialState.friends.map((friend) => [friend.id, friend])),
@@ -639,6 +649,20 @@ export function GroupsDashboard() {
       ? nudgeQueue.getState(`${selectedGroup.id}:${selectedMember.id}`)
       : null;
 
+    if (groupView === "chat") {
+      return (
+        <GroupChat
+          currentUserId={currentUserId}
+          groupId={selectedGroup.id}
+          groupName={selectedGroup.name}
+          key={selectedGroup.id}
+          members={members}
+          onBack={() => setGroupView("class")}
+          remoteClient={remoteClient}
+        />
+      );
+    }
+
     return (
       <div className="space-y-4 pb-24 pt-1 lg:space-y-5 lg:pb-0 lg:pt-0">
         <section className="space-y-3">
@@ -760,16 +784,6 @@ export function GroupsDashboard() {
           </section>
         ) : null}
 
-        {groupView === "chat" ? (
-          <GroupChat
-            currentUserId={currentUserId}
-            groupId={selectedGroup.id}
-            key={selectedGroup.id}
-            members={members}
-            remoteClient={remoteClient}
-          />
-        ) : null}
-
         {selectedMember ? (
           <GroupMemberDialog
             canNudge={
@@ -849,36 +863,34 @@ export function GroupsDashboard() {
           </section>
         ) : null}
 
-        {groupView !== "chat" ? (
-          <div className="fixed inset-x-4 bottom-[calc(var(--mobile-nav-height)+0.75rem)] z-20 mx-auto max-w-lg lg:static lg:inset-x-auto lg:max-w-none lg:pt-2">
-            <button
-              className={cn(
-                "mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold shadow-[0_16px_34px_rgb(0_0_0/0.32)] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-55",
-                activeInSelectedGroup
-                  ? "bg-[var(--color-danger)] text-white"
-                  : "bg-[var(--color-mac-yellow)] text-[#141414]",
-              )}
-              disabled={isStudyingElsewhere}
-              onClick={() =>
-                void (activeInSelectedGroup
-                  ? stopGroupStudy()
-                  : setIsChoosingStudy(true))
-              }
-              type="button"
-            >
-              {activeInSelectedGroup ? (
-                <CircleStop aria-hidden size={18} />
-              ) : (
-                <Play aria-hidden size={18} />
-              )}
-              {activeInSelectedGroup
-                ? "Stop study"
-                : isStudyingElsewhere
-                  ? "Studying in another session"
-                  : "Start study"}
-            </button>
-          </div>
-        ) : null}
+        <div className="fixed inset-x-4 bottom-[calc(var(--mobile-nav-height)+0.75rem)] z-20 mx-auto max-w-lg lg:static lg:inset-x-auto lg:max-w-none lg:pt-2">
+          <button
+            className={cn(
+              "mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold shadow-[0_16px_34px_rgb(0_0_0/0.32)] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-55",
+              activeInSelectedGroup
+                ? "bg-[var(--color-danger)] text-white"
+                : "bg-[var(--color-mac-yellow)] text-[#141414]",
+            )}
+            disabled={isStudyingElsewhere}
+            onClick={() =>
+              void (activeInSelectedGroup
+                ? stopGroupStudy()
+                : setIsChoosingStudy(true))
+            }
+            type="button"
+          >
+            {activeInSelectedGroup ? (
+              <CircleStop aria-hidden size={18} />
+            ) : (
+              <Play aria-hidden size={18} />
+            )}
+            {activeInSelectedGroup
+              ? "Stop study"
+              : isStudyingElsewhere
+                ? "Studying in another session"
+                : "Start study"}
+          </button>
+        </div>
       </div>
     );
   }

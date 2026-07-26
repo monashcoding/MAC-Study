@@ -8,18 +8,10 @@ import {
   type ReactNode,
 } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  ArrowLeft,
-  Check,
-  ChevronDown,
-  Clock3,
-  Plus,
-  Send,
-  Trash2,
-  Users,
-} from "lucide-react";
+import { ArrowLeft, Check, Clock3, Plus, Send, Users } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { PaginatedList } from "@/components/paginated-list";
+import { StudyHeatmap } from "@/components/study-heatmap";
 import {
   PROFILE_COLORS,
   SOCIAL_STORAGE_KEY,
@@ -57,7 +49,15 @@ export function FriendsDashboard() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
-  const [inviteGroupId, setInviteGroupId] = useState("");
+  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
+  const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
+  const [isRemovingFriend, setIsRemovingFriend] = useState(false);
+  const [invitedGroupIds, setInvitedGroupIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [pendingInviteGroupIds, setPendingInviteGroupIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [friendName, setFriendName] = useState("");
   const [friendHandle, setFriendHandle] = useState("");
   const [friendColor, setFriendColor] = useState<string>(PROFILE_COLORS[1]);
@@ -413,46 +413,89 @@ export function FriendsDashboard() {
   }
 
   async function removeFriend(friendId: string) {
-    if (remoteClient) {
-      await removeRemoteFriend({ friendId, supabase: remoteClient });
-      setSelectedFriendId(null);
-      await refreshRemoteSocial(remoteClient);
-      return;
-    }
+    setIsRemovingFriend(true);
+    setFeedback(null);
 
-    setSocialState((current) => ({
-      friends: current.friends.filter((friend) => friend.id !== friendId),
-      groups: current.groups.map((group) => ({
-        ...group,
-        memberIds: group.memberIds.filter((memberId) => memberId !== friendId),
-      })),
-    }));
-    setSelectedFriendId(null);
+    try {
+      if (remoteClient) {
+        await removeRemoteFriend({ friendId, supabase: remoteClient });
+        setIsRemoveDialogOpen(false);
+        setSelectedFriendId(null);
+        await refreshRemoteSocial(remoteClient);
+        return;
+      }
+
+      setSocialState((current) => ({
+        friends: current.friends.filter((friend) => friend.id !== friendId),
+        groups: current.groups.map((group) => ({
+          ...group,
+          memberIds: group.memberIds.filter(
+            (memberId) => memberId !== friendId,
+          ),
+        })),
+      }));
+      setIsRemoveDialogOpen(false);
+      setSelectedFriendId(null);
+    } catch (error) {
+      setFeedback(getErrorMessage(error, "Could not remove that friend."));
+    } finally {
+      setIsRemovingFriend(false);
+    }
   }
 
-  async function inviteFriendToGroup(friendId: string) {
-    if (!inviteGroupId) {
+  async function inviteFriendToGroup(friendId: string, groupId: string) {
+    if (invitedGroupIds.has(groupId) || pendingInviteGroupIds.has(groupId)) {
       return;
     }
 
-    if (remoteClient) {
-      await inviteRemoteFriendToGroup({
-        friendId,
-        groupId: inviteGroupId,
-        supabase: remoteClient,
-      });
-      await refreshRemoteSocial(remoteClient);
-      return;
-    }
+    setFeedback(null);
+    setInvitedGroupIds((current) => new Set(current).add(groupId));
+    setPendingInviteGroupIds((current) => new Set(current).add(groupId));
 
     setSocialState((current) => ({
       ...current,
       groups: current.groups.map((group) =>
-        group.id === inviteGroupId
+        group.id === groupId
           ? { ...group, memberIds: uniqueIds([...group.memberIds, friendId]) }
           : group,
       ),
     }));
+
+    try {
+      if (remoteClient) {
+        await inviteRemoteFriendToGroup({
+          friendId,
+          groupId,
+          supabase: remoteClient,
+        });
+      }
+    } catch (error) {
+      setInvitedGroupIds((current) => {
+        const next = new Set(current);
+        next.delete(groupId);
+        return next;
+      });
+      setSocialState((current) => ({
+        ...current,
+        groups: current.groups.map((group) =>
+          group.id === groupId
+            ? {
+                ...group,
+                memberIds: group.memberIds.filter(
+                  (memberId) => memberId !== friendId,
+                ),
+              }
+            : group,
+        ),
+      }));
+      setFeedback(getErrorMessage(error, "Could not send that group invite."));
+    } finally {
+      setPendingInviteGroupIds((current) => {
+        const next = new Set(current);
+        next.delete(groupId);
+        return next;
+      });
+    }
   }
 
   function nudgeFriend(friendId: string) {
@@ -464,12 +507,24 @@ export function FriendsDashboard() {
 
   if (selectedFriend) {
     const nudgeState = nudgeQueue.getState(selectedFriend.id);
-    const selectedGroup = socialState.groups.find(
-      (group) => group.id === inviteGroupId,
-    );
-    const alreadyInSelectedGroup = Boolean(
-      selectedGroup?.memberIds.includes(selectedFriend.id),
-    );
+    const timeStats = [
+      {
+        label: "Today",
+        value: getLiveRankingSeconds(selectedFriend, "day", now),
+      },
+      {
+        label: "Week",
+        value: getLiveRankingSeconds(selectedFriend, "week", now),
+      },
+      {
+        label: "Month",
+        value: getLiveRankingSeconds(selectedFriend, "month", now),
+      },
+      {
+        label: "All time",
+        value: getLiveRankingSeconds(selectedFriend, "allTime", now),
+      },
+    ];
 
     return (
       <div className="space-y-5 pt-1">
@@ -508,65 +563,102 @@ export function FriendsDashboard() {
           </div>
         </section>
 
-        <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <ProfileStat
-            label="Today"
-            value={formatDuration(
-              getLiveRankingSeconds(selectedFriend, "day", now),
-            )}
-          />
-          <ProfileStat
-            label="Week"
-            value={formatDuration(
-              getLiveRankingSeconds(selectedFriend, "week", now),
-            )}
-          />
-          <ProfileStat
-            label="Month"
-            value={formatDuration(
-              getLiveRankingSeconds(selectedFriend, "month", now),
-            )}
-          />
-          <ProfileStat
-            label="All time"
-            value={formatDuration(
-              getLiveRankingSeconds(selectedFriend, "allTime", now),
-            )}
-          />
-        </section>
-
-        <section className="space-y-3">
-          <h3 className="text-lg font-semibold">Groups</h3>
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-            <GroupPicker
-              groups={socialState.groups}
-              onChange={setInviteGroupId}
-              value={inviteGroupId}
-            />
-            <button
-              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
-              disabled={!inviteGroupId || alreadyInSelectedGroup}
-              onClick={() => void inviteFriendToGroup(selectedFriend.id)}
-              type="button"
-            >
-              {alreadyInSelectedGroup ? (
-                <Check aria-hidden size={17} />
-              ) : (
-                <Send aria-hidden size={17} />
-              )}
-              {alreadyInSelectedGroup ? "Invited" : "Invite"}
-            </button>
+        <section>
+          <h3 className="mb-3 text-sm font-semibold text-[var(--color-text-muted)]">
+            Time studied
+          </h3>
+          <div className="grid grid-cols-4 divide-x divide-[rgb(255_255_255/0.08)] rounded-lg border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.02)]">
+            {timeStats.map((stat) => (
+              <div className="min-w-0 px-2 py-3 text-center" key={stat.label}>
+                <p className="truncate text-sm font-semibold tabular-nums">
+                  {formatCompactStudyTime(stat.value)}
+                </p>
+                <p className="mt-1 truncate text-[10px] font-medium text-[var(--color-text-muted)] sm:text-xs">
+                  {stat.label}
+                </p>
+              </div>
+            ))}
           </div>
         </section>
 
-        <button
-          className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[rgb(255_107_107/0.45)] px-3 text-sm font-semibold text-[var(--color-danger)]"
-          onClick={() => void removeFriend(selectedFriend.id)}
-          type="button"
-        >
-          <Trash2 aria-hidden size={16} />
-          Remove friend
-        </button>
+        <StudyHeatmap
+          dailySeconds={selectedFriend.dailyStudySeconds ?? {}}
+          title={`${selectedFriend.name}'s activity`}
+        />
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            className="mac-focus h-11 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+            onClick={() => setIsInviteDialogOpen(true)}
+            type="button"
+          >
+            Invite to group
+          </button>
+          <button
+            className="mac-focus h-11 rounded-md border border-[rgb(255_107_107/0.45)] px-4 text-sm font-semibold text-[var(--color-danger)]"
+            onClick={() => setIsRemoveDialogOpen(true)}
+            type="button"
+          >
+            Remove friend
+          </button>
+        </div>
+
+        {feedback ? (
+          <p
+            className="rounded-md bg-[rgb(255_107_107/0.08)] px-3 py-2 text-sm text-[var(--color-danger)]"
+            role="alert"
+          >
+            {feedback}
+          </p>
+        ) : null}
+
+        {isInviteDialogOpen ? (
+          <GroupInviteDialog
+            friend={selectedFriend}
+            groups={socialState.groups}
+            invitedGroupIds={invitedGroupIds}
+            onClose={() => setIsInviteDialogOpen(false)}
+            onInvite={(groupId) =>
+              void inviteFriendToGroup(selectedFriend.id, groupId)
+            }
+            pendingGroupIds={pendingInviteGroupIds}
+          />
+        ) : null}
+
+        {isRemoveDialogOpen ? (
+          <AppDialog
+            bodyClassName="space-y-2"
+            footer={
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  className="mac-focus h-11 rounded-md border border-[var(--color-border)] text-sm font-semibold"
+                  disabled={isRemovingFriend}
+                  onClick={() => setIsRemoveDialogOpen(false)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="mac-focus h-11 rounded-md border border-[rgb(255_107_107/0.45)] text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
+                  disabled={isRemovingFriend}
+                  onClick={() => void removeFriend(selectedFriend.id)}
+                  type="button"
+                >
+                  {isRemovingFriend ? "Removing…" : "Remove friend"}
+                </button>
+              </div>
+            }
+            maxWidthClassName="max-w-sm"
+            onClose={() => {
+              if (!isRemovingFriend) setIsRemoveDialogOpen(false);
+            }}
+            title={`Remove ${selectedFriend.name}?`}
+          >
+            <p className="text-sm leading-6 text-[var(--color-text-muted)]">
+              You will both disappear from each other&apos;s friends lists.
+            </p>
+          </AppDialog>
+        ) : null}
       </div>
     );
   }
@@ -656,7 +748,10 @@ export function FriendsDashboard() {
                 key={friend.id}
                 onClick={() => {
                   setSelectedFriendId(friend.id);
-                  setInviteGroupId("");
+                  setInvitedGroupIds(new Set());
+                  setPendingInviteGroupIds(new Set());
+                  setIsInviteDialogOpen(false);
+                  setIsRemoveDialogOpen(false);
                 }}
                 type="button"
               >
@@ -997,140 +1092,105 @@ function AddFriendDialog({
   );
 }
 
-function GroupPicker({
+function GroupInviteDialog({
+  friend,
   groups,
-  onChange,
-  value,
+  invitedGroupIds,
+  onClose,
+  onInvite,
+  pendingGroupIds,
 }: {
+  friend: SocialFriend;
   groups: SocialState["groups"];
-  onChange: (groupId: string) => void;
-  value: string;
+  invitedGroupIds: Set<string>;
+  onClose: () => void;
+  onInvite: (groupId: string) => void;
+  pendingGroupIds: Set<string>;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const selectedGroup = groups.find((group) => group.id === value) ?? null;
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    function handlePointerDown(event: PointerEvent) {
-      if (
-        rootRef.current &&
-        event.target instanceof Node &&
-        !rootRef.current.contains(event.target)
-      ) {
-        setIsOpen(false);
-      }
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setIsOpen(false);
-    }
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isOpen]);
-
-  function selectGroup(groupId: string) {
-    onChange(groupId);
-    setIsOpen(false);
-  }
-
   return (
-    <div className="relative" ref={rootRef}>
-      <button
-        aria-expanded={isOpen}
-        aria-haspopup="listbox"
-        className={cn(
-          "mac-focus grid h-12 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-[var(--color-surface)] px-3 text-left transition",
-          isOpen
-            ? "border-[var(--color-mac-yellow)] bg-[var(--color-surface-raised)]"
-            : "border-[var(--color-border)] hover:border-[rgb(255_255_255/0.16)]",
-        )}
-        onClick={() => setIsOpen((current) => !current)}
-        type="button"
-      >
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
-          <Users aria-hidden size={16} />
-        </span>
-        <span className="min-w-0">
-          <span
-            className={cn(
-              "block truncate text-sm font-semibold",
-              selectedGroup
-                ? "text-[var(--color-text)]"
-                : "text-[var(--color-text-muted)]",
-            )}
-          >
-            {selectedGroup?.name ?? "Choose group"}
-          </span>
-          {selectedGroup ? (
-            <span className="block truncate text-xs text-[var(--color-text-muted)]">
-              {selectedGroup.memberIds.length}{" "}
-              {selectedGroup.memberIds.length === 1 ? "member" : "members"}
-            </span>
-          ) : null}
-        </span>
-        <ChevronDown
-          aria-hidden
-          className={cn("transition-transform", isOpen && "rotate-180")}
-          size={17}
-        />
-      </button>
-
-      {isOpen ? (
-        <div
-          className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-30 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-1.5 shadow-[0_18px_50px_rgb(0_0_0/0.45)]"
-          role="listbox"
+    <AppDialog
+      bodyClassName="grid gap-2"
+      closeLabel="Close group invitations"
+      footer={
+        <button
+          className="mac-focus h-11 w-full rounded-md bg-[var(--color-mac-yellow)] text-sm font-semibold text-[#141414]"
+          onClick={onClose}
+          type="button"
         >
-          {groups.length ? (
-            groups.map((group) => {
-              const selected = group.id === value;
+          Done
+        </button>
+      }
+      maxWidthClassName="max-w-md"
+      onClose={onClose}
+      title={`Invite ${friend.name}`}
+    >
+      {groups.length ? (
+        groups.map((group, index) => {
+          const canInvite =
+            group.currentUserRole === "owner" ||
+            group.currentUserRole === "admin";
+          const alreadyMember = group.memberIds.includes(friend.id);
+          const invited = invitedGroupIds.has(group.id);
+          const pending = pendingGroupIds.has(group.id);
+          const disabled = !canInvite || alreadyMember || invited || pending;
 
-              return (
-                <button
-                  aria-selected={selected}
-                  className={cn(
-                    "mac-focus grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2.5 text-left transition",
-                    selected
-                      ? "bg-[rgb(255_227_48/0.1)] text-[var(--color-text)]"
-                      : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]",
-                  )}
-                  key={group.id}
-                  onClick={() => selectGroup(group.id)}
-                  role="option"
-                  type="button"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold">
-                      {group.name}
-                    </span>
-                    <span className="block text-xs text-[var(--color-text-muted)]">
-                      {group.memberIds.length}{" "}
-                      {group.memberIds.length === 1 ? "member" : "members"}
-                    </span>
+          return (
+            <div
+              className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.025)] p-3"
+              key={group.id}
+            >
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+                <Users aria-hidden size={18} />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate font-semibold">
+                  {group.name}
+                </span>
+                <span className="block text-xs text-[var(--color-text-muted)]">
+                  {!canInvite
+                    ? "Leader or moderator required"
+                    : `${group.memberIds.length} ${
+                        group.memberIds.length === 1 ? "member" : "members"
+                      }`}
+                </span>
+              </span>
+              <button
+                className={cn(
+                  "mac-focus h-10 min-w-24 rounded-md px-3 text-xs font-semibold transition disabled:cursor-default",
+                  invited || alreadyMember
+                    ? "border border-[var(--color-border)] text-[var(--color-text-muted)]"
+                    : "bg-[var(--color-mac-yellow)] text-[#141414] disabled:opacity-40",
+                )}
+                data-dialog-autofocus={index === 0 ? "" : undefined}
+                disabled={disabled}
+                onClick={() => onInvite(group.id)}
+                type="button"
+              >
+                {invited ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Check aria-hidden size={14} />
+                    Invite sent
                   </span>
-                  {selected ? (
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414]">
-                      <Check aria-hidden size={13} />
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })
-          ) : (
-            <p className="px-3 py-4 text-center text-sm text-[var(--color-text-muted)]">
-              No groups available
-            </p>
-          )}
-        </div>
-      ) : null}
-    </div>
+                ) : alreadyMember ? (
+                  "Already joined"
+                ) : pending ? (
+                  "Sending…"
+                ) : (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Send aria-hidden size={14} />
+                    Invite
+                  </span>
+                )}
+              </button>
+            </div>
+          );
+        })
+      ) : (
+        <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
+          You are not in any groups yet.
+        </p>
+      )}
+    </AppDialog>
   );
 }
 
@@ -1145,17 +1205,16 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ProfileStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-[rgb(255_255_255/0.035)] px-3 py-3 text-center">
-      <p className="font-mono text-sm font-semibold tabular-nums sm:text-base">
-        {value}
-      </p>
-      <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
-        {label}
-      </p>
-    </div>
-  );
+function formatCompactStudyTime(totalSeconds: number) {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  if (seconds < 60) return `${seconds}s`;
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
 }
 
 function ProfileBadge({
