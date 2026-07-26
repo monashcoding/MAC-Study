@@ -11,7 +11,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   cacheRemoteTimerState,
   getCachedRemoteTimerState,
@@ -45,11 +44,7 @@ const SUBJECT_COLORS = [
   "#B388FF",
   "#F06292",
 ];
-const defaultStudySubjects = defaultSubjects.map((subject) => ({
-  id: subject.id,
-  name: subject.code,
-  color: subject.color,
-})) satisfies StudySubject[];
+const defaultStudySubjects: StudySubject[] = [];
 
 type StudySubject = {
   id: string;
@@ -128,10 +123,10 @@ export function TimerDashboard() {
       } catch {
         setSubjects(defaultStudySubjects);
         setDraftSubjects(defaultStudySubjects);
-        setSessions(makeSeedSessions());
+        setSessions([]);
       }
     } else {
-      setSessions(makeSeedSessions());
+      setSessions([]);
     }
   }, []);
 
@@ -718,33 +713,6 @@ function normalizeSubjects(subjects: StoredSubject[] | undefined) {
     .filter((subject) => subject.name);
 
   return cleaned.length ? cleaned : defaultStudySubjects;
-}
-
-function makeSeedSessions(): StoredSession[] {
-  const now = new Date();
-  const base = new Date(now);
-  base.setHours(9, 10, 0, 0);
-
-  return [
-    {
-      id: "seed-fit3159",
-      subjectId: "fit3159",
-      groupId: "exam-sprint",
-      startedAt: base.toISOString(),
-      endedAt: new Date(base.getTime() + 42 * 60 * 1000).toISOString(),
-      status: "completed",
-      source: "timer",
-    },
-    {
-      id: "seed-fit3077",
-      subjectId: "fit3077",
-      groupId: null,
-      startedAt: new Date(base.getTime() + 60 * 60 * 1000).toISOString(),
-      endedAt: new Date(base.getTime() + 102 * 60 * 1000).toISOString(),
-      status: "completed",
-      source: "timer",
-    },
-  ];
 }
 
 function makeSubjectId() {

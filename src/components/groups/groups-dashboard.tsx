@@ -16,7 +16,6 @@ import {
   X,
 } from "lucide-react";
 import { useAppHeaderDetail } from "@/components/app-header-detail";
-import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   cacheRemoteSocialSnapshot,
   cacheRemoteTimerState,
@@ -73,11 +72,7 @@ const MEMBER_ACTIVE_COLOR = "#ff7a00";
 const MEMBER_INACTIVE_COLOR = "#737b91";
 const emptySocialState: SocialState = { friends: [], groups: [] };
 const TIMER_STORAGE_KEY = "mac-study-demo-state";
-const fallbackStudySubjects = defaultSubjects.map((subject) => ({
-  id: subject.id,
-  name: subject.code,
-  color: subject.color,
-})) satisfies RemoteSubject[];
+const fallbackStudySubjects: RemoteSubject[] = [];
 
 const personIconLabels = {
   "flame-desk": "Flame",

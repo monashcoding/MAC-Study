@@ -1,0 +1,54 @@
+<nav
+  class="fixed inset-x-0 bottom-0 border-t border-[#34342f] bg-[rgba(23,23,23,0.96)] px-2 pb-2 pt-2 text-[#a9a99f]"
+>
+  <div class="mx-auto grid h-[60px] max-w-xl grid-cols-6 gap-1">
+    <a
+      href="#"
+      :class="{ 'border-[#ffe330] bg-[#ffe330] text-[#141414]': activeItem === 'home' }"
+      class="flex flex-col items-center justify-center gap-1 rounded-[14px] border border-transparent text-[10px] font-medium"
+    >
+      <i data-lucide="house" class="h-[22px] w-[22px]"></i>
+      <span>Home</span>
+    </a>
+    <a
+      href="#"
+      :class="{ 'border-[#ffe330] bg-[#ffe330] text-[#141414]': activeItem === 'groups' }"
+      class="flex flex-col items-center justify-center gap-1 rounded-[14px] border border-transparent text-[10px] font-medium"
+    >
+      <i data-lucide="users" class="h-[22px] w-[22px]"></i>
+      <span>Group</span>
+    </a>
+    <a
+      href="#"
+      :class="{ 'border-[#ffe330] bg-[#ffe330] text-[#141414]': activeItem === 'friends' }"
+      class="flex flex-col items-center justify-center gap-1 rounded-[14px] border border-transparent text-[10px] font-medium"
+    >
+      <i data-lucide="user-round" class="h-[22px] w-[22px]"></i>
+      <span>Friends</span>
+    </a>
+    <a
+      href="#"
+      :class="{ 'border-[#ffe330] bg-[#ffe330] text-[#141414]': activeItem === 'units' }"
+      class="flex flex-col items-center justify-center gap-1 rounded-[14px] border border-transparent text-[10px] font-medium"
+    >
+      <i data-lucide="book-open" class="h-[22px] w-[22px]"></i>
+      <span>Units</span>
+    </a>
+    <a
+      href="#"
+      :class="{ 'border-[#ffe330] bg-[#ffe330] text-[#141414]': activeItem === 'stats' }"
+      class="flex flex-col items-center justify-center gap-1 rounded-[14px] border border-transparent text-[10px] font-medium"
+    >
+      <i data-lucide="bar-chart-3" class="h-[22px] w-[22px]"></i>
+      <span>Stats</span>
+    </a>
+    <a
+      href="#"
+      :class="{ 'border-[#ffe330] bg-[#ffe330] text-[#141414]': activeItem === 'profile' }"
+      class="flex flex-col items-center justify-center gap-1 rounded-[14px] border border-transparent text-[10px] font-medium"
+    >
+      <i data-lucide="settings" class="h-[22px] w-[22px]"></i>
+      <span>Profile</span>
+    </a>
+  </div>
+</nav>

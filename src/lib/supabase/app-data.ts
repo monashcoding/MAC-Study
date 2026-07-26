@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getCurrentStudyUserId } from "@/lib/auth/mac-auth-browser";
-import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   GROUP_ICON_KEYS,
   PERSON_ICON_KEYS,
@@ -227,7 +226,7 @@ export async function fetchRemoteTimerState(
     return null;
   }
 
-  const subjects = await ensureRemoteSubjects(supabase, userId);
+  const subjects = await fetchRemoteSubjects(supabase, userId);
   const { data, error } = await supabase
     .from("study_sessions")
     .select(
@@ -1037,7 +1036,7 @@ export function subscribeToRemoteAppChanges(
   };
 }
 
-async function ensureRemoteSubjects(supabase: SupabaseClient, userId: string) {
+async function fetchRemoteSubjects(supabase: SupabaseClient, userId: string) {
   const { data: existing, error: fetchError } = await supabase
     .from("subjects")
     .select("id, code, name, color, unit_offering_id")
@@ -1049,26 +1048,7 @@ async function ensureRemoteSubjects(supabase: SupabaseClient, userId: string) {
     throw fetchError;
   }
 
-  if (existing?.length) {
-    return (existing as SubjectRow[]).map(subjectFromRow);
-  }
-
-  const seedRows = defaultSubjects.map((subject) => ({
-    user_id: userId,
-    code: subject.code,
-    name: subject.code,
-    color: subject.color,
-  }));
-  const { data: inserted, error: insertError } = await supabase
-    .from("subjects")
-    .insert(seedRows)
-    .select("id, code, name, color, unit_offering_id");
-
-  if (insertError) {
-    throw insertError;
-  }
-
-  return ((inserted ?? []) as SubjectRow[]).map(subjectFromRow);
+  return ((existing ?? []) as SubjectRow[]).map(subjectFromRow);
 }
 
 function subjectFromRow(row: SubjectRow): RemoteSubject {

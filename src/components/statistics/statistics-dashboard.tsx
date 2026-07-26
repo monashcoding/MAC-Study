@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, CalendarDays } from "lucide-react";
-import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
   cacheRemoteTimerState,
   getCachedRemoteTimerState,
@@ -56,17 +55,9 @@ type ChartBucket = {
   end: Date;
 };
 
-const fallbackSubjects = defaultSubjects.map((subject) => ({
-  id: subject.id,
-  name: subject.code,
-  color: subject.color,
-})) satisfies StudySubject[];
+const fallbackSubjects: StudySubject[] = [];
 
-const fallbackSubjectTotals: Record<string, number> = {
-  fit3159: 2 * 60 * 60 + 20 * 60,
-  fit3077: 74 * 60,
-  fit2004: 52 * 60,
-};
+const fallbackSubjectTotals: Record<string, number> = {};
 
 const periodOptions = [
   { id: "week", label: "Weekly" },
