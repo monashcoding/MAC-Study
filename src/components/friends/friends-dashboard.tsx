@@ -786,7 +786,12 @@ export function FriendsDashboard() {
         <SummaryStat label="Groups" value={`${socialState.groups.length}`} />
       </section>
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-medium text-[var(--color-text-muted)]">
+          {friendList.length
+            ? `${friendList.length} ${friendList.length === 1 ? "friend" : "friends"}`
+            : "No friends yet"}
+        </p>
         <button
           className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] transition active:scale-[0.98]"
           onClick={() => setIsAdding(true)}
@@ -848,12 +853,6 @@ export function FriendsDashboard() {
 
       {activeTab === "friends" ? (
         <section className="space-y-3" role="tabpanel">
-          <p className="text-sm font-medium text-[var(--color-text-muted)]">
-            {friendList.length
-              ? `${friendList.length} ${friendList.length === 1 ? "friend" : "friends"}`
-              : "Add someone to get started"}
-          </p>
-
           <PaginatedList
             className="grid gap-2 lg:grid-cols-2 lg:gap-3"
             items={friendList}
@@ -1114,6 +1113,9 @@ function AddFriendDialog({
   onShowRequests: () => void;
   remoteCandidates: RemoteFriendCandidate[] | null;
 }) {
+  const [revealedCandidateIds, setRevealedCandidateIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const isDirty =
     remoteCandidates === null &&
     Boolean(name.trim() || handle.trim() || color !== PROFILE_COLORS[1]);
@@ -1150,13 +1152,38 @@ function AddFriendDialog({
                 key={candidate.id}
               >
                 <ProfileBadge friend={candidate} />
-                <div className="min-w-0">
+                <button
+                  aria-expanded={revealedCandidateIds.has(candidate.id)}
+                  className="mac-focus min-w-0 rounded-md text-left"
+                  onClick={() =>
+                    setRevealedCandidateIds((current) => {
+                      const next = new Set(current);
+                      if (next.has(candidate.id)) {
+                        next.delete(candidate.id);
+                      } else {
+                        next.add(candidate.id);
+                      }
+                      return next;
+                    })
+                  }
+                  title={
+                    revealedCandidateIds.has(candidate.id)
+                      ? candidate.name
+                      : `Show ${candidate.handle}'s display name`
+                  }
+                  type="button"
+                >
                   <p className="truncate font-semibold">{candidate.handle}</p>
-                  <p className="truncate text-sm text-[var(--color-text-muted)]">
+                  {revealedCandidateIds.has(candidate.id) ? (
+                    <p className="truncate text-sm font-medium text-[var(--color-text)]">
+                      {candidate.name}
+                    </p>
+                  ) : null}
+                  <p className="truncate text-xs text-[var(--color-text-muted)]">
                     {candidate.mutualFriendCount} mutual{" "}
                     {candidate.mutualFriendCount === 1 ? "friend" : "friends"}
                   </p>
-                </div>
+                </button>
                 {candidate.requestDirection === "incoming" ? (
                   <button
                     className="mac-focus h-11 rounded-lg border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)]"

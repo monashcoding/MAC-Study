@@ -47,10 +47,19 @@ export async function getPushStatus(): Promise<PushStatus> {
     const body = (await response.json()) as { publicKey?: string };
     if (!body.publicKey) throw new Error("Push key unavailable.");
 
-    const registration = await navigator.serviceWorker.getRegistration();
-    const subscription = registration
-      ? await registration.pushManager.getSubscription()
-      : null;
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    let subscription: PushSubscription | null = null;
+
+    for (const registration of registrations) {
+      subscription = await registration.pushManager.getSubscription();
+      if (subscription) break;
+    }
+
+    if (!subscription && Notification.permission === "granted") {
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      subscription = await registration.pushManager.getSubscription();
+    }
+
     const enabled =
       Boolean(subscription) &&
       pushSubscriptionUsesKey(subscription!, body.publicKey);
@@ -107,6 +116,8 @@ export async function enablePushNotifications(publicKey?: string | null) {
   });
 
   if (!response.ok) throw new Error("Could not save this device.");
+
+  window.dispatchEvent(new Event("mac-push-status-changed"));
 }
 
 function urlBase64ToUint8Array(value: string) {
@@ -124,7 +135,7 @@ function pushSubscriptionUsesKey(
   publicKey: string,
 ) {
   const subscriptionKey = subscription.options.applicationServerKey;
-  if (!subscriptionKey) return false;
+  if (!subscriptionKey) return true;
 
   const expectedKey = urlBase64ToUint8Array(publicKey);
   const currentKey = new Uint8Array(subscriptionKey);

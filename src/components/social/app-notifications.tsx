@@ -53,9 +53,17 @@ export function AppNotifications({ userId }: { userId: string }) {
       return;
     }
 
+    if (
+      pathname === "/app/groups" &&
+      notification.title === "Group invitation"
+    ) {
+      window.dispatchEvent(new Event("mac-open-group-requests"));
+      return;
+    }
+
     router.push(
       notification.title === "Group invitation"
-        ? "/app/groups"
+        ? "/app/groups?tab=requests"
         : notification.type === "friend_request"
           ? "/app/friends?tab=requests"
           : "/app/friends",

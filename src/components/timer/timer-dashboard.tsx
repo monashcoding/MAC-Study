@@ -454,6 +454,20 @@ export function TimerDashboard() {
     return subjectId;
   }
 
+  function openNewSubjectEditor() {
+    const subjectId = makeSubjectId();
+    const nextSubject: StudySubject = {
+      id: subjectId,
+      name: `Subject ${subjects.length + 1}`,
+      color: SUBJECT_COLORS[subjects.length % SUBJECT_COLORS.length],
+    };
+
+    setDraftSubjects([...subjects, nextSubject]);
+    setSubjectSaveError(null);
+    setInitialEditingSubjectId(subjectId);
+    setIsEditingSubjects(true);
+  }
+
   function updateDraftSubject(
     subjectId: string,
     updates: Partial<StudySubject>,
@@ -466,13 +480,9 @@ export function TimerDashboard() {
   }
 
   function deleteDraftSubject(subjectId: string) {
-    setDraftSubjects((current) => {
-      if (current.length <= 1) {
-        return current;
-      }
-
-      return current.filter((subject) => subject.id !== subjectId);
-    });
+    setDraftSubjects((current) =>
+      current.filter((subject) => subject.id !== subjectId),
+    );
   }
 
   function restoreDraftSubject(subject: StudySubject, index: number) {
@@ -575,6 +585,11 @@ export function TimerDashboard() {
             <button
               className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)] sm:w-auto sm:px-3"
               onClick={() => {
+                if (!subjects.length) {
+                  openNewSubjectEditor();
+                  return;
+                }
+
                 setDraftSubjects(subjects);
                 setSubjectSaveError(null);
                 setInitialEditingSubjectId(null);
@@ -582,18 +597,27 @@ export function TimerDashboard() {
               }}
               type="button"
             >
-              <Pencil aria-hidden size={16} />
-              <span className="hidden sm:inline">Edit</span>
-              <span className="sr-only sm:hidden">Edit subjects</span>
+              {subjects.length ? (
+                <Pencil aria-hidden size={16} />
+              ) : (
+                <Plus aria-hidden size={16} />
+              )}
+              <span className="hidden sm:inline">
+                {subjects.length ? "Edit" : "Add"}
+              </span>
+              <span className="sr-only sm:hidden">
+                {subjects.length ? "Edit subjects" : "Add subject"}
+              </span>
             </button>
           </div>
         </div>
 
-        <PaginatedList
-          className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)] lg:mt-4 lg:rounded-md lg:border lg:bg-[rgb(255_255_255/0.02)] lg:px-3"
-          items={subjects}
-          pageSize={12}
-          renderItem={(subject) => {
+        {subjects.length ? (
+          <PaginatedList
+            className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)] lg:mt-4 lg:rounded-md lg:border lg:bg-[rgb(255_255_255/0.02)] lg:px-3"
+            items={subjects}
+            pageSize={12}
+            renderItem={(subject) => {
             const isActive = activeSession?.subjectId === subject.id;
             const subjectSeconds =
               (subjectTotals[subject.id] ?? 0) +
@@ -646,9 +670,25 @@ export function TimerDashboard() {
                 </button>
               </div>
             );
-          }}
-          resetKey="timer-subjects"
-        />
+            }}
+            resetKey="timer-subjects"
+          />
+        ) : (
+          <div className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-8 text-center">
+            <p className="font-semibold">No subjects yet</p>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Add one when you are ready to start studying.
+            </p>
+            <button
+              className="mac-focus mt-4 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+              onClick={openNewSubjectEditor}
+              type="button"
+            >
+              <Plus aria-hidden size={17} />
+              Add subject
+            </button>
+          </div>
+        )}
       </section>
 
       {isEditingSubjects ? (
@@ -1180,7 +1220,6 @@ function SubjectEditor({
 
             <button
               className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[rgb(255_107_107/0.35)] bg-[rgb(255_107_107/0.035)] px-3 text-sm font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-35"
-              disabled={draftSubjects.length <= 1}
               onClick={() => deleteSubject(editingSubject.id)}
               type="button"
             >
@@ -1216,7 +1255,6 @@ function SubjectEditor({
                   </button>
                   <button
                     className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[rgb(255_107_107/0.35)] text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:cursor-not-allowed disabled:opacity-30"
-                    disabled={draftSubjects.length <= 1}
                     onClick={() => quickDeleteSubject(subject)}
                     type="button"
                   >

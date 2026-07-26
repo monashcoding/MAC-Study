@@ -14,6 +14,11 @@ const inviteSchema = z.object({
   groupId: z.string().uuid(),
 });
 
+const responseSchema = z.object({
+  action: z.enum(["accept", "cancel", "decline"]),
+  requestId: z.string().uuid(),
+});
+
 type GroupNotificationRow = {
   body: string;
   id: string;
@@ -66,6 +71,49 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, push });
 }
 
+export async function PATCH(request: Request) {
+  const supabase = await createSupabaseServerClient();
+  const session = await getServerStudySession();
+
+  if (!supabase || !session) {
+    return NextResponse.json(
+      { message: "Sign in to manage group invitations." },
+      { status: 401 },
+    );
+  }
+
+  const parsed = responseSchema.safeParse(
+    await request.json().catch(() => null),
+  );
+
+  if (!parsed.success) {
+    return NextResponse.json(
+      { message: "Invalid group invitation response." },
+      { status: 400 },
+    );
+  }
+
+  const { action, requestId } = parsed.data;
+  const { error } =
+    action === "cancel"
+      ? await supabase.rpc("cancel_group_invite", {
+          target_invite_id: requestId,
+        })
+      : await supabase.rpc("respond_to_group_invite", {
+          response: action === "accept" ? "accepted" : "declined",
+          target_invite_id: requestId,
+        });
+
+  if (error) {
+    return NextResponse.json(
+      { message: "Could not update that group invitation." },
+      { status: 400 },
+    );
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
 async function getGroupNotification({
   actorId,
   groupId,
@@ -98,7 +146,7 @@ async function sendGroupInvitePush(notification: GroupNotificationRow) {
     category: "other",
     tag: `mac-study-${notification.id}`,
     title: notification.title,
-    url: "/app/groups",
+    url: "/app/groups?tab=requests",
     userId: notification.user_id,
   });
 
