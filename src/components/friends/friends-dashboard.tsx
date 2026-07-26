@@ -8,7 +8,16 @@ import {
   type ReactNode,
 } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ArrowLeft, Check, Clock3, Plus, Send, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  Bell,
+  BellOff,
+  Check,
+  Clock3,
+  Plus,
+  Send,
+  Users,
+} from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { PaginatedList } from "@/components/paginated-list";
 import { StudyHeatmap } from "@/components/study-heatmap";
@@ -27,9 +36,11 @@ import {
 } from "@/lib/client-cache";
 import {
   addRemoteFriend,
+  fetchRemoteGlobalNudgeMutes,
   fetchRemoteSocialSnapshot,
   inviteRemoteFriendToGroup,
   removeRemoteFriend,
+  setRemoteUserNudgeMute,
   subscribeToRemoteAppChanges,
   updateRemoteFriendRequest,
   type RemoteFriendCandidate,
@@ -73,6 +84,12 @@ export function FriendsDashboard() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [mutedFriendIds, setMutedFriendIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [nudgeMuteBusyIds, setNudgeMuteBusyIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [now, setNow] = useState(() => new Date());
   const pendingFriendRequestIdsRef = useRef(new Set<string>());
   const pendingCancelledRequestsRef = useRef(new Map<string, string>());
@@ -125,6 +142,22 @@ export function FriendsDashboard() {
 
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!remoteClient) return;
+
+    let cancelled = false;
+
+    void fetchRemoteGlobalNudgeMutes({ supabase: remoteClient })
+      .then((userIds) => {
+        if (!cancelled) setMutedFriendIds(new Set(userIds));
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [remoteClient]);
 
   useEffect(() => {
     let cancelled = false;
@@ -517,6 +550,47 @@ export function FriendsDashboard() {
     });
   }
 
+  async function toggleFriendNudgeMute(friend: SocialFriend) {
+    if (!remoteClient || nudgeMuteBusyIds.has(friend.id)) return;
+
+    const wasMuted = mutedFriendIds.has(friend.id);
+    setMutedFriendIds((current) => {
+      const next = new Set(current);
+      if (wasMuted) next.delete(friend.id);
+      else next.add(friend.id);
+      return next;
+    });
+    setNudgeMuteBusyIds((current) => new Set(current).add(friend.id));
+
+    try {
+      await setRemoteUserNudgeMute({
+        groupId: null,
+        muted: !wasMuted,
+        supabase: remoteClient,
+        userId: friend.id,
+      });
+      setToastMessage(
+        wasMuted
+          ? `Nudges from ${friend.handle} enabled`
+          : `Nudges from ${friend.handle} muted`,
+      );
+    } catch {
+      setMutedFriendIds((current) => {
+        const next = new Set(current);
+        if (wasMuted) next.add(friend.id);
+        else next.delete(friend.id);
+        return next;
+      });
+      setFeedback("Nudge setting could not be saved.");
+    } finally {
+      setNudgeMuteBusyIds((current) => {
+        const next = new Set(current);
+        next.delete(friend.id);
+        return next;
+      });
+    }
+  }
+
   if (selectedFriend) {
     const nudgeState = nudgeQueue.getState(selectedFriend.id);
     const timeStats = [
@@ -565,6 +639,30 @@ export function FriendsDashboard() {
                   onClick={() => nudgeFriend(selectedFriend.id)}
                   pendingCount={nudgeState.pending}
                 />
+                <button
+                  aria-pressed={mutedFriendIds.has(selectedFriend.id)}
+                  className={cn(
+                    "mac-focus inline-flex h-11 items-center justify-center gap-1.5 rounded-md border px-3 text-xs font-semibold transition disabled:opacity-55",
+                    mutedFriendIds.has(selectedFriend.id)
+                      ? "border-[rgb(255_227_48/0.4)] bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]"
+                      : "border-[var(--color-border)] text-[var(--color-text-muted)]",
+                  )}
+                  disabled={
+                    !remoteClient ||
+                    nudgeMuteBusyIds.has(selectedFriend.id)
+                  }
+                  onClick={() => void toggleFriendNudgeMute(selectedFriend)}
+                  type="button"
+                >
+                  {mutedFriendIds.has(selectedFriend.id) ? (
+                    <BellOff aria-hidden size={15} />
+                  ) : (
+                    <Bell aria-hidden size={15} />
+                  )}
+                  {mutedFriendIds.has(selectedFriend.id)
+                    ? "Nudges muted"
+                    : "Mute nudges"}
+                </button>
                 {nudgeState.feedback ? (
                   <p className="text-xs font-medium text-[var(--color-text-muted)]">
                     {nudgeState.feedback}
@@ -671,6 +769,11 @@ export function FriendsDashboard() {
             </p>
           </AppDialog>
         ) : null}
+
+        <TransientToast
+          message={toastMessage}
+          onDismiss={() => setToastMessage(null)}
+        />
       </div>
     );
   }
@@ -756,34 +859,65 @@ export function FriendsDashboard() {
             items={friendList}
             pageSize={12}
             renderItem={(friend) => (
-              <button
-                className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.12)] hover:bg-[rgb(255_255_255/0.045)] active:scale-[0.99] lg:min-h-20 lg:px-4"
+              <div
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] transition hover:border-[rgb(255_255_255/0.12)] hover:bg-[rgb(255_255_255/0.045)]"
                 key={friend.id}
-                onClick={() => {
-                  setSelectedFriendId(friend.id);
-                  setInvitedGroupIds(new Set());
-                  setPendingInviteGroupIds(new Set());
-                  setIsInviteDialogOpen(false);
-                  setIsRemoveDialogOpen(false);
-                }}
-                type="button"
               >
-                <ProfileBadge friend={friend} />
-                <div className="min-w-0">
-                  <p className="truncate font-semibold">{friend.name}</p>
-                  <p className="truncate text-sm text-[var(--color-text-muted)]">
-                    {friend.handle}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="font-mono text-sm font-semibold tabular-nums">
-                    {formatDuration(getLiveRankingSeconds(friend, "day", now))}
-                  </p>
-                  <p className="text-xs font-medium text-[var(--color-text-muted)]">
-                    today
-                  </p>
-                </div>
-              </button>
+                <button
+                  className="mac-focus grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-3 text-left active:scale-[0.99] lg:min-h-20 lg:px-4"
+                  onClick={() => {
+                    setSelectedFriendId(friend.id);
+                    setInvitedGroupIds(new Set());
+                    setPendingInviteGroupIds(new Set());
+                    setIsInviteDialogOpen(false);
+                    setIsRemoveDialogOpen(false);
+                  }}
+                  type="button"
+                >
+                  <ProfileBadge friend={friend} />
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{friend.name}</p>
+                    <p className="truncate text-sm text-[var(--color-text-muted)]">
+                      {friend.handle}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-mono text-sm font-semibold tabular-nums">
+                      {formatDuration(
+                        getLiveRankingSeconds(friend, "day", now),
+                      )}
+                    </p>
+                    <p className="text-xs font-medium text-[var(--color-text-muted)]">
+                      today
+                    </p>
+                  </div>
+                </button>
+                <button
+                  aria-label={
+                    mutedFriendIds.has(friend.id)
+                      ? `Enable nudges from ${friend.handle}`
+                      : `Mute all nudges from ${friend.handle}`
+                  }
+                  aria-pressed={mutedFriendIds.has(friend.id)}
+                  className={cn(
+                    "mac-focus mr-2 inline-flex h-11 w-11 items-center justify-center rounded-md transition disabled:opacity-55",
+                    mutedFriendIds.has(friend.id)
+                      ? "bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]"
+                      : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
+                  )}
+                  disabled={
+                    !remoteClient || nudgeMuteBusyIds.has(friend.id)
+                  }
+                  onClick={() => void toggleFriendNudgeMute(friend)}
+                  type="button"
+                >
+                  {mutedFriendIds.has(friend.id) ? (
+                    <BellOff aria-hidden size={17} />
+                  ) : (
+                    <Bell aria-hidden size={17} />
+                  )}
+                </button>
+              </div>
             )}
             resetKey="friends"
           />

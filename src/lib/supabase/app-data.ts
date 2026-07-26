@@ -1191,23 +1191,45 @@ export async function fetchRemoteUserNudgeMute({
   supabase,
   userId,
 }: {
-  groupId: string;
+  groupId: string | null;
   supabase: SupabaseClient;
   userId: string;
 }) {
   const currentUserId = await getRemoteUserId();
   if (!currentUserId) return false;
 
+  let query = supabase
+    .from("user_nudge_mutes")
+    .select("muted_user_id")
+    .eq("user_id", currentUserId)
+    .eq("muted_user_id", userId);
+  query = groupId
+    ? query.eq("group_id", groupId)
+    : query.is("group_id", null);
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function fetchRemoteGlobalNudgeMutes({
+  supabase,
+}: {
+  supabase: SupabaseClient;
+}) {
+  const currentUserId = await getRemoteUserId();
+  if (!currentUserId) return [];
+
   const { data, error } = await supabase
     .from("user_nudge_mutes")
     .select("muted_user_id")
     .eq("user_id", currentUserId)
-    .eq("muted_user_id", userId)
-    .eq("group_id", groupId)
-    .maybeSingle();
+    .is("group_id", null);
 
   if (error) throw error;
-  return Boolean(data);
+
+  return (data ?? []).map((row) => row.muted_user_id as string);
 }
 
 export async function setRemoteUserNudgeMute({
@@ -1216,7 +1238,7 @@ export async function setRemoteUserNudgeMute({
   supabase,
   userId,
 }: {
-  groupId: string;
+  groupId: string | null;
   muted: boolean;
   supabase: SupabaseClient;
   userId: string;
@@ -1237,12 +1259,16 @@ export async function setRemoteUserNudgeMute({
     return;
   }
 
-  const { error } = await supabase
+  let query = supabase
     .from("user_nudge_mutes")
     .delete()
     .eq("user_id", currentUserId)
-    .eq("muted_user_id", userId)
-    .eq("group_id", groupId);
+    .eq("muted_user_id", userId);
+  query = groupId
+    ? query.eq("group_id", groupId)
+    : query.is("group_id", null);
+
+  const { error } = await query;
 
   if (error) throw error;
 }
