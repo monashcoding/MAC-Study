@@ -92,6 +92,9 @@ export function AppShell({
   const [headerDetails, setHeaderDetails] = useState<
     Record<string, string | null>
   >({});
+  const [workspaceResetKeys, setWorkspaceResetKeys] = useState<
+    Record<string, number>
+  >({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const currentNav =
@@ -217,8 +220,25 @@ export function AppShell({
       return;
     }
 
-    if (href === displayPathname) {
+    if (isActive(displayPathname, href)) {
       event.preventDefault();
+      setWorkspaceResetKeys((current) => ({
+        ...current,
+        [href]: (current[href] ?? 0) + 1,
+      }));
+      scrollPositionsRef.current[href] = 0;
+      scrollContainerRef.current?.scrollTo({ top: 0 });
+
+      if (
+        window.location.pathname !== href ||
+        window.location.search ||
+        window.location.hash
+      ) {
+        setDisplayPathname(href);
+        startTransition(() => {
+          router.replace(href);
+        });
+      }
       return;
     }
 
@@ -337,12 +357,13 @@ export function AppShell({
                 </div>
               </header>
 
-              <div className="px-4 pb-[calc(var(--mobile-nav-height)+1rem)] pt-5 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10">
+              <div className="px-4 pb-4 pt-3 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10">
                 <div className="lg:px-1 lg:py-2">
                   <AppWorkspace
                     activePathname={displayPathname}
                     authState={authState}
                     fallback={children}
+                    resetKeys={workspaceResetKeys}
                   />
                 </div>
               </div>

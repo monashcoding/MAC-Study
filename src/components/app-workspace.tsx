@@ -24,10 +24,12 @@ export function AppWorkspace({
   activePathname,
   authState,
   fallback,
+  resetKeys,
 }: {
   activePathname: string;
   authState: AppAuthState;
   fallback: React.ReactNode;
+  resetKeys: Record<string, number>;
 }) {
   const activeView = getWorkspaceView(activePathname);
   const displayName =
@@ -43,22 +45,46 @@ export function AppWorkspace({
 
   return (
     <div className="relative">
-      <WorkspacePanel active={activeView === "home"} id="home">
+      <WorkspacePanel
+        active={activeView === "home"}
+        id="home"
+        key={`home:${resetKeys["/app"] ?? 0}`}
+      >
         <TimerDashboard />
       </WorkspacePanel>
-      <WorkspacePanel active={activeView === "groups"} id="groups">
+      <WorkspacePanel
+        active={activeView === "groups"}
+        id="groups"
+        key={`groups:${resetKeys["/app/groups"] ?? 0}`}
+      >
         <GroupsDashboard />
       </WorkspacePanel>
-      <WorkspacePanel active={activeView === "friends"} id="friends">
+      <WorkspacePanel
+        active={activeView === "friends"}
+        id="friends"
+        key={`friends:${resetKeys["/app/friends"] ?? 0}`}
+      >
         <FriendsDashboard />
       </WorkspacePanel>
-      <WorkspacePanel active={activeView === "units"} id="units">
+      <WorkspacePanel
+        active={activeView === "units"}
+        id="units"
+        key={`units:${resetKeys["/app/units"] ?? 0}`}
+      >
         <UnitsDashboard />
       </WorkspacePanel>
-      <WorkspacePanel active={activeView === "statistics"} id="statistics">
+      <WorkspacePanel
+        active={activeView === "statistics"}
+        id="statistics"
+        key={`statistics:${resetKeys["/app/statistics"] ?? 0}`}
+      >
         <StatisticsDashboard />
       </WorkspacePanel>
-      <WorkspacePanel active={activeView === "profile"} id="profile">
+      <WorkspacePanel
+        active={activeView === "profile"}
+        id="profile"
+        key={`profile:${resetKeys["/app/profile"] ?? 0}`}
+      >
         <ProfileDashboard displayName={displayName} username={username} />
       </WorkspacePanel>
     </div>

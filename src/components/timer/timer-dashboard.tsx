@@ -1032,9 +1032,15 @@ function SubjectEditor({
   const [deletedSubjects, setDeletedSubjects] = useState<
     { index: number; subject: StudySubject }[]
   >([]);
-  const initialSubjectsRef = useRef(JSON.stringify(draftSubjects));
+  const [initialSubjectsJson] = useState(() => JSON.stringify(draftSubjects));
+  const [initialSubjectIds] = useState(
+    () => new Set(draftSubjects.map((subject) => subject.id)),
+  );
   const editingSubject =
     draftSubjects.find((subject) => subject.id === editingSubjectId) ?? null;
+  const isCreatingSubject = Boolean(
+    editingSubject && !initialSubjectIds.has(editingSubject.id),
+  );
   const linkedByOtherSubjects = new Set(
     draftSubjects
       .filter((subject) => subject.id !== editingSubjectId)
@@ -1047,7 +1053,7 @@ function SubjectEditor({
       enrollment.offeringId === editingSubject?.unitOfferingId,
   );
   const lastDeleted = deletedSubjects.at(-1) ?? null;
-  const isDirty = JSON.stringify(draftSubjects) !== initialSubjectsRef.current;
+  const isDirty = JSON.stringify(draftSubjects) !== initialSubjectsJson;
 
   function addAndEditSubject() {
     setEditingSubjectId(onAdd());
@@ -1078,6 +1084,7 @@ function SubjectEditor({
       <AppDialog
         bodyClassName={editingSubject ? "space-y-6 p-5" : "p-0"}
         closeLabel="Close subject editor"
+        confirmDiscard={!isCreatingSubject}
         footer={
           <div
             className={cn(

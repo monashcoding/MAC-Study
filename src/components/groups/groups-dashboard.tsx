@@ -8,7 +8,6 @@ import {
   Check,
   CircleStop,
   Crown,
-  Globe2,
   LoaderCircle,
   Lock,
   LogOut,
@@ -34,7 +33,6 @@ import {
   getLiveRankingSeconds,
   normalizeSocialState,
   type GroupRole,
-  type GroupVisibility,
   type RankingWindow,
   type SocialFriend,
   type SocialGroup,
@@ -47,7 +45,6 @@ import {
   fetchRemoteTimerState,
   fetchRemoteSocialSnapshot,
   inviteRemoteFriendToGroup,
-  joinRemotePublicGroup,
   leaveRemoteGroup,
   removeRemoteGroupMember,
   saveRemoteGroupNotificationSettings,
@@ -61,7 +58,6 @@ import {
   type RemoteGroupNotificationSettings,
   type RemoteSubject,
   updateRemoteGroupDetails,
-  type RemotePublicGroup,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { NudgePill } from "@/components/social/nudge-pill";
@@ -104,16 +100,7 @@ export function GroupsDashboard() {
   );
   const [rankingWindow, setRankingWindow] = useState<RankingWindow>("day");
   const [groupName, setGroupName] = useState("");
-  const [groupVisibility, setGroupVisibility] =
-    useState<GroupVisibility>("private");
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
-  const [publicGroups, setPublicGroups] = useState<RemotePublicGroup[]>([]);
-  const [joiningPublicGroupId, setJoiningPublicGroupId] = useState<
-    string | null
-  >(null);
-  const [publicGroupFeedback, setPublicGroupFeedback] = useState<string | null>(
-    null,
-  );
   const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
@@ -126,7 +113,6 @@ export function GroupsDashboard() {
       cacheRemoteSocialSnapshot(snapshot);
       setCurrentUserId(snapshot.currentUserId);
       setSocialState(snapshot.socialState);
-      setPublicGroups(snapshot.publicGroups ?? []);
     }
   }, []);
 
@@ -157,7 +143,6 @@ export function GroupsDashboard() {
       if (cachedSocial) {
         setCurrentUserId(cachedSocial.currentUserId);
         setSocialState(cachedSocial.socialState);
-        setPublicGroups(cachedSocial.publicGroups ?? []);
         setIsLoaded(true);
       }
 
@@ -180,7 +165,6 @@ export function GroupsDashboard() {
           cacheRemoteSocialSnapshot(snapshot);
           setCurrentUserId(snapshot.currentUserId);
           setSocialState(snapshot.socialState);
-          setPublicGroups(snapshot.publicGroups ?? []);
           if (timerState) {
             cacheRemoteTimerState(timerState);
             setTimerSubjects(timerState.subjects);
@@ -312,7 +296,6 @@ export function GroupsDashboard() {
       const newGroupId = await createRemoteGroup({
         name,
         supabase: remoteClient,
-        visibility: groupVisibility,
       });
 
       if (newGroupId) {
@@ -329,7 +312,6 @@ export function GroupsDashboard() {
       }
 
       setGroupName("");
-      setGroupVisibility("private");
       setSelectedMembers([]);
       setIsCreating(false);
       await refreshRemoteSocial(remoteClient);
@@ -348,7 +330,7 @@ export function GroupsDashboard() {
         ]),
       ),
       currentUserRole: "owner",
-      visibility: groupVisibility,
+      visibility: "private",
     };
 
     setSocialState((current) => ({
@@ -357,7 +339,6 @@ export function GroupsDashboard() {
     }));
     setSelectedGroupId(newGroup.id);
     setGroupName("");
-    setGroupVisibility("private");
     setSelectedMembers([]);
     setIsCreating(false);
   }
@@ -370,7 +351,7 @@ export function GroupsDashboard() {
     );
   }
 
-  async function updateGroupDetails(name: string, visibility: GroupVisibility) {
+  async function updateGroupDetails(name: string) {
     if (!selectedGroup) return;
 
     if (remoteClient) {
@@ -378,7 +359,6 @@ export function GroupsDashboard() {
         groupId: selectedGroup.id,
         name,
         supabase: remoteClient,
-        visibility,
       });
       await refreshRemoteSocial(remoteClient);
       return;
@@ -387,7 +367,9 @@ export function GroupsDashboard() {
     setSocialState((current) => ({
       ...current,
       groups: current.groups.map((group) =>
-        group.id === selectedGroup.id ? { ...group, name, visibility } : group,
+        group.id === selectedGroup.id
+          ? { ...group, name, visibility: "private" }
+          : group,
       ),
     }));
   }
@@ -533,21 +515,6 @@ export function GroupsDashboard() {
     }));
     setSelectedGroupId(null);
     setIsGroupSettingsOpen(false);
-  }
-
-  async function joinPublicGroup(groupId: string) {
-    if (!remoteClient) return;
-    setJoiningPublicGroupId(groupId);
-    setPublicGroupFeedback(null);
-    try {
-      await joinRemotePublicGroup({ groupId, supabase: remoteClient });
-      await refreshRemoteSocial(remoteClient);
-      setSelectedGroupId(groupId);
-    } catch {
-      setPublicGroupFeedback("That public group could not be joined.");
-    } finally {
-      setJoiningPublicGroupId(null);
-    }
   }
 
   async function startGroupStudy(subjectId: string | null) {
@@ -708,7 +675,7 @@ export function GroupsDashboard() {
               </span>
               <span aria-hidden>·</span>
               <span className="shrink-0">{members.length} members</span>
-              <VisibilityBadge visibility={selectedGroup.visibility} />
+              <VisibilityBadge />
             </div>
             <button
               aria-label="Group settings"
@@ -964,9 +931,7 @@ export function GroupsDashboard() {
                 <div className="mt-1 flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
                   <span>{activeNow} active</span>
                   <span aria-hidden>·</span>
-                  <span>
-                    {group.visibility === "public" ? "Public" : "Private"}
-                  </span>
+                  <span>Private</span>
                 </div>
               </div>
               <div className="text-right">
@@ -983,64 +948,17 @@ export function GroupsDashboard() {
         />
       </section>
 
-      {publicGroups.length ? (
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-lg font-semibold">Public groups</h2>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Open groups you can join immediately.
-            </p>
-          </div>
-          {publicGroupFeedback ? (
-            <p className="text-sm text-[var(--color-danger)]" role="status">
-              {publicGroupFeedback}
-            </p>
-          ) : null}
-          <PaginatedList
-            className="grid gap-2 lg:grid-cols-2 lg:gap-3"
-            items={publicGroups}
-            pageSize={10}
-            renderItem={(group) => (
-              <div
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] p-3"
-                key={group.id}
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-semibold">{group.name}</p>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                    {group.memberCount}{" "}
-                    {group.memberCount === 1 ? "member" : "members"}
-                  </p>
-                </div>
-                <button
-                  className="mac-focus h-11 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
-                  disabled={joiningPublicGroupId === group.id}
-                  onClick={() => void joinPublicGroup(group.id)}
-                  type="button"
-                >
-                  {joiningPublicGroupId === group.id ? "Joining…" : "Join"}
-                </button>
-              </div>
-            )}
-            resetKey="public-groups"
-          />
-        </section>
-      ) : null}
-
       {isCreating ? (
         <CreateGroupDialog
           groupName={groupName}
-          groupVisibility={groupVisibility}
           onClose={() => {
             setIsCreating(false);
             setGroupName("");
-            setGroupVisibility("private");
             setSelectedMembers([]);
           }}
           onCreate={createGroup}
           onMemberToggle={toggleMember}
           onNameChange={setGroupName}
-          onVisibilityChange={setGroupVisibility}
           currentUserId={currentUserId}
           selectedMembers={selectedMembers}
           socialState={socialState}
@@ -1052,23 +970,19 @@ export function GroupsDashboard() {
 
 function CreateGroupDialog({
   groupName,
-  groupVisibility,
   onClose,
   onCreate,
   onMemberToggle,
   onNameChange,
-  onVisibilityChange,
   currentUserId,
   selectedMembers,
   socialState,
 }: {
   groupName: string;
-  groupVisibility: GroupVisibility;
   onClose: () => void;
   onCreate: () => void | Promise<void>;
   onMemberToggle: (friendId: string) => void;
   onNameChange: (name: string) => void;
-  onVisibilityChange: (visibility: GroupVisibility) => void;
   currentUserId: string | null;
   selectedMembers: string[];
   socialState: SocialState;
@@ -1108,11 +1022,7 @@ function CreateGroupDialog({
           {isSubmitting ? "Creating…" : "Create group"}
         </button>
       }
-      isDirty={
-        Boolean(groupName.trim()) ||
-        groupVisibility !== "private" ||
-        selectedMembers.length > 0
-      }
+      isDirty={Boolean(groupName.trim()) || selectedMembers.length > 0}
       onClose={onClose}
       title="Create group"
     >
@@ -1126,53 +1036,6 @@ function CreateGroupDialog({
           value={groupName}
         />
       </label>
-
-      <fieldset>
-        <legend className="text-sm font-medium">Privacy</legend>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {(
-            [
-              {
-                description: "Anyone can find and join it.",
-                icon: Globe2,
-                label: "Public",
-                value: "public",
-              },
-              {
-                description: "Only invited people can join.",
-                icon: Lock,
-                label: "Private",
-                value: "private",
-              },
-            ] as const
-          ).map((option) => {
-            const Icon = option.icon;
-            const selected = groupVisibility === option.value;
-
-            return (
-              <button
-                aria-pressed={selected}
-                className={cn(
-                  "mac-focus min-h-20 rounded-md border p-3 text-left transition",
-                  selected
-                    ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)]"
-                    : "border-[var(--color-border)]",
-                )}
-                key={option.value}
-                onClick={() => onVisibilityChange(option.value)}
-                type="button"
-              >
-                <span className="flex items-center gap-2 text-sm font-semibold">
-                  <Icon aria-hidden size={16} /> {option.label}
-                </span>
-                <span className="mt-1 block text-xs text-[var(--color-text-muted)]">
-                  {option.description}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </fieldset>
 
       <div>
         <p className="text-sm font-medium">Members</p>
@@ -1230,16 +1093,14 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function VisibilityBadge({ visibility }: { visibility: GroupVisibility }) {
-  const Icon = visibility === "public" ? Globe2 : Lock;
-
+function VisibilityBadge() {
   return (
     <span
       className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[rgb(255_255_255/0.06)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]"
-      title={visibility === "public" ? "Public group" : "Private group"}
+      title="Private group"
     >
-      <Icon aria-hidden size={11} />
-      {visibility}
+      <Lock aria-hidden size={11} />
+      Private
     </span>
   );
 }
@@ -1437,10 +1298,7 @@ function GroupSettingsDialog({
   currentUserId: string;
   members: SocialFriend[];
   onClose: () => void;
-  onGroupDetailsUpdate: (
-    name: string,
-    visibility: GroupVisibility,
-  ) => void | Promise<void>;
+  onGroupDetailsUpdate: (name: string) => void | Promise<void>;
   onInvite: (friendId: string) => void | Promise<void>;
   onLeave: () => void | Promise<void>;
   onLeadershipTransfer: (userId: string) => void | Promise<void>;
@@ -1453,9 +1311,6 @@ function GroupSettingsDialog({
   selectedGroup: SocialGroup;
 }) {
   const [name, setName] = useState(selectedGroup.name);
-  const [visibility, setVisibility] = useState<GroupVisibility>(
-    selectedGroup.visibility ?? "private",
-  );
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -1475,9 +1330,7 @@ function GroupSettingsDialog({
       friend.isFriend !== false &&
       !selectedGroup.memberIds.includes(friend.id),
   );
-  const detailsChanged =
-    name.trim() !== selectedGroup.name ||
-    visibility !== (selectedGroup.visibility ?? "private");
+  const detailsChanged = name.trim() !== selectedGroup.name;
 
   async function runAction(
     key: string,
@@ -1552,52 +1405,19 @@ function GroupSettingsDialog({
       <section className="space-y-3">
         <h3 className="text-sm font-semibold">Group details</h3>
         {isLeader ? (
-          <>
-            <label className="block text-sm font-medium">
-              Name
-              <input
-                data-dialog-autofocus
-                className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
-                maxLength={80}
-                onChange={(event) => setName(event.target.value)}
-                value={name}
-              />
-            </label>
-            <div
-              aria-label="Group privacy"
-              className="grid grid-cols-2 gap-2"
-              role="group"
-            >
-              {(["public", "private"] as const).map((option) => {
-                const Icon = option === "public" ? Globe2 : Lock;
-                return (
-                  <button
-                    aria-pressed={visibility === option}
-                    className={cn(
-                      "mac-focus flex h-11 items-center justify-center gap-2 rounded-md border text-sm font-semibold capitalize",
-                      visibility === option
-                        ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)]"
-                        : "border-[var(--color-border)] text-[var(--color-text-muted)]",
-                    )}
-                    key={option}
-                    onClick={() => setVisibility(option)}
-                    type="button"
-                  >
-                    <Icon aria-hidden size={15} /> {option}
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        ) : (
-          <div className="divide-y divide-[var(--color-border)] rounded-md bg-[rgb(255_255_255/0.035)] px-3">
-            <SettingValue label="Name" value={selectedGroup.name} />
-            <SettingValue
-              label="Privacy"
-              value={
-                selectedGroup.visibility === "public" ? "Public" : "Private"
-              }
+          <label className="block text-sm font-medium">
+            Name
+            <input
+              data-dialog-autofocus
+              className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
+              maxLength={80}
+              onChange={(event) => setName(event.target.value)}
+              value={name}
             />
+          </label>
+        ) : (
+          <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-3">
+            <SettingValue label="Name" value={selectedGroup.name} />
           </div>
         )}
         {isLeader ? (
@@ -1607,7 +1427,7 @@ function GroupSettingsDialog({
             onClick={() =>
               void runAction(
                 "details",
-                () => onGroupDetailsUpdate(name.trim(), visibility),
+                () => onGroupDetailsUpdate(name.trim()),
                 "Group details updated.",
               )
             }
