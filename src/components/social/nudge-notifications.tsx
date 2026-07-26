@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BellRing, X } from "lucide-react";
 import {
   fetchRemoteNotificationPreferences,
@@ -11,8 +11,25 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 export function NudgeNotifications({ userId }: { userId: string }) {
-  const [nudges, setNudges] = useState<RemoteNudgeNotification[]>([]);
+  const [nudge, setNudge] = useState<RemoteNudgeNotification | null>(null);
+  const [isLeaving, setIsLeaving] = useState(false);
   const [enabled, setEnabled] = useState(true);
+  const currentNudgeRef = useRef<RemoteNudgeNotification | null>(null);
+  const pendingNudgeRef = useRef<RemoteNudgeNotification | null>(null);
+  const replacementTimerRef = useRef<number | null>(null);
+
+  const clearNudge = useCallback(() => {
+    setIsLeaving(true);
+    if (replacementTimerRef.current) {
+      window.clearTimeout(replacementTimerRef.current);
+    }
+    replacementTimerRef.current = window.setTimeout(() => {
+      currentNudgeRef.current = null;
+      pendingNudgeRef.current = null;
+      setNudge(null);
+      setIsLeaving(false);
+    }, 150);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -33,7 +50,15 @@ export function NudgeNotifications({ userId }: { userId: string }) {
       const preferences = (event as CustomEvent<RemoteNotificationPreferences>)
         .detail;
       setEnabled(preferences.nudgeNotifications);
-      if (!preferences.nudgeNotifications) setNudges([]);
+      if (!preferences.nudgeNotifications) {
+        if (replacementTimerRef.current) {
+          window.clearTimeout(replacementTimerRef.current);
+          replacementTimerRef.current = null;
+        }
+        currentNudgeRef.current = null;
+        pendingNudgeRef.current = null;
+        setNudge(null);
+      }
     }
 
     window.addEventListener(
@@ -55,39 +80,65 @@ export function NudgeNotifications({ userId }: { userId: string }) {
 
     try {
       const supabase = createSupabaseBrowserClient();
-      return subscribeToRemoteNudges(supabase, userId, (nudge) => {
-        setNudges((current) => [nudge, ...current].slice(0, 3));
+      return subscribeToRemoteNudges(supabase, userId, (incomingNudge) => {
+        if (!currentNudgeRef.current) {
+          currentNudgeRef.current = incomingNudge;
+          setNudge(incomingNudge);
+          setIsLeaving(false);
+          return;
+        }
+
+        pendingNudgeRef.current = incomingNudge;
+        setIsLeaving(true);
+
+        if (replacementTimerRef.current) {
+          window.clearTimeout(replacementTimerRef.current);
+        }
+
+        replacementTimerRef.current = window.setTimeout(() => {
+          const nextNudge = pendingNudgeRef.current;
+          pendingNudgeRef.current = null;
+          currentNudgeRef.current = nextNudge;
+          setNudge(nextNudge);
+          setIsLeaving(false);
+        }, 150);
       });
     } catch {
       return;
     }
   }, [enabled, userId]);
 
-  if (!nudges.length) {
+  useEffect(
+    () => () => {
+      if (replacementTimerRef.current) {
+        window.clearTimeout(replacementTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  if (!nudge) {
     return null;
   }
 
   return (
-    <div className="pointer-events-none fixed inset-x-3 top-[calc(var(--safe-area-top)+0.75rem)] z-[80] mx-auto grid max-w-md gap-2">
-      {nudges.map((nudge) => (
-        <NudgeToast
-          key={nudge.id}
-          nudge={nudge}
-          onDismiss={() =>
-            setNudges((current) =>
-              current.filter((item) => item.id !== nudge.id),
-            )
-          }
-        />
-      ))}
+    <div className="pointer-events-none fixed inset-x-3 top-[calc(var(--safe-area-top)+0.75rem)] z-[80] mx-auto max-w-md">
+      <NudgeToast
+        isLeaving={isLeaving}
+        key={nudge.id}
+        nudge={nudge}
+        onDismiss={clearNudge}
+      />
     </div>
   );
 }
 
 function NudgeToast({
+  isLeaving,
   nudge,
   onDismiss,
 }: {
+  isLeaving: boolean;
   nudge: RemoteNudgeNotification;
   onDismiss: () => void;
 }) {
@@ -107,7 +158,9 @@ function NudgeToast({
 
   return (
     <div
-      className="pointer-events-auto flex cursor-pointer items-center gap-3 rounded-full border border-[rgb(255_227_48/0.35)] bg-[rgb(23_23_23/0.96)] px-3 py-2 text-sm shadow-[0_18px_42px_rgb(0_0_0/0.34)] backdrop-blur"
+      className={`mac-toast-enter pointer-events-auto flex cursor-pointer items-center gap-3 rounded-full border border-[rgb(255_227_48/0.35)] bg-[rgb(23_23_23/0.96)] px-3 py-2 text-sm shadow-[0_18px_42px_rgb(0_0_0/0.34)] backdrop-blur transition duration-150 ${
+        isLeaving ? "-translate-y-1 opacity-0" : "opacity-100"
+      }`}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
       }}

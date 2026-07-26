@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeSocialState } from "./social-state";
 
 describe("normalizeSocialState groups", () => {
-  it("upgrades cached groups with leader roles and privacy", () => {
+  it("upgrades cached groups with leader roles and private-only visibility", () => {
     const state = normalizeSocialState({
       friends: [],
       groups: [
@@ -19,7 +19,7 @@ describe("normalizeSocialState groups", () => {
     expect(state.groups[0]).toMatchObject({
       currentUserRole: "owner",
       memberRoles: { you: "owner" },
-      visibility: "public",
+      visibility: "private",
     });
   });
 

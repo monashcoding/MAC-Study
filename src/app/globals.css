@@ -107,6 +107,19 @@ body {
     max-height: var(--app-viewport-height);
     min-height: 0;
   }
+
+  .mac-app-scroll {
+    flex: 0 0 calc(var(--app-viewport-height) - var(--mobile-nav-height));
+    height: calc(var(--app-viewport-height) - var(--mobile-nav-height));
+    max-height: calc(var(--app-viewport-height) - var(--mobile-nav-height));
+  }
+
+  .mac-chat-view-active .mac-app-scroll,
+  .mac-chat-composer-active .mac-app-scroll {
+    flex-basis: var(--app-viewport-height);
+    height: var(--app-viewport-height);
+    max-height: var(--app-viewport-height);
+  }
 }
 
 @supports (height: -webkit-fill-available) {
@@ -157,6 +170,21 @@ body {
   }
   to {
     transform: scale(1);
+  }
+}
+
+.mac-toast-enter {
+  animation: mac-toast-enter 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes mac-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

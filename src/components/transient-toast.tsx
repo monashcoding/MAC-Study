@@ -35,10 +35,10 @@ export function TransientToast({
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-4 bottom-[calc(var(--mobile-nav-height)+var(--safe-area-bottom)+1rem)] z-[90] flex justify-center lg:bottom-6"
+      className="pointer-events-none fixed inset-x-4 top-[calc(var(--safe-area-top)+0.75rem)] z-[90] flex justify-center"
       role="status"
     >
-      <div className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--color-mac-yellow)] px-4 py-2.5 text-sm font-semibold text-[#141414] shadow-[0_16px_42px_rgb(0_0_0/0.38)]">
+      <div className="mac-toast-enter pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--color-mac-yellow)] px-4 py-2.5 text-sm font-semibold text-[#141414] shadow-[0_16px_42px_rgb(0_0_0/0.38)]">
         <Check aria-hidden size={17} strokeWidth={2.6} />
         {message}
         {actionLabel && onAction ? (

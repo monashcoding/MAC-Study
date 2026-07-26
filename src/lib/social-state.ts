@@ -29,7 +29,7 @@ export const PERSON_ICON_KEYS = [
 export type GroupIconKey = (typeof GROUP_ICON_KEYS)[number];
 export type PersonIconKey = (typeof PERSON_ICON_KEYS)[number];
 export type GroupRole = "owner" | "admin" | "member";
-export type GroupVisibility = "private" | "public";
+export type GroupVisibility = "private";
 
 export type RankingWindow = "day" | "week" | "month";
 
@@ -188,7 +188,7 @@ export const defaultSocialState: SocialState = {
       memberIds: ["you", "josh", "lucy"],
       memberRoles: { you: "admin", josh: "owner", lucy: "member" },
       currentUserRole: "admin",
-      visibility: "public",
+      visibility: "private",
     },
   ],
 };
@@ -307,7 +307,7 @@ function normalizeGroup(value: unknown) {
     memberIds,
     memberRoles,
     currentUserRole,
-    visibility: asString(value.visibility) === "public" ? "public" : "private",
+    visibility: "private",
   } satisfies SocialGroup;
 }
 

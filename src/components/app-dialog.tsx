@@ -24,6 +24,7 @@ export function AppDialog({
   bodyClassName,
   children,
   closeLabel = "Close dialog",
+  confirmDiscard = true,
   footer,
   isDirty = false,
   maxWidthClassName = "max-w-xl",
@@ -34,6 +35,7 @@ export function AppDialog({
   bodyClassName?: string;
   children?: ReactNode;
   closeLabel?: string;
+  confirmDiscard?: boolean;
   footer?: ReactNode;
   isDirty?: boolean;
   maxWidthClassName?: string;
@@ -54,13 +56,13 @@ export function AppDialog({
   isDirtyRef.current = isDirty;
 
   const requestClose = useCallback(() => {
-    if (isDirtyRef.current) {
+    if (confirmDiscard && isDirtyRef.current) {
       setShowDiscardPrompt(true);
       return;
     }
 
     onCloseRef.current();
-  }, []);
+  }, [confirmDiscard]);
 
   useEffect(() => {
     if (!isDirty) setShowDiscardPrompt(false);

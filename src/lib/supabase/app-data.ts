@@ -62,7 +62,6 @@ export type RemoteSocialSnapshot = {
   socialState: SocialState;
   availableFriends: RemoteFriendCandidate[];
   friendRequests: RemoteFriendRequest[];
-  publicGroups: RemotePublicGroup[];
   currentUserId: string;
 };
 
@@ -95,12 +94,6 @@ export type RemoteAppNotification = {
   id: string;
   title: string;
   type: "friend_accepted" | "friend_request" | "other";
-};
-
-export type RemotePublicGroup = {
-  id: string;
-  name: string;
-  memberCount: number;
 };
 
 export type RemoteGroupChatMessage = {
@@ -277,12 +270,6 @@ type NudgeRow = {
   recipient_id: string;
   message: string | null;
   created_at: string;
-};
-
-type PublicGroupRow = {
-  group_id: string;
-  group_name: string;
-  member_count: number;
 };
 
 type GroupChatRow = {
@@ -780,7 +767,6 @@ export async function fetchRemoteSocialSnapshot(
     groupsResult,
     membershipsResult,
     sessionsResult,
-    publicGroupsResult,
     friendCandidatesResult,
     friendRequestsResult,
   ] = await Promise.all([
@@ -809,7 +795,6 @@ export async function fetchRemoteSocialSnapshot(
       .is("deleted_at", null)
       .order("started_at", { ascending: false })
       .limit(1000),
-    supabase.rpc("list_public_study_groups"),
     supabase.rpc("list_friend_candidates"),
     supabase.rpc("list_friend_requests"),
   ]);
@@ -887,23 +872,6 @@ export async function fetchRemoteSocialSnapshot(
     currentUserId: userId,
     availableFriends,
     friendRequests,
-    publicGroups: (
-      (publicGroupsResult.error
-        ? []
-        : (publicGroupsResult.data ?? [])) as PublicGroupRow[]
-    )
-      .filter(
-        (group) =>
-          !memberships.some(
-            (member) =>
-              member.group_id === group.group_id && member.user_id === userId,
-          ),
-      )
-      .map((group) => ({
-        id: group.group_id,
-        name: group.group_name,
-        memberCount: Number(group.member_count),
-      })),
     socialState: {
       friends: remoteFriends,
       groups: socialGroups.filter((group) => group.currentUserRole),
@@ -914,11 +882,9 @@ export async function fetchRemoteSocialSnapshot(
 export async function createRemoteGroup({
   name,
   supabase,
-  visibility,
 }: {
   name: string;
   supabase: SupabaseClient;
-  visibility: GroupVisibility;
 }) {
   const { data, error } = await supabase.rpc("create_study_group", {
     group_icon: "users",
@@ -929,37 +895,24 @@ export async function createRemoteGroup({
     throw error;
   }
 
-  const groupId = data as string | null;
-
-  if (groupId && visibility === "public") {
-    const { error: visibilityError } = await supabase
-      .from("groups")
-      .update({ visibility: "public" })
-      .eq("id", groupId);
-
-    if (visibilityError) throw visibilityError;
-  }
-
-  return groupId;
+  return data as string | null;
 }
 
 export async function updateRemoteGroupDetails({
   groupId,
   name,
   supabase,
-  visibility,
 }: {
   groupId: string;
   name: string;
   supabase: SupabaseClient;
-  visibility: GroupVisibility;
 }) {
   const { error } = await supabase
     .from("groups")
     .update({
       icon: "users",
       name,
-      visibility: visibility === "public" ? "public" : "invite_only",
+      visibility: "invite_only",
     })
     .eq("id", groupId);
 
@@ -1030,20 +983,6 @@ export async function leaveRemoteGroup({
   supabase: SupabaseClient;
 }) {
   const { error } = await supabase.rpc("leave_study_group", {
-    target_group_id: groupId,
-  });
-
-  if (error) throw error;
-}
-
-export async function joinRemotePublicGroup({
-  groupId,
-  supabase,
-}: {
-  groupId: string;
-  supabase: SupabaseClient;
-}) {
-  const { error } = await supabase.rpc("join_public_study_group", {
     target_group_id: groupId,
   });
 
@@ -1828,7 +1767,8 @@ function normalizeGroupRole(
 function normalizeGroupVisibility(
   visibility: string | null | undefined,
 ): GroupVisibility {
-  return visibility === "public" ? "public" : "private";
+  void visibility;
+  return "private";
 }
 
 function groupChatMessageFromRow(row: GroupChatRow): RemoteGroupChatMessage {
