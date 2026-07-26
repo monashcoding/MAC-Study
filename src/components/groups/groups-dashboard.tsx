@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ArrowLeft,
+  BellOff,
   Check,
   CircleStop,
   Crown,
@@ -12,6 +13,7 @@ import {
   Lock,
   LogOut,
   MoreHorizontal,
+  MessagesSquare,
   Play,
   Plus,
   Settings,
@@ -41,18 +43,23 @@ import {
 } from "@/lib/social-state";
 import {
   createRemoteGroup,
+  fetchRemoteGroupNotificationSettings,
+  fetchRemoteUserNudgeMute,
   fetchRemoteTimerState,
   fetchRemoteSocialSnapshot,
   inviteRemoteFriendToGroup,
   joinRemotePublicGroup,
   leaveRemoteGroup,
   removeRemoteGroupMember,
+  saveRemoteGroupNotificationSettings,
   setRemoteGroupMemberRole,
+  setRemoteUserNudgeMute,
   startRemoteStudySession,
   stopRemoteStudySession,
   subscribeToRemoteAppChanges,
   transferRemoteGroupLeadership,
   type RemoteActiveSession,
+  type RemoteGroupNotificationSettings,
   type RemoteSubject,
   updateRemoteGroupDetails,
   type RemotePublicGroup,
@@ -254,6 +261,18 @@ export function GroupsDashboard() {
   const selectedGroup = socialState.groups.find(
     (group) => group.id === selectedGroupId,
   );
+  useEffect(() => {
+    const groupId = new URLSearchParams(window.location.search).get("group");
+    if (!groupId || !socialState.groups.some((group) => group.id === groupId)) {
+      return;
+    }
+
+    setSelectedGroupId(groupId);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("group");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }, [socialState.groups]);
+
   useEffect(() => {
     if (!remoteClient || !selectedGroupId) return;
 
@@ -657,6 +676,10 @@ export function GroupsDashboard() {
     if (groupView === "chat") {
       return (
         <GroupChat
+          canModerate={
+            selectedGroup.currentUserRole === "owner" ||
+            selectedGroup.currentUserRole === "admin"
+          }
           currentUserId={currentUserId}
           groupId={selectedGroup.id}
           groupName={selectedGroup.name}
@@ -731,7 +754,7 @@ export function GroupsDashboard() {
               {rankingWindows.map((window) => (
                 <button
                   className={cn(
-                    "mac-focus h-9 rounded px-3 text-xs font-semibold transition",
+                    "mac-focus h-11 rounded px-3 text-xs font-semibold transition",
                     rankingWindow === window.id
                       ? "bg-[var(--color-surface-raised)] text-[var(--color-text)]"
                       : "text-[var(--color-text-muted)]",
@@ -804,6 +827,7 @@ export function GroupsDashboard() {
             }}
             onNudge={() => nudgeMember(selectedMember.id, selectedGroup.id)}
             pendingNudges={selectedMemberNudgeState?.pending ?? 0}
+            remoteClient={remoteClient}
           />
         ) : null}
 
@@ -819,6 +843,7 @@ export function GroupsDashboard() {
             onMemberRemove={removeGroupMember}
             onMemberRoleUpdate={updateGroupMemberRole}
             onLeadershipTransfer={transferGroupLeadership}
+            remoteClient={remoteClient}
             selectedGroup={selectedGroup}
           />
         ) : null}
@@ -1249,6 +1274,7 @@ function GroupMemberDialog({
   onClose,
   onNudge,
   pendingNudges,
+  remoteClient,
 }: {
   canNudge: boolean;
   group: SocialGroup;
@@ -1258,7 +1284,51 @@ function GroupMemberDialog({
   onClose: () => void;
   onNudge: () => void;
   pendingNudges: number;
+  remoteClient: SupabaseClient | null;
 }) {
+  const [nudgesMuted, setNudgesMuted] = useState(false);
+  const [muteSaving, setMuteSaving] = useState(false);
+
+  useEffect(() => {
+    if (!remoteClient || !canNudge) return;
+
+    let cancelled = false;
+    void fetchRemoteUserNudgeMute({
+      groupId: group.id,
+      supabase: remoteClient,
+      userId: member.id,
+    })
+      .then((muted) => {
+        if (!cancelled) setNudgesMuted(muted);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canNudge, group.id, member.id, remoteClient]);
+
+  async function toggleNudgeMute() {
+    if (!remoteClient || muteSaving) return;
+
+    const nextMuted = !nudgesMuted;
+    setNudgesMuted(nextMuted);
+    setMuteSaving(true);
+
+    try {
+      await setRemoteUserNudgeMute({
+        groupId: group.id,
+        muted: nextMuted,
+        supabase: remoteClient,
+        userId: member.id,
+      });
+    } catch {
+      setNudgesMuted(!nextMuted);
+    } finally {
+      setMuteSaving(false);
+    }
+  }
+
   return (
     <AppDialog
       closeLabel="Close member details"
@@ -1289,6 +1359,32 @@ function GroupMemberDialog({
         </p>
       </div>
 
+      {canNudge && remoteClient ? (
+        <button
+          aria-pressed={nudgesMuted}
+          className="mac-focus mt-4 flex min-h-11 w-full items-center gap-3 rounded-md border border-[var(--color-border)] px-3 text-left text-sm"
+          disabled={muteSaving}
+          onClick={() => void toggleNudgeMute()}
+          type="button"
+        >
+          <BellOff
+            aria-hidden
+            className={
+              nudgesMuted
+                ? "text-[var(--color-mac-yellow)]"
+                : "text-[var(--color-text-muted)]"
+            }
+            size={17}
+          />
+          <span className="min-w-0 flex-1 font-medium">
+            Mute nudges from {member.handle}
+          </span>
+          <span className="text-xs font-semibold text-[var(--color-text-muted)]">
+            {nudgesMuted ? "On" : "Off"}
+          </span>
+        </button>
+      ) : null}
+
       <div className="mt-4 grid grid-cols-3 gap-2">
         <MemberStat
           label="Today"
@@ -1318,6 +1414,16 @@ function MemberStat({ label, value }: { label: string; value: string }) {
   );
 }
 
+type PendingGroupAction =
+  | {
+      kind: "role";
+      member: SocialFriend;
+      nextRole: Exclude<GroupRole, "owner">;
+    }
+  | { kind: "leadership"; member: SocialFriend }
+  | { kind: "remove"; member: SocialFriend }
+  | { kind: "leave" };
+
 function GroupSettingsDialog({
   allFriends,
   currentUserId,
@@ -1329,6 +1435,7 @@ function GroupSettingsDialog({
   onLeadershipTransfer,
   onMemberRemove,
   onMemberRoleUpdate,
+  remoteClient,
   selectedGroup,
 }: {
   allFriends: SocialFriend[];
@@ -1347,6 +1454,7 @@ function GroupSettingsDialog({
     userId: string,
     role: Exclude<GroupRole, "owner">,
   ) => void | Promise<void>;
+  remoteClient: SupabaseClient | null;
   selectedGroup: SocialGroup;
 }) {
   const [name, setName] = useState(selectedGroup.name);
@@ -1357,6 +1465,8 @@ function GroupSettingsDialog({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [openMemberMenuId, setOpenMemberMenuId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] =
+    useState<PendingGroupAction | null>(null);
   const currentRole =
     selectedGroup.currentUserRole ??
     selectedGroup.memberRoles?.[currentUserId] ??
@@ -1384,21 +1494,57 @@ function GroupSettingsDialog({
     try {
       await action();
       setFeedback(success);
+      return true;
     } catch (error) {
       setFeedback(getErrorMessage(error, "That change could not be saved."));
+      return false;
     } finally {
       setBusyKey(null);
     }
   }
 
+  async function confirmPendingAction() {
+    if (!pendingAction) return;
+
+    let succeeded = false;
+
+    if (pendingAction.kind === "role") {
+      const { member, nextRole } = pendingAction;
+      succeeded = await runAction(
+        `role:${member.id}`,
+        () => onMemberRoleUpdate(member.id, nextRole),
+        nextRole === "admin"
+          ? `${member.name} is now a moderator.`
+          : `${member.name} is now a member.`,
+      );
+    } else if (pendingAction.kind === "leadership") {
+      succeeded = await runAction(
+        `leader:${pendingAction.member.id}`,
+        () => onLeadershipTransfer(pendingAction.member.id),
+        `${pendingAction.member.name} is now the group leader.`,
+      );
+    } else if (pendingAction.kind === "remove") {
+      succeeded = await runAction(
+        `remove:${pendingAction.member.id}`,
+        () => onMemberRemove(pendingAction.member.id),
+        `${pendingAction.member.name} removed.`,
+      );
+    } else {
+      succeeded = await runAction("leave", onLeave, "You left the group.");
+    }
+
+    if (succeeded) setPendingAction(null);
+  }
+
   return (
-    <AppDialog
+    <>
+      <AppDialog
       bodyClassName="grid gap-5"
       closeLabel="Close group settings"
       isDirty={detailsChanged}
       onClose={onClose}
       title="Group settings"
-    >
+      >
       {feedback ? (
         <p
           className="rounded-md bg-[rgb(255_255_255/0.045)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
@@ -1484,6 +1630,11 @@ function GroupSettingsDialog({
         ) : null}
       </section>
 
+      <GroupNotificationControls
+        groupId={selectedGroup.id}
+        remoteClient={remoteClient}
+      />
+
       <section className="space-y-3 border-t border-[var(--color-border)] pt-5">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -1525,7 +1676,7 @@ function GroupSettingsDialog({
                   </p>
                 </div>
                 <button
-                  className="mac-focus h-8 rounded-md bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] disabled:opacity-45"
+                  className="mac-focus h-10 rounded-md bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] disabled:opacity-45"
                   disabled={busyKey !== null}
                   onClick={() =>
                     void runAction(
@@ -1601,21 +1752,15 @@ function GroupSettingsDialog({
                   <div className="mt-2 grid gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-1.5 shadow-[0_14px_34px_rgb(0_0_0/0.32)]">
                     {canChangeRole ? (
                       <button
-                        className="mac-focus h-9 rounded px-2.5 text-left text-xs font-semibold transition hover:bg-[rgb(255_255_255/0.055)]"
+                        className="mac-focus h-10 rounded px-2.5 text-left text-xs font-semibold transition hover:bg-[rgb(255_255_255/0.055)]"
                         disabled={busyKey !== null}
                         onClick={() => {
                           setOpenMemberMenuId(null);
-                          void runAction(
-                            `role:${member.id}`,
-                            () =>
-                              onMemberRoleUpdate(
-                                member.id,
-                                role === "admin" ? "member" : "admin",
-                              ),
-                            role === "admin"
-                              ? `${member.name} is now a member.`
-                              : `${member.name} is now a moderator.`,
-                          );
+                          setPendingAction({
+                            kind: "role",
+                            member,
+                            nextRole: role === "admin" ? "member" : "admin",
+                          });
                         }}
                         type="button"
                       >
@@ -1624,15 +1769,11 @@ function GroupSettingsDialog({
                     ) : null}
                     {canTransferLeadership ? (
                       <button
-                        className="mac-focus flex h-9 items-center gap-2 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
+                        className="mac-focus flex h-10 items-center gap-2 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
                         disabled={busyKey !== null}
                         onClick={() => {
                           setOpenMemberMenuId(null);
-                          void runAction(
-                            `leader:${member.id}`,
-                            () => onLeadershipTransfer(member.id),
-                            `${member.name} is now the group leader.`,
-                          );
+                          setPendingAction({ kind: "leadership", member });
                         }}
                         type="button"
                       >
@@ -1642,15 +1783,11 @@ function GroupSettingsDialog({
                     ) : null}
                     {canRemove ? (
                       <button
-                        className="mac-focus h-9 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.07)]"
+                        className="mac-focus h-10 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.07)]"
                         disabled={busyKey !== null}
                         onClick={() => {
                           setOpenMemberMenuId(null);
-                          void runAction(
-                            `remove:${member.id}`,
-                            () => onMemberRemove(member.id),
-                            `${member.name} removed.`,
-                          );
+                          setPendingAction({ kind: "remove", member });
                         }}
                         type="button"
                       >
@@ -1683,16 +1820,248 @@ function GroupSettingsDialog({
           <button
             className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--color-danger)] px-4 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
             disabled={busyKey !== null}
-            onClick={() =>
-              void runAction("leave", onLeave, "You left the group.")
-            }
+            onClick={() => setPendingAction({ kind: "leave" })}
             type="button"
           >
             <LogOut aria-hidden size={16} /> Leave group
           </button>
         )}
       </section>
+      </AppDialog>
+
+      {pendingAction ? (
+        <GroupActionConfirmation
+          action={pendingAction}
+          busy={busyKey !== null}
+          onClose={() => setPendingAction(null)}
+          onConfirm={() => void confirmPendingAction()}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function GroupActionConfirmation({
+  action,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  action: PendingGroupAction;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const isDanger = action.kind === "remove" || action.kind === "leave";
+  const title =
+    action.kind === "role"
+      ? action.nextRole === "admin"
+        ? "Make moderator?"
+        : "Make member?"
+      : action.kind === "leadership"
+        ? "Transfer leadership?"
+        : action.kind === "remove"
+          ? "Remove from group?"
+          : "Leave group?";
+  const handle = action.kind === "leave" ? null : action.member.handle;
+  const description =
+    action.kind === "role"
+      ? `${handle} will ${
+          action.nextRole === "admin"
+            ? "be able to invite and remove members."
+            : "lose moderator permissions."
+        }`
+      : action.kind === "leadership"
+        ? `${handle} will become leader and you will become a moderator.`
+        : action.kind === "remove"
+          ? `${handle} will lose access to this group.`
+          : "You will lose access to this group.";
+  const confirmLabel =
+    action.kind === "role"
+      ? action.nextRole === "admin"
+        ? "Make moderator"
+        : "Make member"
+      : action.kind === "leadership"
+        ? "Transfer"
+        : action.kind === "remove"
+          ? "Remove"
+          : "Leave group";
+
+  return (
+    <AppDialog
+      bodyClassName="pt-1"
+      closeLabel="Close confirmation"
+      footer={
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className="mac-focus h-11 rounded-md border border-[var(--color-border)] text-sm font-semibold"
+            disabled={busy}
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className={cn(
+              "mac-focus inline-flex h-11 items-center justify-center rounded-md text-sm font-semibold disabled:opacity-45",
+              isDanger
+                ? "border border-[rgb(255_107_107/0.5)] text-[var(--color-danger)]"
+                : "bg-[var(--color-mac-yellow)] text-[#141414]",
+            )}
+            disabled={busy}
+            onClick={onConfirm}
+            type="button"
+          >
+            {busy ? (
+              <LoaderCircle aria-hidden className="animate-spin" size={16} />
+            ) : (
+              confirmLabel
+            )}
+          </button>
+        </div>
+      }
+      maxWidthClassName="max-w-sm"
+      onClose={onClose}
+      title={title}
+      variant="confirmation"
+    >
+      <p className="text-sm leading-6 text-[var(--color-text-muted)]">
+        {description}
+      </p>
     </AppDialog>
+  );
+}
+
+function GroupNotificationControls({
+  groupId,
+  remoteClient,
+}: {
+  groupId: string;
+  remoteClient: SupabaseClient | null;
+}) {
+  const [settings, setSettings] = useState<RemoteGroupNotificationSettings>({
+    chatMuted: false,
+    nudgesMuted: false,
+  });
+  const [savingKey, setSavingKey] = useState<keyof RemoteGroupNotificationSettings | null>(
+    null,
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!remoteClient) return;
+
+    let cancelled = false;
+    void fetchRemoteGroupNotificationSettings({
+      groupId,
+      supabase: remoteClient,
+    })
+      .then((nextSettings) => {
+        if (!cancelled) setSettings(nextSettings);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Notification settings could not be loaded.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [groupId, remoteClient]);
+
+  async function toggle(key: keyof RemoteGroupNotificationSettings) {
+    if (!remoteClient || savingKey) return;
+
+    const previous = settings;
+    const next = { ...settings, [key]: !settings[key] };
+    setSettings(next);
+    setSavingKey(key);
+    setError(null);
+
+    try {
+      await saveRemoteGroupNotificationSettings({
+        groupId,
+        settings: next,
+        supabase: remoteClient,
+      });
+    } catch {
+      setSettings(previous);
+      setError("Notification setting could not be saved.");
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  if (!remoteClient) return null;
+
+  return (
+    <section className="space-y-2 border-t border-[var(--color-border)] pt-5">
+      <h3 className="text-sm font-semibold">Notifications</h3>
+      <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
+        <GroupNotificationRow
+          enabled={!settings.chatMuted}
+          icon={<MessagesSquare aria-hidden size={16} />}
+          label="Group messages"
+          onToggle={() => void toggle("chatMuted")}
+          saving={savingKey === "chatMuted"}
+        />
+        <GroupNotificationRow
+          enabled={!settings.nudgesMuted}
+          icon={<BellOff aria-hidden size={16} />}
+          label="Nudges"
+          onToggle={() => void toggle("nudgesMuted")}
+          saving={savingKey === "nudgesMuted"}
+        />
+      </div>
+      {error ? (
+        <p className="text-xs text-[var(--color-danger)]" role="status">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function GroupNotificationRow({
+  enabled,
+  icon,
+  label,
+  onToggle,
+  saving,
+}: {
+  enabled: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onToggle: () => void;
+  saving: boolean;
+}) {
+  return (
+    <button
+      aria-checked={enabled}
+      className="mac-focus flex min-h-12 w-full items-center gap-3 border-b border-[var(--color-border)] px-3 text-left last:border-b-0"
+      disabled={saving}
+      onClick={onToggle}
+      role="switch"
+      type="button"
+    >
+      <span className="text-[var(--color-mac-yellow)]">{icon}</span>
+      <span className="min-w-0 flex-1 text-sm font-medium">{label}</span>
+      <span
+        aria-hidden
+        className={cn(
+          "relative h-7 w-12 rounded-full border transition",
+          enabled
+            ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)]"
+            : "border-[var(--color-border)] bg-[var(--color-surface-raised)]",
+        )}
+      >
+        <span
+          className={cn(
+            "absolute top-0.5 h-5 w-5 rounded-full bg-[#f7f7f2] transition",
+            enabled ? "left-[1.35rem]" : "left-0.5",
+          )}
+        />
+      </span>
+    </button>
   );
 }
 

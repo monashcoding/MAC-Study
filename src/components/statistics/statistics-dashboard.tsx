@@ -47,7 +47,7 @@ type StoredSession = {
   startedAt: string;
   endedAt: string;
   status: "completed" | "needs_confirmation";
-  source: "timer";
+  source: "manual_adjustment" | "timer";
 };
 
 type ActiveSession = {

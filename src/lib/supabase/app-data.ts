@@ -49,7 +49,7 @@ export type RemoteStoredSession = {
   startedAt: string;
   endedAt: string;
   status: "completed" | "needs_confirmation";
-  source: "timer";
+  source: "manual_adjustment" | "timer";
 };
 
 export type RemoteTimerState = {
@@ -83,6 +83,11 @@ export type RemoteNotificationPreferences = {
   friendNotifications: boolean;
   nudgeNotifications: boolean;
   otherNotifications: boolean;
+};
+
+export type RemoteGroupNotificationSettings = {
+  chatMuted: boolean;
+  nudgesMuted: boolean;
 };
 
 export type RemoteAppNotification = {
@@ -361,7 +366,7 @@ export async function fetchRemoteTimerState(
         row.status === "needs_confirmation"
           ? "needs_confirmation"
           : "completed",
-      source: "timer",
+      source: row.source,
     })),
   };
 }
@@ -402,17 +407,86 @@ export async function stopRemoteStudySession(supabase: SupabaseClient) {
     return;
   }
 
-  const endedAt = new Date().toISOString();
-  const { error } = await supabase
+  const { data: activeSession, error: activeError } = await supabase
     .from("study_sessions")
-    .update({ ended_at: endedAt, status: "completed" })
+    .select("id, started_at")
     .eq("user_id", userId)
     .is("ended_at", null)
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .maybeSingle<{ id: string; started_at: string }>();
+
+  if (activeError) throw activeError;
+  if (!activeSession) return null;
+
+  const endedAt = new Date();
+  const durationMs =
+    endedAt.getTime() - new Date(activeSession.started_at).getTime();
+  const status =
+    durationMs >= 6 * 60 * 60 * 1000 ? "needs_confirmation" : "completed";
+  const { error } = await supabase
+    .from("study_sessions")
+    .update({ ended_at: endedAt.toISOString(), status })
+    .eq("id", activeSession.id)
+    .eq("user_id", userId);
 
   if (error) {
     throw error;
   }
+
+  return { id: activeSession.id, status };
+}
+
+export async function updateRemoteStudySession({
+  endedAt,
+  sessionId,
+  startedAt,
+  subjectId,
+  supabase,
+}: {
+  endedAt: string;
+  sessionId: string;
+  startedAt: string;
+  subjectId: string | null;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+  if (!userId) return;
+
+  const { error } = await supabase
+    .from("study_sessions")
+    .update({
+      ended_at: endedAt,
+      source: "manual_adjustment",
+      started_at: startedAt,
+      status: "completed",
+      subject_id: subjectId,
+    })
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .not("ended_at", "is", null)
+    .is("deleted_at", null);
+
+  if (error) throw error;
+}
+
+export async function deleteRemoteStudySession({
+  sessionId,
+  supabase,
+}: {
+  sessionId: string;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+  if (!userId) return;
+
+  const { error } = await supabase
+    .from("study_sessions")
+    .update({ deleted_at: new Date().toISOString(), status: "voided" })
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .not("ended_at", "is", null);
+
+  if (error) throw error;
 }
 
 export async function saveRemoteSubjects({
@@ -1027,6 +1101,151 @@ export async function sendRemoteGroupChatMessage({
   if (!response.ok) {
     throw new Error(await getResponseError(response));
   }
+
+  const result = (await response.json()) as { messageId?: string };
+  return result.messageId ?? null;
+}
+
+export async function deleteRemoteGroupChatMessage({
+  messageId,
+  supabase,
+}: {
+  messageId: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("delete_group_chat_message", {
+    target_message_id: messageId,
+  });
+
+  if (error) throw error;
+}
+
+export async function reportRemoteGroupChatMessage({
+  messageId,
+  supabase,
+}: {
+  messageId: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("report_group_chat_message", {
+    target_message_id: messageId,
+  });
+
+  if (error) throw error;
+}
+
+export async function fetchRemoteGroupNotificationSettings({
+  groupId,
+  supabase,
+}: {
+  groupId: string;
+  supabase: SupabaseClient;
+}): Promise<RemoteGroupNotificationSettings> {
+  const userId = await getRemoteUserId();
+  if (!userId) return { chatMuted: false, nudgesMuted: false };
+
+  const { data, error } = await supabase
+    .from("user_group_notification_settings")
+    .select("chat_muted, nudges_muted")
+    .eq("user_id", userId)
+    .eq("group_id", groupId)
+    .maybeSingle<{ chat_muted: boolean; nudges_muted: boolean }>();
+
+  if (error) throw error;
+
+  return {
+    chatMuted: data?.chat_muted ?? false,
+    nudgesMuted: data?.nudges_muted ?? false,
+  };
+}
+
+export async function saveRemoteGroupNotificationSettings({
+  groupId,
+  settings,
+  supabase,
+}: {
+  groupId: string;
+  settings: RemoteGroupNotificationSettings;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+  if (!userId) return;
+
+  const { error } = await supabase
+    .from("user_group_notification_settings")
+    .upsert(
+      {
+        chat_muted: settings.chatMuted,
+        group_id: groupId,
+        nudges_muted: settings.nudgesMuted,
+        updated_at: new Date().toISOString(),
+        user_id: userId,
+      },
+      { onConflict: "user_id,group_id" },
+    );
+
+  if (error) throw error;
+}
+
+export async function fetchRemoteUserNudgeMute({
+  groupId,
+  supabase,
+  userId,
+}: {
+  groupId: string;
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const currentUserId = await getRemoteUserId();
+  if (!currentUserId) return false;
+
+  const { data, error } = await supabase
+    .from("user_nudge_mutes")
+    .select("muted_user_id")
+    .eq("user_id", currentUserId)
+    .eq("muted_user_id", userId)
+    .eq("group_id", groupId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function setRemoteUserNudgeMute({
+  groupId,
+  muted,
+  supabase,
+  userId,
+}: {
+  groupId: string;
+  muted: boolean;
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const currentUserId = await getRemoteUserId();
+  if (!currentUserId) return;
+
+  if (muted) {
+    const { error } = await supabase.from("user_nudge_mutes").upsert(
+      {
+        group_id: groupId,
+        muted_user_id: userId,
+        user_id: currentUserId,
+      },
+      { onConflict: "user_id,muted_user_id,group_id" },
+    );
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase
+    .from("user_nudge_mutes")
+    .delete()
+    .eq("user_id", currentUserId)
+    .eq("muted_user_id", userId)
+    .eq("group_id", groupId);
+
+  if (error) throw error;
 }
 
 export function subscribeToRemoteGroupChat(

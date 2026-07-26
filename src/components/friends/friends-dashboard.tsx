@@ -238,6 +238,18 @@ export function FriendsDashboard() {
   );
   const selectedFriend =
     friendList.find((friend) => friend.id === selectedFriendId) ?? null;
+  useEffect(() => {
+    const friendId = new URLSearchParams(window.location.search).get("friend");
+    if (!friendId || !friendList.some((friend) => friend.id === friendId)) {
+      return;
+    }
+
+    setSelectedFriendId(friendId);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("friend");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }, [friendList]);
+
   const studyingCount = friendList.filter((friend) => friend.studying).length;
   const incomingRequests = friendRequests.filter(
     (request) => request.direction === "incoming",

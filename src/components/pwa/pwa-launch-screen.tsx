@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 type LaunchPhase = "visible" | "leaving" | "hidden";
-const LEAVE_DELAY_MS = 1100;
-const REMOVE_DELAY_MS = 1420;
+const MAX_VISIBLE_MS = 2500;
+const FADE_MS = 300;
 
 export function PwaLaunchScreen() {
   const [phase, setPhase] = useState<LaunchPhase>("visible");
@@ -23,17 +23,35 @@ export function PwaLaunchScreen() {
       return () => window.cancelAnimationFrame(frame);
     }
 
-    const leaveTimeout = window.setTimeout(
-      () => setPhase("leaving"),
-      LEAVE_DELAY_MS,
-    );
-    const removeTimeout = window.setTimeout(
-      () => setPhase("hidden"),
-      REMOVE_DELAY_MS,
-    );
+    let removeTimeout = 0;
+    let frame = 0;
+    let leaving = false;
+
+    function leave() {
+      if (leaving) return;
+      leaving = true;
+      setPhase("leaving");
+      removeTimeout = window.setTimeout(() => setPhase("hidden"), FADE_MS);
+    }
+
+    function leaveWhenPainted() {
+      frame = window.requestAnimationFrame(() => {
+        frame = window.requestAnimationFrame(leave);
+      });
+    }
+
+    if (document.readyState === "complete") {
+      leaveWhenPainted();
+    } else {
+      window.addEventListener("load", leaveWhenPainted, { once: true });
+    }
+
+    const maximumTimeout = window.setTimeout(leave, MAX_VISIBLE_MS);
 
     return () => {
-      window.clearTimeout(leaveTimeout);
+      window.removeEventListener("load", leaveWhenPainted);
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(maximumTimeout);
       window.clearTimeout(removeTimeout);
     };
   }, []);

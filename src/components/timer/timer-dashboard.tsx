@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { CircleStop, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import {
+  CalendarClock,
+  CircleStop,
+  LoaderCircle,
+  Pencil,
+  Play,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
 import { PaginatedList } from "@/components/paginated-list";
@@ -13,10 +21,12 @@ import {
 } from "@/lib/client-cache";
 import {
   fetchRemoteTimerState,
+  deleteRemoteStudySession,
   saveRemoteSubjects,
   startRemoteStudySession,
   stopRemoteStudySession,
   subscribeToRemoteAppChanges,
+  updateRemoteStudySession,
   type RemoteTimerState,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -77,7 +87,7 @@ type StoredSession = {
   startedAt: string;
   endedAt: string;
   status: "completed" | "needs_confirmation";
-  source: "timer";
+  source: "manual_adjustment" | "timer";
 };
 
 type StoredState = {
@@ -111,6 +121,9 @@ export function TimerDashboard() {
   const [subjectToastMessage, setSubjectToastMessage] = useState<string | null>(
     null,
   );
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [sessionBusy, setSessionBusy] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const isSavingSubjectsRef = useRef(false);
 
   const applyRemoteTimerState = useCallback((remoteState: RemoteTimerState) => {
@@ -248,6 +261,17 @@ export function TimerDashboard() {
   const subjectTotals = groupSessionsBySubject(todaySessions);
   const completedToday = sumCompletedSeconds(todaySessions);
   const totalToday = completedToday + elapsedSeconds;
+  const sortedSessions = useMemo(
+    () =>
+      [...sessions].sort(
+        (first, second) =>
+          new Date(second.startedAt).getTime() -
+          new Date(first.startedAt).getTime(),
+      ),
+    [sessions],
+  );
+  const editingSession =
+    sessions.find((session) => session.id === editingSessionId) ?? null;
 
   async function startStudy(
     subjectId: string | null,
@@ -292,7 +316,10 @@ export function TimerDashboard() {
 
     if (dataMode === "remote" && remoteClient) {
       try {
-        await stopRemoteStudySession(remoteClient);
+        const stopped = await stopRemoteStudySession(remoteClient);
+        if (stopped?.status === "needs_confirmation") {
+          setEditingSessionId(stopped.id);
+        }
       } finally {
         await refreshRemoteTimer(remoteClient);
       }
@@ -301,22 +328,99 @@ export function TimerDashboard() {
     }
 
     const endedAt = new Date();
+    const sessionId = crypto.randomUUID();
+    const needsConfirmation = isLongSession(activeSession.startedAt, endedAt);
 
     setSessions((current) => [
       {
-        id: crypto.randomUUID(),
+        id: sessionId,
         subjectId: activeSession.subjectId,
         groupId: activeSession.groupId ?? null,
         startedAt: activeSession.startedAt,
         endedAt: endedAt.toISOString(),
-        status: isLongSession(activeSession.startedAt, endedAt)
-          ? "needs_confirmation"
-          : "completed",
+        status: needsConfirmation ? "needs_confirmation" : "completed",
         source: "timer",
       },
       ...current,
     ]);
     setActiveSession(null);
+    if (needsConfirmation) setEditingSessionId(sessionId);
+  }
+
+  async function saveSessionEdit({
+    endedAt,
+    sessionId,
+    startedAt,
+    subjectId,
+  }: {
+    endedAt: string;
+    sessionId: string;
+    startedAt: string;
+    subjectId: string | null;
+  }) {
+    const previousSessions = sessions;
+    setSessionBusy(true);
+    setSessionError(null);
+    setSessions((current) =>
+      current.map((session) =>
+        session.id === sessionId
+          ? {
+              ...session,
+              endedAt,
+              source: "manual_adjustment",
+              startedAt,
+              status: "completed",
+              subjectId,
+            }
+          : session,
+      ),
+    );
+
+    try {
+      if (dataMode === "remote" && remoteClient) {
+        await updateRemoteStudySession({
+          endedAt,
+          sessionId,
+          startedAt,
+          subjectId,
+          supabase: remoteClient,
+        });
+        await refreshRemoteTimer(remoteClient);
+      }
+      setEditingSessionId(null);
+      setSubjectToastMessage("Session updated");
+    } catch {
+      setSessions(previousSessions);
+      setSessionError("Session could not be updated.");
+    } finally {
+      setSessionBusy(false);
+    }
+  }
+
+  async function deleteSession(sessionId: string) {
+    const previousSessions = sessions;
+    setSessionBusy(true);
+    setSessionError(null);
+    setSessions((current) =>
+      current.filter((session) => session.id !== sessionId),
+    );
+
+    try {
+      if (dataMode === "remote" && remoteClient) {
+        await deleteRemoteStudySession({
+          sessionId,
+          supabase: remoteClient,
+        });
+        await refreshRemoteTimer(remoteClient);
+      }
+      setEditingSessionId(null);
+      setSubjectToastMessage("Session deleted");
+    } catch {
+      setSessions(previousSessions);
+      setSessionError("Session could not be deleted.");
+    } finally {
+      setSessionBusy(false);
+    }
   }
 
   function openSubjectEditor(subjectId: string) {
@@ -515,7 +619,7 @@ export function TimerDashboard() {
                 </p>
 
                 <button
-                  className="mac-focus inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)]"
+                  className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)]"
                   onClick={() => openSubjectEditor(subject.id)}
                   type="button"
                 >
@@ -527,6 +631,78 @@ export function TimerDashboard() {
           }}
           resetKey="timer-subjects"
         />
+      </section>
+
+      <section className="space-y-3 xl:col-span-2">
+        <div className="flex items-center gap-2">
+          <CalendarClock
+            aria-hidden
+            className="text-[var(--color-mac-yellow)]"
+            size={18}
+          />
+          <h2 className="text-lg font-semibold">Session history</h2>
+        </div>
+
+        {sortedSessions.length ? (
+          <PaginatedList
+            className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)] px-3"
+            items={sortedSessions}
+            pageSize={10}
+            renderItem={(session) => {
+              const subject = subjects.find(
+                (item) => item.id === session.subjectId,
+              );
+
+              return (
+                <div
+                  className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2.5"
+                  key={session.id}
+                >
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-sm font-semibold">
+                        {subject?.name ?? "General study"}
+                      </p>
+                      {session.status === "needs_confirmation" ? (
+                        <span className="shrink-0 rounded bg-[rgb(255_227_48/0.1)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-mac-yellow)]">
+                          Review
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      {formatSessionDate(session.startedAt)} ·{" "}
+                      {formatDuration(
+                        Math.max(
+                          0,
+                          Math.floor(
+                            (new Date(session.endedAt).getTime() -
+                              new Date(session.startedAt).getTime()) /
+                              1000,
+                          ),
+                        ),
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    className="mac-focus inline-flex h-10 items-center justify-center rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold"
+                    onClick={() => {
+                      setSessionError(null);
+                      setEditingSessionId(session.id);
+                    }}
+                    type="button"
+                  >
+                    {session.status === "needs_confirmation" ? "Review" : "Edit"}
+                  </button>
+                </div>
+              );
+            }}
+            resetKey="session-history"
+          />
+        ) : (
+          <p className="rounded-md border border-dashed border-[var(--color-border)] p-4 text-sm text-[var(--color-text-muted)]">
+            Completed sessions will appear here.
+          </p>
+        )}
       </section>
 
       {isEditingSubjects ? (
@@ -555,11 +731,224 @@ export function TimerDashboard() {
         />
       ) : null}
 
+      {editingSession ? (
+        <SessionEditor
+          busy={sessionBusy}
+          error={sessionError}
+          onClose={() => {
+            setEditingSessionId(null);
+            setSessionError(null);
+          }}
+          onDelete={() => void deleteSession(editingSession.id)}
+          onSave={(input) =>
+            void saveSessionEdit({
+              ...input,
+              sessionId: editingSession.id,
+            })
+          }
+          session={editingSession}
+          subjects={subjects}
+        />
+      ) : null}
+
       <TransientToast
         message={subjectToastMessage}
         onDismiss={() => setSubjectToastMessage(null)}
       />
     </div>
+  );
+}
+
+const GENERAL_SESSION_SUBJECT = "__general__";
+
+function SessionEditor({
+  busy,
+  error,
+  onClose,
+  onDelete,
+  onSave,
+  session,
+  subjects,
+}: {
+  busy: boolean;
+  error: string | null;
+  onClose: () => void;
+  onDelete: () => void;
+  onSave: (input: {
+    endedAt: string;
+    startedAt: string;
+    subjectId: string | null;
+  }) => void;
+  session: StoredSession;
+  subjects: StudySubject[];
+}) {
+  const [subjectId, setSubjectId] = useState(
+    session.subjectId ?? GENERAL_SESSION_SUBJECT,
+  );
+  const [startedAt, setStartedAt] = useState(() =>
+    toDateTimeLocal(session.startedAt),
+  );
+  const [endedAt, setEndedAt] = useState(() =>
+    toDateTimeLocal(session.endedAt),
+  );
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const startedDate = new Date(startedAt);
+  const endedDate = new Date(endedAt);
+  const valid =
+    !Number.isNaN(startedDate.getTime()) &&
+    !Number.isNaN(endedDate.getTime()) &&
+    endedDate.getTime() > startedDate.getTime();
+  const isDirty =
+    subjectId !== (session.subjectId ?? GENERAL_SESSION_SUBJECT) ||
+    startedAt !== toDateTimeLocal(session.startedAt) ||
+    endedAt !== toDateTimeLocal(session.endedAt);
+
+  return (
+    <>
+      <AppDialog
+        bodyClassName="space-y-4"
+        closeLabel="Close session editor"
+        footer={
+          <button
+            className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] text-sm font-semibold text-[#141414] disabled:opacity-45"
+            disabled={!valid || busy}
+            onClick={() =>
+              onSave({
+                endedAt: endedDate.toISOString(),
+                startedAt: startedDate.toISOString(),
+                subjectId:
+                  subjectId === GENERAL_SESSION_SUBJECT ? null : subjectId,
+              })
+            }
+            type="button"
+          >
+            {busy ? (
+              <>
+                <LoaderCircle aria-hidden className="animate-spin" size={16} />
+                Saving…
+              </>
+            ) : session.status === "needs_confirmation" ? (
+              "Confirm session"
+            ) : (
+              "Save changes"
+            )}
+          </button>
+        }
+        isDirty={isDirty}
+        maxWidthClassName="max-w-md"
+        onClose={onClose}
+        title={
+          session.status === "needs_confirmation"
+            ? "Review long session"
+            : "Edit session"
+        }
+      >
+        {session.status === "needs_confirmation" ? (
+          <p className="rounded-md bg-[rgb(255_227_48/0.08)] p-3 text-sm text-[var(--color-text-muted)]">
+            This timer ran for over six hours. Check the times before confirming.
+          </p>
+        ) : null}
+
+        <div className="text-sm font-medium">
+          <p className="mb-2">Subject</p>
+          <CustomSelect
+            ariaLabel="Session subject"
+            onChange={setSubjectId}
+            options={[
+              { label: "General study", value: GENERAL_SESSION_SUBJECT },
+              ...subjects.map((subject) => ({
+                label: subject.name,
+                swatchColor: subject.color,
+                value: subject.id,
+              })),
+            ]}
+            value={subjectId}
+          />
+        </div>
+
+        <label className="block text-sm font-medium">
+          Started
+          <input
+            className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
+            onChange={(event) => setStartedAt(event.target.value)}
+            type="datetime-local"
+            value={startedAt}
+          />
+        </label>
+
+        <label className="block text-sm font-medium">
+          Ended
+          <input
+            className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
+            onChange={(event) => setEndedAt(event.target.value)}
+            type="datetime-local"
+            value={endedAt}
+          />
+        </label>
+
+        {!valid ? (
+          <p className="text-sm text-[var(--color-danger)]">
+            End time must be after start time.
+          </p>
+        ) : null}
+        {error ? (
+          <p className="text-sm text-[var(--color-danger)]" role="status">
+            {error}
+          </p>
+        ) : null}
+
+        <button
+          className="mac-focus h-11 rounded-md border border-[rgb(255_107_107/0.45)] px-4 text-sm font-semibold text-[var(--color-danger)]"
+          disabled={busy}
+          onClick={() => setConfirmDelete(true)}
+          type="button"
+        >
+          Delete session
+        </button>
+      </AppDialog>
+
+      {confirmDelete ? (
+        <AppDialog
+          closeLabel="Close delete session confirmation"
+          footer={
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="mac-focus h-11 rounded-md border border-[var(--color-border)] text-sm font-semibold"
+                disabled={busy}
+                onClick={() => setConfirmDelete(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="mac-focus inline-flex h-11 items-center justify-center rounded-md border border-[rgb(255_107_107/0.45)] text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
+                disabled={busy}
+                onClick={onDelete}
+                type="button"
+              >
+                {busy ? (
+                  <LoaderCircle
+                    aria-hidden
+                    className="animate-spin"
+                    size={16}
+                  />
+                ) : (
+                  "Delete"
+                )}
+              </button>
+            </div>
+          }
+          maxWidthClassName="max-w-sm"
+          onClose={() => setConfirmDelete(false)}
+          title="Delete session?"
+          variant="confirmation"
+        >
+          <p className="text-sm text-[var(--color-text-muted)]">
+            This session will be removed from your totals.
+          </p>
+        </AppDialog>
+      ) : null}
+    </>
   );
 }
 
@@ -796,6 +1185,28 @@ function SubjectEditor({
       ) : null}
     </>
   );
+}
+
+function toDateTimeLocal(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const localDate = new Date(
+    date.getTime() - date.getTimezoneOffset() * 60 * 1000,
+  );
+  return localDate.toISOString().slice(0, 16);
+}
+
+function formatSessionDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("en-AU", {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+  }).format(date);
 }
 
 function normalizeSubjects(subjects: StoredSubject[] | undefined) {

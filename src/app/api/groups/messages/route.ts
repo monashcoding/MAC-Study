@@ -131,7 +131,7 @@ async function sendGroupMessagePush({
         category: "other",
         tag: `mac-study-group-message-${messageId}`,
         title: groupName,
-        url: "/app/groups",
+        url: `/app/groups?group=${groupId}`,
         userId,
       }),
     ),

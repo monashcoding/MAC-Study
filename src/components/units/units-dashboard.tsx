@@ -572,10 +572,11 @@ function EnrollmentSection({
                 <span className="block text-lg font-semibold">
                   {enrollment.code}
                 </span>
-                <span className="mt-1 block truncate text-sm text-[var(--color-text-muted)]">
-                  {enrollment.nickname ||
-                    getTeachingPeriodLabel(enrollment.period)}
-                </span>
+                {enrollment.nickname ? (
+                  <span className="mt-1 block truncate text-sm text-[var(--color-text-muted)]">
+                    {enrollment.nickname}
+                  </span>
+                ) : null}
               </span>
               <span className="text-right text-xs font-semibold text-[var(--color-text-muted)]">
                 <span className="block">{enrollment.year}</span>
@@ -658,7 +659,7 @@ function OfferingDetail({
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <button
-              className="mac-focus inline-flex h-9 items-center gap-1.5 rounded-md border border-[rgb(255_227_48/0.34)] px-2.5 text-xs font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
+              className="mac-focus inline-flex h-10 items-center gap-1.5 rounded-md border border-[rgb(255_227_48/0.34)] px-2.5 text-xs font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
               onClick={() => setIsLinkDialogOpen(true)}
               type="button"
             >
@@ -666,7 +667,7 @@ function OfferingDetail({
               Link to timer
             </button>
             <button
-              className="mac-focus inline-flex h-9 items-center rounded-md px-2 text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-45"
+              className="mac-focus inline-flex h-10 items-center rounded-md px-2 text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-45"
               disabled={busyKey === `leave:${enrollment.offeringId}`}
               onClick={() => setIsLeaveDialogOpen(true)}
               type="button"
@@ -696,7 +697,7 @@ function OfferingDetail({
             {(["all", "friends"] as const).map((item) => (
               <button
                 className={cn(
-                  "mac-focus relative h-9 shrink-0 px-0.5 text-sm font-medium capitalize transition",
+                  "mac-focus relative h-10 shrink-0 px-0.5 text-sm font-medium capitalize transition",
                   scope === item
                     ? "font-semibold text-[var(--color-mac-yellow)] after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-[var(--color-mac-yellow)]"
                     : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
@@ -978,7 +979,7 @@ function CohortMemberCard({
       {!member.isFriend ? (
         <button
           className={cn(
-            "mac-focus inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold disabled:opacity-60",
+            "mac-focus inline-flex h-10 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold disabled:opacity-60",
             requested
               ? "border border-[var(--color-border)] text-[var(--color-text-muted)]"
               : "bg-[var(--color-mac-yellow)] text-[#141414]",
@@ -1060,6 +1061,15 @@ function AddUnitDialog({
     year !== initialYearRef.current ||
     period !== initialPeriodRef.current,
   );
+  const offeringOptions = years.flatMap((optionYear) =>
+    TEACHING_PERIODS.map((optionPeriod) => ({
+      label: `${optionYear} · ${getTeachingPeriodLabel(optionPeriod)}`,
+      period: optionPeriod,
+      value: `${optionYear}:${optionPeriod}`,
+      year: optionYear,
+    })),
+  );
+  const offeringValue = `${year}:${period}`;
 
   function updateCode(value: string) {
     setCodeInput(value.toUpperCase());
@@ -1127,31 +1137,21 @@ function AddUnitDialog({
         />
       </label>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="text-sm font-medium">
-          <p className="mb-2">Year</p>
-          <CustomSelect
-            ariaLabel="Year"
-            onChange={setYear}
-            options={years.map((option) => ({
-              label: `${option}`,
-              value: option,
-            }))}
-            value={year}
-          />
-        </div>
-        <div className="text-sm font-medium">
-          <p className="mb-2">Teaching period</p>
-          <CustomSelect
-            ariaLabel="Teaching period"
-            onChange={setPeriod}
-            options={TEACHING_PERIODS.map((option) => ({
-              label: getTeachingPeriodLabel(option),
-              value: option,
-            }))}
-            value={period}
-          />
-        </div>
+      <div className="text-sm font-medium">
+        <p className="mb-2">Teaching period</p>
+        <CustomSelect
+          ariaLabel="Teaching period"
+          onChange={(value) => {
+            const selected = offeringOptions.find(
+              (option) => option.value === value,
+            );
+            if (!selected) return;
+            setYear(selected.year);
+            setPeriod(selected.period);
+          }}
+          options={offeringOptions}
+          value={offeringValue}
+        />
       </div>
 
       {valid ? (
