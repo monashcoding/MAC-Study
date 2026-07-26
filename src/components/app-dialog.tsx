@@ -148,7 +148,7 @@ export function AppDialog({
     <div
       aria-labelledby={titleId}
       aria-modal="true"
-      className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] items-center justify-center bg-black/58 px-3 pb-[max(0.75rem,var(--safe-area-bottom))] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm"
+      className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] items-center justify-center bg-black/58 px-3 pb-[calc(var(--mobile-nav-height)+0.75rem)] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm lg:pb-[max(0.75rem,var(--safe-area-bottom))]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) requestClose();
       }}

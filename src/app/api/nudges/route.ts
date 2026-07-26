@@ -50,6 +50,16 @@ export async function POST(request: Request) {
   }
 
   const groupId = parsed.data.groupId ?? null;
+  const muted = await isNudgeMuted({
+    groupId,
+    recipientId: parsed.data.recipientId,
+    senderId: session.sub,
+  });
+
+  if (muted) {
+    return NextResponse.json({ ok: true, skipped: "disabled" });
+  }
+
   const { data: nudgeId, error: nudgeError } = await supabase.rpc(
     "send_nudge",
     {
@@ -139,6 +149,53 @@ async function sendPushNotifications(nudge: NudgeRow, senderId: string) {
       : `/app/friends?friend=${encodeURIComponent(senderId)}`,
     userId: nudge.recipient_id,
   });
+}
+
+async function isNudgeMuted({
+  groupId,
+  recipientId,
+  senderId,
+}: {
+  groupId: string | null;
+  recipientId: string;
+  senderId: string;
+}) {
+  const admin = createSupabaseAdminClient();
+  if (!admin) return false;
+
+  const globalMute = admin
+    .from("user_nudge_mutes")
+    .select("muted_user_id")
+    .eq("user_id", recipientId)
+    .eq("muted_user_id", senderId)
+    .is("group_id", null)
+    .maybeSingle();
+
+  if (!groupId) {
+    const { data } = await globalMute;
+    return Boolean(data);
+  }
+
+  const [globalResult, groupMute, senderMute] = await Promise.all([
+    globalMute,
+    admin
+      .from("user_group_notification_settings")
+      .select("nudges_muted")
+      .eq("user_id", recipientId)
+      .eq("group_id", groupId)
+      .maybeSingle<{ nudges_muted: boolean }>(),
+    admin
+      .from("user_nudge_mutes")
+      .select("muted_user_id")
+      .eq("user_id", recipientId)
+      .eq("muted_user_id", senderId)
+      .eq("group_id", groupId)
+      .maybeSingle(),
+  ]);
+
+  return Boolean(
+    globalResult.data || groupMute.data?.nudges_muted || senderMute.data,
+  );
 }
 
 function getNudgeRetryAfterSeconds(message: string) {

@@ -422,12 +422,13 @@ textarea::placeholder {
   [role="dialog"] {
     align-items: center;
     padding-inline: 0.75rem;
-    padding-bottom: max(0.75rem, var(--safe-area-bottom));
+    padding-bottom: calc(var(--mobile-nav-height) + 0.75rem);
   }
 
   [role="dialog"] > div {
     max-height: calc(
-      var(--app-viewport-height) - var(--safe-area-top) - 1.5rem
+      var(--app-viewport-height) - var(--safe-area-top) -
+        var(--mobile-nav-height) - 1.5rem
     );
     border-radius: 0.75rem;
   }
