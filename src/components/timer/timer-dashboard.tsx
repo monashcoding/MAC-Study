@@ -13,6 +13,10 @@ import {
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
+import {
+  DateTimeField,
+  type DateTimePickerPart,
+} from "@/components/date-time-field";
 import { PaginatedList } from "@/components/paginated-list";
 import { subjects as defaultSubjects } from "@/lib/demo-data";
 import {
@@ -122,6 +126,8 @@ export function TimerDashboard() {
     null,
   );
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [isSessionHistoryOpen, setIsSessionHistoryOpen] = useState(false);
+  const [returnToSessionHistory, setReturnToSessionHistory] = useState(false);
   const [sessionBusy, setSessionBusy] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const isSavingSubjectsRef = useRef(false);
@@ -318,6 +324,7 @@ export function TimerDashboard() {
       try {
         const stopped = await stopRemoteStudySession(remoteClient);
         if (stopped?.status === "needs_confirmation") {
+          setReturnToSessionHistory(false);
           setEditingSessionId(stopped.id);
         }
       } finally {
@@ -344,7 +351,10 @@ export function TimerDashboard() {
       ...current,
     ]);
     setActiveSession(null);
-    if (needsConfirmation) setEditingSessionId(sessionId);
+    if (needsConfirmation) {
+      setReturnToSessionHistory(false);
+      setEditingSessionId(sessionId);
+    }
   }
 
   async function saveSessionEdit({
@@ -388,6 +398,8 @@ export function TimerDashboard() {
         await refreshRemoteTimer(remoteClient);
       }
       setEditingSessionId(null);
+      setReturnToSessionHistory(false);
+      if (returnToSessionHistory) setIsSessionHistoryOpen(true);
       setSubjectToastMessage("Session updated");
     } catch {
       setSessions(previousSessions);
@@ -414,6 +426,8 @@ export function TimerDashboard() {
         await refreshRemoteTimer(remoteClient);
       }
       setEditingSessionId(null);
+      setReturnToSessionHistory(false);
+      if (returnToSessionHistory) setIsSessionHistoryOpen(true);
       setSubjectToastMessage("Session deleted");
     } catch {
       setSessions(previousSessions);
@@ -552,23 +566,32 @@ export function TimerDashboard() {
       </section>
 
       <section className="space-y-3 lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(18_18_18/0.36)] lg:p-5">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold">Subjects</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="min-w-0 text-xl font-semibold">Subjects</h2>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className="mac-focus inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 text-xs font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)]"
+              onClick={() => setIsSessionHistoryOpen(true)}
+              type="button"
+            >
+              <CalendarClock aria-hidden size={15} />
+              Session history
+            </button>
+            <button
+              className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)] sm:w-auto sm:px-3"
+              onClick={() => {
+                setDraftSubjects(subjects);
+                setSubjectSaveError(null);
+                setInitialEditingSubjectId(null);
+                setIsEditingSubjects(true);
+              }}
+              type="button"
+            >
+              <Pencil aria-hidden size={16} />
+              <span className="hidden sm:inline">Edit</span>
+              <span className="sr-only sm:hidden">Edit subjects</span>
+            </button>
           </div>
-          <button
-            className="mac-focus inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)]"
-            onClick={() => {
-              setDraftSubjects(subjects);
-              setSubjectSaveError(null);
-              setInitialEditingSubjectId(null);
-              setIsEditingSubjects(true);
-            }}
-            type="button"
-          >
-            <Pencil aria-hidden size={16} />
-            Edit
-          </button>
         </div>
 
         <PaginatedList
@@ -633,78 +656,6 @@ export function TimerDashboard() {
         />
       </section>
 
-      <section className="space-y-3 xl:col-span-2">
-        <div className="flex items-center gap-2">
-          <CalendarClock
-            aria-hidden
-            className="text-[var(--color-mac-yellow)]"
-            size={18}
-          />
-          <h2 className="text-lg font-semibold">Session history</h2>
-        </div>
-
-        {sortedSessions.length ? (
-          <PaginatedList
-            className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)] px-3"
-            items={sortedSessions}
-            pageSize={10}
-            renderItem={(session) => {
-              const subject = subjects.find(
-                (item) => item.id === session.subjectId,
-              );
-
-              return (
-                <div
-                  className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2.5"
-                  key={session.id}
-                >
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <p className="truncate text-sm font-semibold">
-                        {subject?.name ?? "General study"}
-                      </p>
-                      {session.status === "needs_confirmation" ? (
-                        <span className="shrink-0 rounded bg-[rgb(255_227_48/0.1)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-mac-yellow)]">
-                          Review
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                      {formatSessionDate(session.startedAt)} ·{" "}
-                      {formatDuration(
-                        Math.max(
-                          0,
-                          Math.floor(
-                            (new Date(session.endedAt).getTime() -
-                              new Date(session.startedAt).getTime()) /
-                              1000,
-                          ),
-                        ),
-                      )}
-                    </p>
-                  </div>
-                  <button
-                    className="mac-focus inline-flex h-10 items-center justify-center rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold"
-                    onClick={() => {
-                      setSessionError(null);
-                      setEditingSessionId(session.id);
-                    }}
-                    type="button"
-                  >
-                    {session.status === "needs_confirmation" ? "Review" : "Edit"}
-                  </button>
-                </div>
-              );
-            }}
-            resetKey="session-history"
-          />
-        ) : (
-          <p className="rounded-md border border-dashed border-[var(--color-border)] p-4 text-sm text-[var(--color-text-muted)]">
-            Completed sessions will appear here.
-          </p>
-        )}
-      </section>
-
       {isEditingSubjects ? (
         <SubjectEditor
           draftSubjects={draftSubjects}
@@ -731,13 +682,30 @@ export function TimerDashboard() {
         />
       ) : null}
 
+      {isSessionHistoryOpen ? (
+        <SessionHistoryDialog
+          onClose={() => setIsSessionHistoryOpen(false)}
+          onEdit={(sessionId) => {
+            setSessionError(null);
+            setReturnToSessionHistory(true);
+            setIsSessionHistoryOpen(false);
+            setEditingSessionId(sessionId);
+          }}
+          sessions={sortedSessions}
+          subjects={subjects}
+        />
+      ) : null}
+
       {editingSession ? (
         <SessionEditor
           busy={sessionBusy}
           error={sessionError}
+          key={editingSession.id}
           onClose={() => {
             setEditingSessionId(null);
             setSessionError(null);
+            if (returnToSessionHistory) setIsSessionHistoryOpen(true);
+            setReturnToSessionHistory(false);
           }}
           onDelete={() => void deleteSession(editingSession.id)}
           onSave={(input) =>
@@ -760,6 +728,86 @@ export function TimerDashboard() {
 }
 
 const GENERAL_SESSION_SUBJECT = "__general__";
+
+function SessionHistoryDialog({
+  onClose,
+  onEdit,
+  sessions,
+  subjects,
+}: {
+  onClose: () => void;
+  onEdit: (sessionId: string) => void;
+  sessions: StoredSession[];
+  subjects: StudySubject[];
+}) {
+  return (
+    <AppDialog
+      bodyClassName="p-0"
+      closeLabel="Close session history"
+      maxWidthClassName="max-w-lg"
+      onClose={onClose}
+      title="Session history"
+    >
+      {sessions.length ? (
+        <PaginatedList
+          className="divide-y divide-[var(--color-border)] px-4"
+          items={sessions}
+          pageSize={10}
+          renderItem={(session) => {
+            const subject = subjects.find(
+              (item) => item.id === session.subjectId,
+            );
+            const durationSeconds = Math.max(
+              0,
+              Math.floor(
+                (new Date(session.endedAt).getTime() -
+                  new Date(session.startedAt).getTime()) /
+                  1000,
+              ),
+            );
+
+            return (
+              <div
+                className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3"
+                key={session.id}
+              >
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-sm font-semibold">
+                      {subject?.name ?? "General study"}
+                    </p>
+                    {session.status === "needs_confirmation" ? (
+                      <span className="shrink-0 rounded bg-[rgb(255_227_48/0.1)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-mac-yellow)]">
+                        Review
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]">
+                    {formatSessionDate(session.startedAt)} ·{" "}
+                    {formatSessionTime(session.startedAt)} ·{" "}
+                    {formatDuration(durationSeconds)}
+                  </p>
+                </div>
+                <button
+                  className="mac-focus inline-flex h-11 items-center justify-center rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold"
+                  onClick={() => onEdit(session.id)}
+                  type="button"
+                >
+                  {session.status === "needs_confirmation" ? "Review" : "Edit"}
+                </button>
+              </div>
+            );
+          }}
+          resetKey="session-history-dialog"
+        />
+      ) : (
+        <p className="p-5 text-sm text-[var(--color-text-muted)]">
+          Completed sessions will appear here.
+        </p>
+      )}
+    </AppDialog>
+  );
+}
 
 function SessionEditor({
   busy,
@@ -791,6 +839,10 @@ function SessionEditor({
   const [endedAt, setEndedAt] = useState(() =>
     toDateTimeLocal(session.endedAt),
   );
+  const [activePicker, setActivePicker] = useState<{
+    field: "ended" | "started";
+    part: DateTimePickerPart;
+  } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const startedDate = new Date(startedAt);
   const endedDate = new Date(endedAt);
@@ -866,25 +918,29 @@ function SessionEditor({
           />
         </div>
 
-        <label className="block text-sm font-medium">
-          Started
-          <input
-            className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
-            onChange={(event) => setStartedAt(event.target.value)}
-            type="datetime-local"
-            value={startedAt}
-          />
-        </label>
+        <DateTimeField
+          activePart={
+            activePicker?.field === "started" ? activePicker.part : null
+          }
+          label="Started"
+          onChange={setStartedAt}
+          onPartChange={(part) =>
+            setActivePicker(part ? { field: "started", part } : null)
+          }
+          value={startedAt}
+        />
 
-        <label className="block text-sm font-medium">
-          Ended
-          <input
-            className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
-            onChange={(event) => setEndedAt(event.target.value)}
-            type="datetime-local"
-            value={endedAt}
-          />
-        </label>
+        <DateTimeField
+          activePart={
+            activePicker?.field === "ended" ? activePicker.part : null
+          }
+          label="Ended"
+          onChange={setEndedAt}
+          onPartChange={(part) =>
+            setActivePicker(part ? { field: "ended", part } : null)
+          }
+          value={endedAt}
+        />
 
         {!valid ? (
           <p className="text-sm text-[var(--color-danger)]">
@@ -1203,9 +1259,19 @@ function formatSessionDate(value: string) {
 
   return new Intl.DateTimeFormat("en-AU", {
     day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
     month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatSessionTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("en-AU", {
+    hour: "numeric",
+    hour12: true,
+    minute: "2-digit",
   }).format(date);
 }
 
