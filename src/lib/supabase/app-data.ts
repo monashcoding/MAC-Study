@@ -107,6 +107,11 @@ export type RemoteGroupChatMessage = {
   createdAt: string;
 };
 
+export type RemoteGroupChatPage = {
+  hasMore: boolean;
+  messages: RemoteGroupChatMessage[];
+};
+
 export type RemoteNudgeNotification = {
   id: string;
   groupId: string | null;
@@ -975,41 +980,53 @@ export async function joinRemotePublicGroup({
 export async function fetchRemoteGroupChatMessages(
   supabase: SupabaseClient,
   groupId: string,
+  options: { before?: string; limit?: number } = {},
 ) {
-  const { data, error } = await supabase
+  const pageSize = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  let query = supabase
     .from("group_chat_messages")
     .select("id, group_id, user_id, body, created_at")
     .eq("group_id", groupId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true })
-    .limit(200);
+    .is("deleted_at", null);
+
+  if (options.before) {
+    query = query.lt("created_at", options.before);
+  }
+
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .limit(pageSize + 1);
 
   if (error) throw error;
 
-  return ((data ?? []) as GroupChatRow[]).map(groupChatMessageFromRow);
+  const rows = (data ?? []) as GroupChatRow[];
+
+  return {
+    hasMore: rows.length > pageSize,
+    messages: rows.slice(0, pageSize).map(groupChatMessageFromRow).reverse(),
+  } satisfies RemoteGroupChatPage;
 }
 
 export async function sendRemoteGroupChatMessage({
   body,
   groupId,
-  supabase,
 }: {
   body: string;
   groupId: string;
-  supabase: SupabaseClient;
 }) {
-  const userId = await getRemoteUserId();
   const trimmedBody = body.trim();
 
-  if (!userId || !trimmedBody) return;
+  if (!trimmedBody) return;
 
-  const { error } = await supabase.from("group_chat_messages").insert({
-    body: trimmedBody,
-    group_id: groupId,
-    user_id: userId,
+  const response = await fetch("/api/groups/messages", {
+    body: JSON.stringify({ body: trimmedBody, groupId }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
   });
 
-  if (error) throw error;
+  if (!response.ok) {
+    throw new Error(await getResponseError(response));
+  }
 }
 
 export function subscribeToRemoteGroupChat(

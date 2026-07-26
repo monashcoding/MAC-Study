@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { ProfileIdentityForm } from "@/components/auth/profile-identity-form";
 import { getSafeNextPath } from "@/lib/auth/safe-next-path";
 import { getServerStudySession } from "@/lib/auth/server-session";
@@ -48,40 +49,60 @@ export default async function ProfileSetupPage({
     params.username?.trim() ?? profile?.username?.trim() ?? "";
 
   return (
-    <main className="min-h-dvh bg-[var(--color-background)] px-4 pb-8 pt-[calc(var(--safe-area-top)+2rem)]">
-      <div className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-md flex-col justify-center">
-        <Link
-          className="mac-focus mb-8 inline-flex items-center gap-3 rounded-md"
-          href="/"
-        >
-          <Image
-            alt=""
-            aria-hidden
-            className="rounded-full"
-            height={42}
-            priority
-            src="/icons/mac-square.png"
-            width={42}
-          />
-          <span>
-            <span className="block text-xl font-semibold">MAC Study</span>
-            <span className="text-sm text-[var(--color-text-muted)]">
-              {isEditing ? "Edit profile" : "Profile setup"}
+    <main className="min-h-dvh bg-[var(--color-background)] px-4 pb-8 pt-[calc(var(--safe-area-top)+1rem)]">
+      <div
+        className={`mx-auto flex min-h-[calc(100dvh-3rem)] w-full max-w-md flex-col ${
+          isEditing ? "" : "justify-center"
+        }`}
+      >
+        {isEditing ? (
+          <header className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center">
+            <Link
+              aria-label="Back to profile"
+              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]"
+              href={next}
+            >
+              <ArrowLeft aria-hidden size={20} />
+            </Link>
+            <h1 className="text-center text-lg font-semibold">Edit profile</h1>
+            <span aria-hidden />
+          </header>
+        ) : (
+          <Link
+            className="mac-focus mb-8 inline-flex items-center gap-3 rounded-md"
+            href="/"
+          >
+            <Image
+              alt=""
+              aria-hidden
+              className="rounded-full"
+              height={42}
+              priority
+              src="/icons/mac-square.png"
+              width={42}
+            />
+            <span>
+              <span className="block text-xl font-semibold">MAC Study</span>
+              <span className="text-sm text-[var(--color-text-muted)]">
+                Profile setup
+              </span>
             </span>
-          </span>
-        </Link>
+          </Link>
+        )}
 
-        <section className="rounded-md bg-[rgb(255_255_255/0.035)] p-5">
-          <p className="text-sm font-medium text-[var(--color-mac-yellow)]">
-            {isEditing ? "Your identity" : "Choose your identity"}
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold">
-            {isEditing ? "Edit your profile" : "Set your name and @username"}
-          </h1>
-          <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-            Your name can match someone else. Your username is unique and is how
-            friends find the right account.
-          </p>
+        <section
+          className={
+            isEditing ? "mt-6" : "rounded-md bg-[rgb(255_255_255/0.035)] p-5"
+          }
+        >
+          {!isEditing ? (
+            <>
+              <h1 className="text-2xl font-semibold">Set up your profile</h1>
+              <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+                Add your name and a unique username.
+              </p>
+            </>
+          ) : null}
 
           <ProfileIdentityForm
             defaultName={defaultName}

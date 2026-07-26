@@ -15,6 +15,7 @@ import {
   Check,
   Info,
   Link2,
+  LoaderCircle,
   Plus,
   Search,
   UserPlus,
@@ -290,7 +291,7 @@ export function UnitsDashboard() {
       }
 
       setIsAdding(false);
-      setFeedback("Unit added to your cohort. Study timer unchanged.");
+      setToastMessage("Unit added");
     } catch (error) {
       setFeedback(getErrorMessage(error, "Could not add that unit."));
     } finally {
@@ -319,7 +320,7 @@ export function UnitsDashboard() {
       }
 
       setSelectedOfferingId(null);
-      setFeedback("Left the cohort. Your timer history is unchanged.");
+      setToastMessage("Unit left");
     } catch (error) {
       setFeedback(getErrorMessage(error, "Could not leave this cohort."));
     } finally {
@@ -430,7 +431,7 @@ export function UnitsDashboard() {
             : member,
         ),
       );
-      setFeedback("Added to group.");
+      setToastMessage("Group invite sent");
     } catch (error) {
       setFeedback(getErrorMessage(error, "Could not add them to that group."));
     } finally {
@@ -489,7 +490,7 @@ export function UnitsDashboard() {
     <div className="space-y-6">
       <section className="flex justify-end">
         <button
-          className="mac-focus inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+          className="mac-focus inline-flex h-10 shrink-0 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
           onClick={() => setIsAdding(true)}
           type="button"
         >
@@ -530,6 +531,10 @@ export function UnitsDashboard() {
           suggestions={unitState.suggestions}
         />
       ) : null}
+      <TransientToast
+        message={toastMessage}
+        onDismiss={() => setToastMessage(null)}
+      />
     </div>
   );
 }
@@ -634,26 +639,26 @@ function OfferingDetail({
   const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
 
   return (
-    <div className="space-y-4">
-      <section className="border-b border-[rgb(255_255_255/0.08)] pb-4">
-        <div className="flex items-center gap-2.5">
+    <div className="space-y-5">
+      <section className="space-y-3">
+        <div className="flex items-center gap-1.5">
           <button
             aria-label="Back to units"
-            className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+            className="mac-focus -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
             onClick={onBack}
             type="button"
           >
             <ArrowLeft aria-hidden size={19} />
           </button>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-[var(--color-text-muted)]">
+            <p className="truncate text-xs font-medium text-[var(--color-text-muted)]">
               {enrollment.year} ·{" "}
               {getTeachingPeriodShortLabel(enrollment.period)}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1">
             <button
-              className="mac-focus inline-flex h-11 items-center gap-1.5 rounded-xl bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] transition hover:brightness-105"
+              className="mac-focus inline-flex h-9 items-center gap-1.5 rounded-md border border-[rgb(255_227_48/0.34)] px-2.5 text-xs font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
               onClick={() => setIsLinkDialogOpen(true)}
               type="button"
             >
@@ -661,7 +666,7 @@ function OfferingDetail({
               Link to timer
             </button>
             <button
-              className="mac-focus inline-flex h-11 items-center rounded-xl border border-[rgb(255_107_107/0.42)] bg-[rgb(255_107_107/0.06)] px-3 text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.12)] disabled:opacity-45"
+              className="mac-focus inline-flex h-9 items-center rounded-md px-2 text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-45"
               disabled={busyKey === `leave:${enrollment.offeringId}`}
               onClick={() => setIsLeaveDialogOpen(true)}
               type="button"
@@ -671,30 +676,30 @@ function OfferingDetail({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <label className="flex h-11 items-center gap-2 rounded-xl border border-[rgb(255_255_255/0.12)] bg-[rgb(255_255_255/0.018)] px-3 transition focus-within:border-[var(--color-mac-yellow)] focus-within:bg-[rgb(255_255_255/0.025)]">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <label className="flex h-10 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 transition focus-within:border-[rgb(255_227_48/0.6)]">
             <Search
               aria-hidden
               className="text-[var(--color-text-muted)]"
-              size={15}
+              size={16}
             />
             <input
               aria-label="Search people in this unit"
-              className="mac-focus min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--color-text-muted)]"
+              className="mac-focus min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--color-text-muted)]"
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search people"
+              placeholder="Search students"
               type="search"
               value={search}
             />
           </label>
-          <div className="flex items-center gap-0.5 overflow-x-auto">
+          <div className="flex items-center gap-5 border-b border-[var(--color-border)] lg:border-0">
             {(["all", "friends"] as const).map((item) => (
               <button
                 className={cn(
-                  "mac-focus h-7 shrink-0 rounded-full px-2.5 text-[11px] font-semibold capitalize transition",
+                  "mac-focus relative h-9 shrink-0 px-0.5 text-sm font-medium capitalize transition",
                   scope === item
-                    ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-                    : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]",
+                    ? "font-semibold text-[var(--color-mac-yellow)] after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-[var(--color-mac-yellow)]"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
                 )}
                 key={item}
                 onClick={() => onScopeChange(item)}
@@ -709,11 +714,11 @@ function OfferingDetail({
 
       {feedback ? <Feedback message={feedback} /> : null}
 
-      <section className="space-y-2">
+      <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-base font-semibold">People in this unit</h3>
+          <h3 className="text-base font-semibold">Students</h3>
           <span className="text-xs text-[var(--color-text-muted)]">
-            {cohort.length} {cohort.length === 1 ? "person" : "people"}
+            {cohort.length} {cohort.length === 1 ? "member" : "members"}
           </span>
         </div>
         {cohortLoading ? (
@@ -740,8 +745,8 @@ function OfferingDetail({
             resetKey={`${enrollment.offeringId}:${scope}:${search}`}
           />
         ) : (
-          <p className="border-y border-dashed border-[var(--color-border)] py-5 text-sm text-[var(--color-text-muted)]">
-            No students match this view yet.
+          <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">
+            No students found.
           </p>
         )}
       </section>
@@ -882,7 +887,7 @@ function LeaveUnitDialog({
       footer={
         <div className="grid grid-cols-2 gap-2">
           <button
-            className="mac-focus h-11 rounded-lg border border-[var(--color-border)] text-sm font-semibold"
+            className="mac-focus h-11 rounded-md border border-[var(--color-border)] text-sm font-semibold"
             disabled={busy}
             onClick={onClose}
             type="button"
@@ -890,7 +895,7 @@ function LeaveUnitDialog({
             Cancel
           </button>
           <button
-            className="mac-focus h-11 rounded-lg border border-[rgb(255_107_107/0.45)] bg-[rgb(255_107_107/0.07)] text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
+            className="mac-focus h-11 rounded-md border border-[rgb(255_107_107/0.45)] text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
             disabled={busy}
             onClick={onConfirm}
             type="button"
@@ -901,13 +906,9 @@ function LeaveUnitDialog({
       }
       maxWidthClassName="max-w-md"
       onClose={onClose}
-      title="Leave unit?"
-    >
-      <p className="text-sm leading-6 text-[var(--color-text-muted)]">
-        Leave {enrollment.code}? Your study subject and history will stay, but
-        the unit link will be removed.
-      </p>
-    </AppDialog>
+      title={`Leave ${enrollment.code}?`}
+      variant="confirmation"
+    />
   );
 }
 
@@ -1089,7 +1090,11 @@ function AddUnitDialog({
           }
           type="button"
         >
-          <Plus aria-hidden size={17} />
+          {isSaving ? (
+            <LoaderCircle aria-hidden className="animate-spin" size={17} />
+          ) : (
+            <Plus aria-hidden size={17} />
+          )}
           {isSaving ? "Adding…" : "Add unit"}
         </button>
       }

@@ -134,12 +134,9 @@ export function PushNotificationSettings() {
     <div className="px-3 py-4">
       <div className="mb-3">
         <p className="font-semibold">Notifications</p>
-        <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
-          Choose what can alert you.
-        </p>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.018)]">
+      <div className="overflow-hidden rounded-md border border-[var(--color-border)] bg-[rgb(255_255_255/0.018)]">
         <div className="flex items-center justify-between gap-4 px-3 py-3.5">
           <SettingIcon>
             {enabled ? (
@@ -155,8 +152,9 @@ export function PushNotificationSettings() {
             </p>
           </div>
           <button
+            aria-busy={pushStatus.state === "checking"}
             className={cn(
-              "mac-focus inline-flex h-11 shrink-0 items-center justify-center rounded-full px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
+              "mac-focus inline-flex h-11 shrink-0 items-center justify-center rounded-md px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
               enabled
                 ? "bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]"
                 : "bg-[var(--color-mac-yellow)] text-[#141414]",
@@ -169,29 +167,31 @@ export function PushNotificationSettings() {
           </button>
         </div>
 
-        <div className="border-t border-[var(--color-border)]">
-          <PreferenceRow
-            checked={preferences.friendNotifications}
-            disabled={savingKey !== null}
-            icon={<UserRoundPlus aria-hidden size={18} />}
-            label="Friend activity"
-            onChange={() => void togglePreference("friendNotifications")}
-          />
-          <PreferenceRow
-            checked={preferences.nudgeNotifications}
-            disabled={savingKey !== null}
-            icon={<Hand aria-hidden size={18} />}
-            label="Nudges"
-            onChange={() => void togglePreference("nudgeNotifications")}
-          />
-          <PreferenceRow
-            checked={preferences.otherNotifications}
-            disabled={savingKey !== null}
-            icon={<MessagesSquare aria-hidden size={18} />}
-            label="Other activity"
-            onChange={() => void togglePreference("otherNotifications")}
-          />
-        </div>
+        {enabled ? (
+          <div className="border-t border-[var(--color-border)]">
+            <PreferenceRow
+              checked={preferences.friendNotifications}
+              disabled={savingKey !== null}
+              icon={<UserRoundPlus aria-hidden size={18} />}
+              label="Friend requests"
+              onChange={() => void togglePreference("friendNotifications")}
+            />
+            <PreferenceRow
+              checked={preferences.nudgeNotifications}
+              disabled={savingKey !== null}
+              icon={<Hand aria-hidden size={18} />}
+              label="Nudges"
+              onChange={() => void togglePreference("nudgeNotifications")}
+            />
+            <PreferenceRow
+              checked={preferences.otherNotifications}
+              disabled={savingKey !== null}
+              icon={<MessagesSquare aria-hidden size={18} />}
+              label="Group messages & invites"
+              onChange={() => void togglePreference("otherNotifications")}
+            />
+          </div>
+        ) : null}
       </div>
 
       {feedback ? (

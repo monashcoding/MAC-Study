@@ -671,6 +671,17 @@ export function FriendsDashboard() {
         <SummaryStat label="Groups" value={`${socialState.groups.length}`} />
       </section>
 
+      <div className="flex justify-end">
+        <button
+          className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] transition active:scale-[0.98]"
+          onClick={() => setIsAdding(true)}
+          type="button"
+        >
+          <Plus aria-hidden size={17} />
+          Add
+        </button>
+      </div>
+
       <div
         aria-label="Friends view"
         className="grid grid-cols-2 rounded-xl bg-[rgb(255_255_255/0.04)] p-1"
@@ -722,21 +733,11 @@ export function FriendsDashboard() {
 
       {activeTab === "friends" ? (
         <section className="space-y-3" role="tabpanel">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-[var(--color-text-muted)]">
-              {friendList.length
-                ? `${friendList.length} ${friendList.length === 1 ? "friend" : "friends"}`
-                : "Add someone to get started"}
-            </p>
-            <button
-              className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
-              onClick={() => setIsAdding(true)}
-              type="button"
-            >
-              <Plus aria-hidden size={17} />
-              Add
-            </button>
-          </div>
+          <p className="text-sm font-medium text-[var(--color-text-muted)]">
+            {friendList.length
+              ? `${friendList.length} ${friendList.length === 1 ? "friend" : "friends"}`
+              : "Add someone to get started"}
+          </p>
 
           <PaginatedList
             className="grid gap-2 lg:grid-cols-2 lg:gap-3"

@@ -258,6 +258,13 @@ export function TimerDashboard() {
     }
 
     setIsChoosingStudy(false);
+    const optimisticSession: ActiveSession = {
+      subjectId,
+      groupId,
+      startedAt: new Date().toISOString(),
+    };
+    setActiveSession(optimisticSession);
+    setNow(new Date());
 
     if (dataMode === "remote" && remoteClient) {
       try {
@@ -268,17 +275,14 @@ export function TimerDashboard() {
         });
         await refreshRemoteTimer(remoteClient);
       } catch {
-        await refreshRemoteTimer(remoteClient);
+        setActiveSession((current) =>
+          current?.startedAt === optimisticSession.startedAt ? null : current,
+        );
+        await refreshRemoteTimer(remoteClient).catch(() => undefined);
       }
 
       return;
     }
-
-    setActiveSession({
-      subjectId,
-      groupId,
-      startedAt: new Date().toISOString(),
-    });
   }
 
   async function stopStudy() {

@@ -6,6 +6,20 @@ import { cn } from "@/lib/utils";
 const MAX_WEEK_COUNT = 52;
 const MIN_WEEK_COUNT = 12;
 const WEEK_PITCH_PX = 16;
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
 
 export function StudyHeatmap({
   dailySeconds,
@@ -93,9 +107,7 @@ export function StudyHeatmap({
                 key={week[0].key}
               >
                 {shouldShowMonth(weeks, index)
-                  ? week[0].date.toLocaleDateString("en-AU", {
-                      month: "short",
-                    })
+                  ? MONTH_LABELS[week[0].date.getMonth()]
                   : ""}
               </span>
             ))}
@@ -233,11 +245,7 @@ function formatHeatmapTime(seconds: number) {
 }
 
 function formatDayLabel(date: Date) {
-  return date.toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return `${date.getDate()} ${MONTH_LABELS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
 function startOfDay(date: Date) {

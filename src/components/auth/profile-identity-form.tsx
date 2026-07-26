@@ -28,6 +28,7 @@ export function ProfileIdentityForm({
 }) {
   const [username, setUsername] = useState(defaultUsername);
   const [availability, setAvailability] = useState<Availability>("idle");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const normalizedUsername = normalizeUsername(username);
 
   useEffect(() => {
@@ -78,7 +79,11 @@ export function ProfileIdentityForm({
   }, [defaultUsername, normalizedUsername, userId]);
 
   return (
-    <form action={saveProfileIdentity} className="mt-6 space-y-4">
+    <form
+      action={saveProfileIdentity}
+      className="mt-6 space-y-4"
+      onSubmit={() => setIsSubmitting(true)}
+    >
       <input name="edit" type="hidden" value={isEditing ? "1" : "0"} />
       <input name="next" type="hidden" value={next} />
 
@@ -153,6 +158,7 @@ export function ProfileIdentityForm({
           availability === "taken"
         }
         label={submitLabel}
+        submitting={isSubmitting}
       />
 
       {errorText ? (
@@ -173,6 +179,12 @@ function UsernameStatus({
   defaultUsername: string;
   normalizedUsername: string;
 }) {
+  const unchanged = normalizedUsername === normalizeUsername(defaultUsername);
+
+  if (availability === "available" && unchanged) {
+    return null;
+  }
+
   let className = "text-[var(--color-text-muted)]";
   let message = "Use 3–24 letters, numbers, or underscores.";
 
@@ -186,10 +198,7 @@ function UsernameStatus({
     message = `@${normalizedUsername} is taken.`;
   } else if (availability === "available") {
     className = "text-[var(--color-success)]";
-    message =
-      normalizedUsername === normalizeUsername(defaultUsername)
-        ? "Current username."
-        : `@${normalizedUsername} is available.`;
+    message = `@${normalizedUsername} is available.`;
   } else if (availability === "error") {
     message = "Could not check right now. You can still try saving.";
   }
@@ -204,19 +213,23 @@ function UsernameStatus({
 function SubmitButton({
   disabled,
   label,
+  submitting,
 }: {
   disabled: boolean;
   label: string;
+  submitting: boolean;
 }) {
   const { pending } = useFormStatus();
+  const busy = pending || submitting;
 
   return (
     <button
+      aria-busy={busy}
       className="mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-50"
-      disabled={disabled || pending}
+      disabled={disabled || busy}
       type="submit"
     >
-      {pending ? (
+      {busy ? (
         <>
           <LoaderCircle aria-hidden className="animate-spin" size={18} />
           Saving…

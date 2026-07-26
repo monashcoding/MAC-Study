@@ -8,21 +8,24 @@ import {
   useState,
 } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ArrowLeft, MessageCircle, Send } from "lucide-react";
+import { ArrowLeft, LoaderCircle, MessageCircle, Send } from "lucide-react";
 import type { SocialFriend } from "@/lib/social-state";
 import {
   fetchRemoteGroupChatMessages,
   sendRemoteGroupChatMessage,
   subscribeToRemoteGroupChat,
   type RemoteGroupChatMessage,
+  type RemoteGroupChatPage,
 } from "@/lib/supabase/app-data";
 import { cn } from "@/lib/utils";
 
 const LOCAL_CHAT_KEY = "mac-study-group-chat";
-const remoteMessageCache = new Map<string, RemoteGroupChatMessage[]>();
+type RemoteMessageCacheEntry = RemoteGroupChatPage;
+
+const remoteMessageCache = new Map<string, RemoteMessageCacheEntry>();
 const remoteMessageRequests = new Map<
   string,
-  Promise<RemoteGroupChatMessage[]>
+  Promise<RemoteMessageCacheEntry>
 >();
 
 export function prefetchRemoteGroupChat(
@@ -49,14 +52,18 @@ export function GroupChat({
 }) {
   const [messages, setMessages] = useState<RemoteGroupChatMessage[]>(() =>
     remoteClient
-      ? (remoteMessageCache.get(groupId) ?? [])
+      ? (remoteMessageCache.get(groupId)?.messages ?? [])
       : readLocalMessages(groupId),
+  );
+  const [hasMore, setHasMore] = useState(
+    () => remoteMessageCache.get(groupId)?.hasMore ?? false,
   );
   const [isReady, setIsReady] = useState(
     () => !remoteClient || remoteMessageCache.has(groupId),
   );
   const [isClosing, setIsClosing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const chatRef = useRef<HTMLElement>(null);
@@ -64,6 +71,7 @@ export function GroupChat({
   const closeTimerRef = useRef<number | null>(null);
   const hasPositionedMessagesRef = useRef(false);
   const messageListRef = useRef<HTMLDivElement>(null);
+  const prependScrollHeightRef = useRef<number | null>(null);
   const selfId = currentUserId ?? "you";
   const memberById = new Map(members.map((member) => [member.id, member]));
 
@@ -71,8 +79,9 @@ export function GroupChat({
     if (!remoteClient) return;
 
     try {
-      const nextMessages = await requestRemoteMessages(remoteClient, groupId);
-      setMessages((current) => mergeMessages(current, nextMessages));
+      const nextPage = await requestRemoteMessages(remoteClient, groupId);
+      setMessages(nextPage.messages);
+      setHasMore(nextPage.hasMore);
       setFeedback(null);
     } catch {
       setFeedback("Chat could not be loaded.");
@@ -84,9 +93,10 @@ export function GroupChat({
 
     let cancelled = false;
     void requestRemoteMessages(remoteClient, groupId)
-      .then((nextMessages) => {
+      .then((nextPage) => {
         if (!cancelled) {
-          setMessages((current) => mergeMessages(current, nextMessages));
+          setMessages((current) => mergeMessages(current, nextPage.messages));
+          setHasMore(nextPage.hasMore);
           setIsReady(true);
         }
       })
@@ -104,7 +114,15 @@ export function GroupChat({
         if (!cancelled) {
           setMessages((current) => {
             const nextMessages = mergeMessages(current, [message]);
-            remoteMessageCache.set(groupId, nextMessages);
+            const cached = remoteMessageCache.get(groupId);
+
+            if (cached) {
+              remoteMessageCache.set(groupId, {
+                ...cached,
+                messages: nextMessages,
+              });
+            }
+
             return nextMessages;
           });
           setIsReady(true);
@@ -132,6 +150,13 @@ export function GroupChat({
 
     const messageList = messageListRef.current;
     if (!messageList) return;
+
+    if (prependScrollHeightRef.current !== null) {
+      messageList.scrollTop +=
+        messageList.scrollHeight - prependScrollHeightRef.current;
+      prependScrollHeightRef.current = null;
+      return;
+    }
 
     const isInitialPosition = !hasPositionedMessagesRef.current;
     hasPositionedMessagesRef.current = true;
@@ -214,6 +239,43 @@ export function GroupChat({
     closeTimerRef.current = window.setTimeout(onBack, 160);
   }
 
+  async function loadOlderMessages() {
+    const oldestMessage = messages[0];
+    const messageList = messageListRef.current;
+
+    if (
+      !remoteClient ||
+      !oldestMessage ||
+      !messageList ||
+      isLoadingOlder ||
+      !hasMore
+    ) {
+      return;
+    }
+
+    setIsLoadingOlder(true);
+    setFeedback(null);
+
+    try {
+      const page = await fetchRemoteGroupChatMessages(remoteClient, groupId, {
+        before: oldestMessage.createdAt,
+      });
+      const nextMessages = mergeMessages(page.messages, messages);
+
+      prependScrollHeightRef.current = messageList.scrollHeight;
+      remoteMessageCache.set(groupId, {
+        hasMore: page.hasMore,
+        messages: nextMessages,
+      });
+      setMessages(nextMessages);
+      setHasMore(page.hasMore);
+    } catch {
+      setFeedback("Earlier messages could not be loaded.");
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  }
+
   async function sendMessage() {
     const body = draft.trim();
 
@@ -227,7 +289,6 @@ export function GroupChat({
         await sendRemoteGroupChatMessage({
           body,
           groupId,
-          supabase: remoteClient,
         });
         await refresh();
       } else {
@@ -290,56 +351,70 @@ export function GroupChat({
           ref={messageListRef}
         >
           {messages.length ? (
-            messages.map((message, index) => {
-              const isOwn = message.userId === selfId;
-              const sender = memberById.get(message.userId);
-              const previousMessage = messages[index - 1];
-              const startsSenderGroup =
-                !previousMessage ||
-                previousMessage.userId !== message.userId ||
-                new Date(message.createdAt).getTime() -
-                  new Date(previousMessage.createdAt).getTime() >
-                  5 * 60 * 1000;
+            <>
+              {remoteClient && hasMore ? (
+                <div className="flex justify-center pb-2">
+                  <button
+                    className="mac-focus rounded-md px-3 py-1.5 text-xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)] disabled:opacity-45"
+                    disabled={isLoadingOlder}
+                    onClick={() => void loadOlderMessages()}
+                    type="button"
+                  >
+                    {isLoadingOlder ? "Loading…" : "Earlier messages"}
+                  </button>
+                </div>
+              ) : null}
+              {messages.map((message, index) => {
+                const isOwn = message.userId === selfId;
+                const sender = memberById.get(message.userId);
+                const previousMessage = messages[index - 1];
+                const startsSenderGroup =
+                  !previousMessage ||
+                  previousMessage.userId !== message.userId ||
+                  new Date(message.createdAt).getTime() -
+                    new Date(previousMessage.createdAt).getTime() >
+                    5 * 60 * 1000;
 
-              return (
-                <div
-                  className={cn(
-                    "flex",
-                    isOwn ? "justify-end" : "justify-start",
-                    startsSenderGroup && index > 0 && "pt-2",
-                  )}
-                  key={message.id}
-                >
+                return (
                   <div
                     className={cn(
-                      "w-fit max-w-[92%] rounded-2xl px-3 py-1.5 sm:max-w-[82%]",
-                      isOwn
-                        ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-                        : "border border-[rgb(255_255_255/0.055)] bg-[var(--color-surface-raised)] text-[var(--color-text)]",
+                      "flex",
+                      isOwn ? "justify-end" : "justify-start",
+                      startsSenderGroup && index > 0 && "pt-2",
                     )}
+                    key={message.id}
                   >
-                    {!isOwn && startsSenderGroup ? (
-                      <p className="mb-0.5 text-[10px] font-semibold text-[var(--color-text-muted)]">
-                        {sender?.handle ?? "@member"}
-                      </p>
-                    ) : null}
-                    <p className="whitespace-pre-wrap break-words text-sm leading-snug">
-                      {message.body}
-                    </p>
-                    <p
+                    <div
                       className={cn(
-                        "mt-0.5 text-right text-[9px]",
+                        "w-fit max-w-[92%] rounded-2xl px-3 py-1.5 sm:max-w-[82%]",
                         isOwn
-                          ? "text-black/60"
-                          : "text-[var(--color-text-muted)]",
+                          ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                          : "border border-[rgb(255_255_255/0.055)] bg-[var(--color-surface-raised)] text-[var(--color-text)]",
                       )}
                     >
-                      {formatMessageTime(message.createdAt)}
-                    </p>
+                      {!isOwn && startsSenderGroup ? (
+                        <p className="mb-0.5 text-[10px] font-semibold text-[var(--color-text-muted)]">
+                          {sender?.handle ?? "@member"}
+                        </p>
+                      ) : null}
+                      <p className="whitespace-pre-wrap break-words text-sm leading-snug">
+                        {message.body}
+                      </p>
+                      <p
+                        className={cn(
+                          "mt-0.5 text-right text-[9px]",
+                          isOwn
+                            ? "text-black/60"
+                            : "text-[var(--color-text-muted)]",
+                        )}
+                      >
+                        {formatMessageTime(message.createdAt)}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </>
           ) : (
             <div className="flex h-full flex-col items-center justify-center px-6 text-center text-[var(--color-text-muted)]">
               <MessageCircle aria-hidden size={30} />
@@ -368,10 +443,10 @@ export function GroupChat({
               {feedback}
             </p>
           ) : null}
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-1 transition focus-within:border-[rgb(255_227_48/0.7)] focus-within:shadow-[0_0_0_3px_rgb(255_227_48/0.1)]">
             <textarea
               aria-label="Message"
-              className="mac-focus min-h-11 min-w-0 resize-none overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[0.68rem] text-sm leading-snug text-[var(--color-text)]"
+              className="min-h-10 min-w-0 resize-none overflow-y-auto border-0 bg-transparent px-2.5 py-[0.62rem] text-sm leading-snug text-[var(--color-text)] outline-none"
               maxLength={2000}
               onBlur={() => setComposerFocused(false)}
               onChange={(event) => setDraft(event.target.value)}
@@ -383,12 +458,17 @@ export function GroupChat({
             />
             <button
               aria-label="Send message"
-              className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414] transition active:scale-[0.97] disabled:opacity-45"
+              aria-busy={isSending}
+              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414] transition active:scale-[0.97] disabled:opacity-45"
               disabled={!draft.trim() || isSending}
               onPointerDown={(event) => event.preventDefault()}
               type="submit"
             >
-              <Send aria-hidden size={17} />
+              {isSending ? (
+                <LoaderCircle aria-hidden className="animate-spin" size={17} />
+              ) : (
+                <Send aria-hidden size={17} />
+              )}
             </button>
           </div>
         </form>
@@ -416,12 +496,15 @@ async function fetchAndCacheRemoteMessages(
   remoteClient: SupabaseClient,
   groupId: string,
 ) {
-  const messages = mergeMessages(
-    remoteMessageCache.get(groupId) ?? [],
-    await fetchRemoteGroupChatMessages(remoteClient, groupId),
-  );
-  remoteMessageCache.set(groupId, messages);
-  return messages;
+  const page = await fetchRemoteGroupChatMessages(remoteClient, groupId);
+  const cached = remoteMessageCache.get(groupId);
+  const nextPage = {
+    hasMore: cached?.hasMore ?? page.hasMore,
+    messages: mergeMessages(cached?.messages ?? [], page.messages),
+  };
+
+  remoteMessageCache.set(groupId, nextPage);
+  return nextPage;
 }
 
 function requestRemoteMessages(

@@ -8,6 +8,7 @@ import {
   CircleStop,
   Crown,
   Globe2,
+  LoaderCircle,
   Lock,
   LogOut,
   MoreHorizontal,
@@ -541,6 +542,14 @@ export function GroupsDashboard() {
       return;
     }
 
+    const nextSession = {
+      groupId: selectedGroup.id,
+      subjectId,
+      startedAt: new Date().toISOString(),
+    };
+    setActiveStudySession(nextSession);
+    setIsChoosingStudy(false);
+
     if (remoteClient) {
       try {
         await startRemoteStudySession({
@@ -548,9 +557,12 @@ export function GroupsDashboard() {
           subjectId,
           supabase: remoteClient,
         });
+      } catch {
+        setActiveStudySession((current) =>
+          current?.startedAt === nextSession.startedAt ? null : current,
+        );
       } finally {
-        setIsChoosingStudy(false);
-        await Promise.all([
+        await Promise.allSettled([
           refreshRemoteTimer(remoteClient),
           refreshRemoteSocial(remoteClient),
         ]);
@@ -559,11 +571,6 @@ export function GroupsDashboard() {
       return;
     }
 
-    const nextSession = {
-      groupId: selectedGroup.id,
-      subjectId,
-      startedAt: new Date().toISOString(),
-    };
     const currentTimerState = readLocalTimerState();
 
     writeLocalTimerState({
@@ -571,8 +578,6 @@ export function GroupsDashboard() {
       activeSession: nextSession,
       subjects: timerSubjects,
     });
-    setActiveStudySession(nextSession);
-    setIsChoosingStudy(false);
   }
 
   async function stopGroupStudy() {
@@ -1467,7 +1472,14 @@ function GroupSettingsDialog({
             }
             type="button"
           >
-            {busyKey === "details" ? "Saving…" : "Save details"}
+            {busyKey === "details" ? (
+              <>
+                <LoaderCircle aria-hidden className="animate-spin" size={16} />
+                Saving…
+              </>
+            ) : (
+              "Save details"
+            )}
           </button>
         ) : null}
       </section>
