@@ -1,7 +1,7 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState, useTransition } from "react";
-import { LoaderCircle } from "lucide-react";
 import {
   completeMacSignIn,
   MacSignInRequiredError,
@@ -21,6 +21,9 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null);
   const [pendingProvider, setPendingProvider] = useState<MacProvider | null>(
     null,
+  );
+  const [isCompletingReturn, setIsCompletingReturn] = useState(
+    returnedFromProvider,
   );
   const [isPending, startTransition] = useTransition();
 
@@ -46,11 +49,13 @@ export function LoginForm({
         if (caughtError instanceof MacSignInRequiredError) {
           if (returnedFromProvider) {
             setError("Sign-in did not complete. Please try again.");
+            setIsCompletingReturn(false);
           }
           return;
         }
 
         setError(getErrorMessage(caughtError));
+        setIsCompletingReturn(false);
       }
     }
 
@@ -88,6 +93,10 @@ export function LoginForm({
     });
   }
 
+  if (pendingProvider || isCompletingReturn) {
+    return <SigningInState />;
+  }
+
   return (
     <div className="mt-6 space-y-3">
       <button
@@ -96,17 +105,8 @@ export function LoginForm({
         onClick={() => signIn("google")}
         type="button"
       >
-        {pendingProvider === "google" ? (
-          <>
-            <LoaderCircle aria-hidden className="animate-spin" size={18} />
-            Connecting…
-          </>
-        ) : (
-          <>
-            <GoogleMark />
-            Continue with Google
-          </>
-        )}
+        <GoogleMark />
+        Continue with Google
       </button>
 
       <button
@@ -115,17 +115,8 @@ export function LoginForm({
         onClick={() => signIn("microsoft")}
         type="button"
       >
-        {pendingProvider === "microsoft" ? (
-          <>
-            <LoaderCircle aria-hidden className="animate-spin" size={18} />
-            Connecting…
-          </>
-        ) : (
-          <>
-            <MicrosoftMark />
-            Continue with Microsoft
-          </>
-        )}
+        <MicrosoftMark />
+        Continue with Microsoft
       </button>
 
       {error ? (
@@ -133,6 +124,36 @@ export function LoginForm({
           {error}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function SigningInState() {
+  return (
+    <div
+      aria-live="polite"
+      className="fixed inset-0 z-50 flex min-h-dvh items-center justify-center bg-[var(--color-background)] px-6 pb-[var(--safe-area-bottom)] pt-[var(--safe-area-top)]"
+      role="status"
+    >
+      <div className="mac-auth-pulse flex flex-col items-center text-center">
+        <Image
+          alt="MAC Study"
+          className="rounded-xl"
+          height={80}
+          priority
+          src="/icons/mac-square.png"
+          width={80}
+        />
+        <h1 className="mt-7 text-2xl font-semibold tracking-tight">
+          Signing you in
+        </h1>
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+          Securely connecting your account
+        </p>
+        <span className="mt-7 h-1 w-16 overflow-hidden rounded-full bg-[rgb(255_227_48/0.16)]">
+          <span className="mac-auth-progress block h-full w-1/2 rounded-full bg-[var(--color-mac-yellow)]" />
+        </span>
+      </div>
     </div>
   );
 }
