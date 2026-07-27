@@ -1064,7 +1064,13 @@ function FriendRequestRow({
   const isOptimistic = request.id.startsWith("optimistic-");
 
   return (
-    <article className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-xl border border-[rgb(255_255_255/0.065)] bg-[rgb(255_255_255/0.028)] p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+    <article
+      className={
+        request.direction === "incoming"
+          ? "grid min-h-16 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-xl border border-[rgb(255_255_255/0.065)] bg-[rgb(255_255_255/0.028)] p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+          : "grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-[rgb(255_255_255/0.065)] bg-[rgb(255_255_255/0.028)] px-3 py-2.5"
+      }
+    >
       <ProfileBadge friend={request.user} />
       <div className="min-w-0">
         <p className="truncate font-semibold">{request.user.name}</p>
@@ -1093,13 +1099,13 @@ function FriendRequestRow({
           </button>
         </div>
       ) : (
-        <div className="col-span-2 flex items-center justify-between gap-3 sm:col-span-1 sm:justify-end">
+        <div className="flex items-center justify-end gap-2">
           <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-muted)]">
             <Clock3 aria-hidden size={15} />
             Pending
           </span>
           <button
-            className="mac-focus h-11 rounded-lg px-3 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
+            className="mac-focus h-9 rounded-md px-2 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
             disabled={isBusy || isOptimistic}
             onClick={() => onAction("cancel")}
             type="button"

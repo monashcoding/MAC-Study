@@ -24,6 +24,24 @@ export function LoginForm({
   );
   const [isCheckingSession, setIsCheckingSession] = useState(autoComplete);
   const [isPending, startTransition] = useTransition();
+  const showSigningInState = Boolean(pendingProvider) || isCheckingSession;
+
+  useEffect(() => {
+    if (!showSigningInState) {
+      return;
+    }
+
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+    };
+  }, [showSigningInState]);
 
   useEffect(() => {
     if (!autoComplete) {
@@ -91,12 +109,12 @@ export function LoginForm({
     });
   }
 
-  if (pendingProvider || isCheckingSession) {
+  if (showSigningInState) {
     return <SigningInState checkingSession={!pendingProvider} />;
   }
 
   return (
-    <div className="mt-6 space-y-3">
+    <div className="space-y-3">
       <button
         className="mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-55"
         disabled={isPending}
@@ -130,7 +148,7 @@ function SigningInState({ checkingSession }: { checkingSession: boolean }) {
   return (
     <div
       aria-live="polite"
-      className="fixed inset-0 z-50 flex min-h-dvh items-center justify-center bg-[var(--color-background)] px-6 pb-[var(--safe-area-bottom)] pt-[var(--safe-area-top)]"
+      className="fixed inset-0 z-50 flex h-[var(--app-viewport-height)] min-h-0 items-center justify-center overflow-hidden overscroll-none bg-[var(--color-background)] px-6 pb-[var(--safe-area-bottom)] pt-[var(--safe-area-top)]"
       role="status"
     >
       <div className="mac-auth-pulse flex flex-col items-center text-center">
@@ -142,14 +160,9 @@ function SigningInState({ checkingSession }: { checkingSession: boolean }) {
           src="/icons/mac-square.png"
           width={80}
         />
-        <h1 className="mt-7 text-2xl font-semibold tracking-tight">
-          {checkingSession ? "Checking your account" : "Signing you in"}
+        <h1 className="mt-7 text-xl font-semibold tracking-tight">
+          {checkingSession ? "Checking your account..." : "Signing you in..."}
         </h1>
-        <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-          {checkingSession
-            ? "Getting everything ready"
-            : "Securely connecting your account"}
-        </p>
         <span className="mt-7 h-1 w-16 overflow-hidden rounded-full bg-[rgb(255_227_48/0.16)]">
           <span className="mac-auth-progress block h-full w-1/2 rounded-full bg-[var(--color-mac-yellow)]" />
         </span>

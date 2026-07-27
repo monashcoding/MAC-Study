@@ -168,6 +168,72 @@ export function DateTimeField({
   );
 }
 
+export function DateField({
+  isOpen,
+  label,
+  onChange,
+  onOpenChange,
+  value,
+}: {
+  isOpen: boolean;
+  label: string;
+  onChange: (value: string) => void;
+  onOpenChange: (open: boolean) => void;
+  value: string;
+}) {
+  const selectedDate = parseLocalDateTime(value);
+  const [visibleMonth, setVisibleMonth] = useState(
+    () => new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
+  );
+
+  function changeDate(year: number, month: number, day: number) {
+    const next = new Date(selectedDate);
+    next.setFullYear(year, month, day);
+    onChange(toLocalDateTime(next));
+    onOpenChange(false);
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium text-[var(--color-text-muted)]">
+        {label}
+      </p>
+      <button
+        aria-expanded={isOpen}
+        className={cn(
+          "mac-focus inline-flex h-12 w-full min-w-0 items-center gap-2.5 rounded-md border bg-[var(--color-surface)] px-3 text-left text-sm font-medium transition lg:h-10",
+          isOpen
+            ? "border-[var(--color-mac-yellow)] text-[var(--color-text)]"
+            : "border-[var(--color-border)] text-[var(--color-text)] hover:border-[rgb(255_255_255/0.18)]",
+        )}
+        onClick={() => {
+          setVisibleMonth(
+            new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
+          );
+          onOpenChange(!isOpen);
+        }}
+        type="button"
+      >
+        <Calendar
+          aria-hidden
+          className="shrink-0 text-[var(--color-text-muted)]"
+          size={16}
+        />
+        <span className="truncate">{formatDate(selectedDate)}</span>
+      </button>
+
+      {isOpen ? (
+        <CalendarPanel
+          onChange={changeDate}
+          onMonthChange={setVisibleMonth}
+          selectedDate={selectedDate}
+          visibleMonth={visibleMonth}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function CalendarPanel({
   onChange,
   onMonthChange,
