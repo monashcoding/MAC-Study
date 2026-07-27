@@ -69,6 +69,13 @@ export async function POST(request: Request) {
   );
 
   if (nudgeError) {
+    if (nudgeError.message.includes("RECIPIENT_STUDYING")) {
+      return NextResponse.json(
+        { message: "They are already studying." },
+        { status: 409 },
+      );
+    }
+
     if (nudgeError.message.includes("NUDGE_DAILY_LIMIT")) {
       return NextResponse.json(
         { message: "250 nudges today. The bit is complete." },
@@ -81,7 +88,7 @@ export async function POST(request: Request) {
     if (retryAfterSeconds !== null) {
       return NextResponse.json(
         {
-          message: `That is 10 nudges in a minute. Give them ${retryAfterSeconds}s to recover.`,
+          message: `One nudge per minute. Ready again in ${retryAfterSeconds}s.`,
           retryAfterSeconds,
         },
         {
@@ -140,10 +147,9 @@ async function sendPushNotifications(nudge: NudgeRow, senderId: string) {
   }
 
   return sendWebPush({
-    body: nudge.message ?? "Someone woke you up!",
     category: "nudge",
     tag: `mac-study-nudge-${nudge.id}`,
-    title: "MAC Study",
+    title: nudge.message ?? "Someone woke you up!",
     url: nudge.group_id
       ? `/app/groups?group=${encodeURIComponent(nudge.group_id)}`
       : `/app/friends?friend=${encodeURIComponent(senderId)}`,

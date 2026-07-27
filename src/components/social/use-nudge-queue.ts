@@ -6,7 +6,7 @@ import {
   sendRemoteNudge,
 } from "@/lib/supabase/app-data";
 
-const NUDGE_LIMIT = 10;
+const NUDGE_LIMIT = 1;
 const NUDGE_WINDOW_MS = 60_000;
 
 type NudgeTarget = {
@@ -60,7 +60,7 @@ export function useNudgeQueue(enabled: boolean) {
         setTargetStates((current) => ({
           ...current,
           [target.key]: {
-            feedback: `10 nudges sent. Ready again in ${retrySeconds}s.`,
+            feedback: `Ready again in ${retrySeconds}s.`,
             pending: current[target.key]?.pending ?? 0,
           },
         }));
@@ -74,7 +74,7 @@ export function useNudgeQueue(enabled: boolean) {
         return {
           ...current,
           [target.key]: {
-            feedback: `${pending} nudge${pending === 1 ? "" : "s"} queued - keep tapping.`,
+            feedback: "Sending nudge...",
             pending,
           },
         };
@@ -99,7 +99,7 @@ export function useNudgeQueue(enabled: boolean) {
           return {
             ...current,
             [target.key]: {
-              feedback: pending ? `${pending} queued - ${feedback}` : feedback,
+              feedback,
               pending,
             },
           };

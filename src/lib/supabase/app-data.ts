@@ -116,6 +116,8 @@ export type RemoteGroupChatMessage = {
   userId: string;
   body: string;
   createdAt: string;
+  imagePath?: string | null;
+  imageUrl?: string | null;
 };
 
 export type RemoteGroupChatPage = {
@@ -304,8 +306,18 @@ type GroupChatRow = {
   id: string;
   group_id: string;
   user_id: string;
-  body: string;
+  body: string | null;
   created_at: string;
+  image_path: string | null;
+};
+
+const GROUP_CHAT_IMAGE_BUCKET = "group-chat-images";
+const GROUP_CHAT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+const GROUP_CHAT_IMAGE_EXTENSIONS: Record<string, string> = {
+  "image/gif": "gif",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
 };
 
 export async function getRemoteUserId() {
@@ -1111,7 +1123,7 @@ export async function fetchRemoteGroupChatMessages(
   const pageSize = Math.min(Math.max(options.limit ?? 50, 1), 100);
   let query = supabase
     .from("group_chat_messages")
-    .select("id, group_id, user_id, body, created_at")
+    .select("id, group_id, user_id, body, image_path, created_at")
     .eq("group_id", groupId)
     .is("deleted_at", null);
 
@@ -1127,25 +1139,32 @@ export async function fetchRemoteGroupChatMessages(
 
   const rows = (data ?? []) as GroupChatRow[];
 
+  const messages = rows
+    .slice(0, pageSize)
+    .map(groupChatMessageFromRow)
+    .reverse();
+
   return {
     hasMore: rows.length > pageSize,
-    messages: rows.slice(0, pageSize).map(groupChatMessageFromRow).reverse(),
+    messages: await signRemoteGroupChatImages(supabase, messages),
   } satisfies RemoteGroupChatPage;
 }
 
 export async function sendRemoteGroupChatMessage({
   body,
   groupId,
+  imagePath = null,
 }: {
-  body: string;
+  body?: string;
   groupId: string;
+  imagePath?: string | null;
 }) {
-  const trimmedBody = body.trim();
+  const trimmedBody = body?.trim() ?? "";
 
-  if (!trimmedBody) return;
+  if (!trimmedBody && !imagePath) return;
 
   const response = await fetch("/api/groups/messages", {
-    body: JSON.stringify({ body: trimmedBody, groupId }),
+    body: JSON.stringify({ body: trimmedBody, groupId, imagePath }),
     headers: { "Content-Type": "application/json" },
     method: "POST",
   });
@@ -1156,6 +1175,65 @@ export async function sendRemoteGroupChatMessage({
 
   const result = (await response.json()) as { messageId?: string };
   return result.messageId ?? null;
+}
+
+export async function uploadRemoteGroupChatImage({
+  file,
+  groupId,
+  supabase,
+}: {
+  file: File;
+  groupId: string;
+  supabase: SupabaseClient;
+}) {
+  const extension = GROUP_CHAT_IMAGE_EXTENSIONS[file.type];
+
+  if (!extension) {
+    throw new Error("Choose a JPG, PNG, WebP or GIF image.");
+  }
+
+  if (file.size > GROUP_CHAT_IMAGE_MAX_BYTES) {
+    throw new Error("Photos must be 8 MB or smaller.");
+  }
+
+  const userId = await getRemoteUserId();
+  if (!userId) throw new Error("Sign in to send photos.");
+
+  const imagePath = `${groupId}/${userId}/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await supabase.storage
+    .from(GROUP_CHAT_IMAGE_BUCKET)
+    .upload(imagePath, file, {
+      cacheControl: "3600",
+      contentType: file.type,
+      upsert: false,
+    });
+
+  if (uploadError) throw uploadError;
+
+  const { data, error: signError } = await supabase.storage
+    .from(GROUP_CHAT_IMAGE_BUCKET)
+    .createSignedUrl(imagePath, 60 * 60);
+
+  if (signError) {
+    await supabase.storage.from(GROUP_CHAT_IMAGE_BUCKET).remove([imagePath]);
+    throw signError;
+  }
+
+  return { imagePath, imageUrl: data.signedUrl };
+}
+
+export async function deleteRemoteGroupChatImage({
+  imagePath,
+  supabase,
+}: {
+  imagePath: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.storage
+    .from(GROUP_CHAT_IMAGE_BUCKET)
+    .remove([imagePath]);
+
+  if (error) throw error;
 }
 
 export async function deleteRemoteGroupChatMessage({
@@ -1341,8 +1419,12 @@ export function subscribeToRemoteGroupChat(
         schema: "public",
         table: "group_chat_messages",
       },
-      (payload) =>
-        onMessage(groupChatMessageFromRow(payload.new as GroupChatRow)),
+      (payload) => {
+        const message = groupChatMessageFromRow(payload.new as GroupChatRow);
+        void signRemoteGroupChatImages(supabase, [message])
+          .then(([signedMessage]) => onMessage(signedMessage ?? message))
+          .catch(() => onMessage(message));
+      },
     )
     .subscribe();
 
@@ -1949,9 +2031,45 @@ function groupChatMessageFromRow(row: GroupChatRow): RemoteGroupChatMessage {
     id: row.id,
     groupId: row.group_id,
     userId: row.user_id,
-    body: row.body,
+    body: row.body ?? "",
     createdAt: row.created_at,
+    imagePath: row.image_path,
+    imageUrl: null,
   };
+}
+
+async function signRemoteGroupChatImages(
+  supabase: SupabaseClient,
+  messages: RemoteGroupChatMessage[],
+) {
+  const imagePaths = [
+    ...new Set(
+      messages
+        .map((message) => message.imagePath)
+        .filter((path): path is string => Boolean(path)),
+    ),
+  ];
+
+  if (!imagePaths.length) return messages;
+
+  const { data, error } = await supabase.storage
+    .from(GROUP_CHAT_IMAGE_BUCKET)
+    .createSignedUrls(imagePaths, 60 * 60);
+
+  if (error) return messages;
+
+  const urlsByPath = new Map<string, string>();
+  (data ?? []).forEach((item, index) => {
+    const path = item.path ?? imagePaths[index];
+    if (path && item.signedUrl) urlsByPath.set(path, item.signedUrl);
+  });
+
+  return messages.map((message) => ({
+    ...message,
+    imageUrl: message.imagePath
+      ? (urlsByPath.get(message.imagePath) ?? null)
+      : null,
+  }));
 }
 
 function normalizePersonIcon(icon: string | null | undefined): PersonIconKey {

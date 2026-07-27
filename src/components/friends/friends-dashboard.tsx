@@ -19,6 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import { EmptyStateCta } from "@/components/empty-state-cta";
 import { PaginatedList } from "@/components/paginated-list";
 import { StudyHeatmap } from "@/components/study-heatmap";
 import {
@@ -635,7 +636,10 @@ export function FriendsDashboard() {
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <NudgePill
-                  disabled={!remoteClient}
+                  disabled={!remoteClient || selectedFriend.studying}
+                  disabledLabel={
+                    selectedFriend.studying ? "Studying now" : undefined
+                  }
                   onClick={() => nudgeFriend(selectedFriend.id)}
                   pendingCount={nudgeState.pending}
                 />
@@ -792,14 +796,16 @@ export function FriendsDashboard() {
             ? `${friendList.length} ${friendList.length === 1 ? "friend" : "friends"}`
             : "No friends yet"}
         </p>
-        <button
-          className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] transition active:scale-[0.98]"
-          onClick={() => setIsAdding(true)}
-          type="button"
-        >
-          <Plus aria-hidden size={17} />
-          Add
-        </button>
+        {friendList.length ? (
+          <button
+            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] transition active:scale-[0.98]"
+            onClick={() => setIsAdding(true)}
+            type="button"
+          >
+            <Plus aria-hidden size={17} />
+            Add
+          </button>
+        ) : null}
       </div>
 
       <div
@@ -853,11 +859,12 @@ export function FriendsDashboard() {
 
       {activeTab === "friends" ? (
         <section className="space-y-3" role="tabpanel">
-          <PaginatedList
-            className="grid gap-2 lg:grid-cols-2 lg:gap-3"
-            items={friendList}
-            pageSize={12}
-            renderItem={(friend) => (
+          {friendList.length ? (
+            <PaginatedList
+              className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+              items={friendList}
+              pageSize={12}
+              renderItem={(friend) => (
               <div
                 className="grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] transition hover:border-[rgb(255_255_255/0.12)] hover:bg-[rgb(255_255_255/0.045)]"
                 key={friend.id}
@@ -917,9 +924,26 @@ export function FriendsDashboard() {
                   )}
                 </button>
               </div>
-            )}
-            resetKey="friends"
-          />
+              )}
+              resetKey="friends"
+            />
+          ) : (
+            <EmptyStateCta
+              action={
+                <button
+                  className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"
+                  onClick={() => setIsAdding(true)}
+                  type="button"
+                >
+                  <Plus aria-hidden size={17} />
+                  Add friend
+                </button>
+              }
+              description="Find someone by username and send a request."
+              icon={<Users aria-hidden size={18} />}
+              title="Build your study circle"
+            />
+          )}
         </section>
       ) : (
         <section className="space-y-6" role="tabpanel">

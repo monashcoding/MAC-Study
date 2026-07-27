@@ -47,18 +47,21 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("push", (event) => {
   const data = event.data?.json() ?? {};
   const title = data.title ?? "MAC Study";
-  const body = data.body ?? "A study group needs your attention.";
+  const body = typeof data.body === "string" ? data.body.trim() : "";
+  const options = {
+    icon: "/icons/icon-512.png",
+    badge: "/icons/icon-maskable-512.png",
+    renotify: true,
+    tag: data.tag ?? "mac-study-nudge",
+    data: {
+      url: data.url ?? "/app",
+    },
+  };
 
   event.waitUntil(
     self.registration.showNotification(title, {
-      body,
-      icon: "/icons/icon-512.png",
-      badge: "/icons/icon-maskable-512.png",
-      renotify: true,
-      tag: data.tag ?? "mac-study-nudge",
-      data: {
-        url: data.url ?? "/app",
-      },
+      ...options,
+      ...(body ? { body } : {}),
     }),
   );
 });

@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import {
   Fragment,
@@ -14,21 +15,24 @@ import {
   ArrowDown,
   ArrowLeft,
   Flag,
-  LoaderCircle,
+  ImagePlus,
   MessageCircle,
   MoreHorizontal,
   Send,
   Trash2,
+  X,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { TransientToast } from "@/components/transient-toast";
 import type { SocialFriend } from "@/lib/social-state";
 import {
   deleteRemoteGroupChatMessage,
+  deleteRemoteGroupChatImage,
   fetchRemoteGroupChatMessages,
   reportRemoteGroupChatMessage,
   sendRemoteGroupChatMessage,
   subscribeToRemoteGroupChat,
+  uploadRemoteGroupChatImage,
   type RemoteGroupChatMessage,
   type RemoteGroupChatPage,
 } from "@/lib/supabase/app-data";
@@ -45,6 +49,12 @@ const remoteMessageRequests = new Map<
 
 type PendingChatMessage = RemoteGroupChatMessage & {
   delivery: "failed" | "sending";
+  imageFile?: File;
+};
+
+type ImageDraft = {
+  file: File;
+  previewUrl: string;
 };
 
 export function prefetchRemoteGroupChat(
@@ -84,6 +94,7 @@ export function GroupChat({
   );
   const [isClosing, setIsClosing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [imageDraft, setImageDraft] = useState<ImageDraft | null>(null);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<
     PendingChatMessage[]
@@ -96,6 +107,8 @@ export function GroupChat({
     useState<RemoteGroupChatMessage | null>(null);
   const chatRef = useRef<HTMLElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const objectUrlsRef = useRef(new Set<string>());
   const closeTimerRef = useRef<number | null>(null);
   const hasPositionedMessagesRef = useRef(false);
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -201,7 +214,7 @@ export function GroupChat({
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       unsubscribe();
     };
-  }, [groupId, refresh, remoteClient]);
+  }, [groupId, refresh, remoteClient, selfId]);
 
   useLayoutEffect(() => {
     if (!isReady) return;
@@ -245,13 +258,13 @@ export function GroupChat({
 
   useEffect(() => {
     const body = document.body;
+    const chat = chatRef.current;
     const visualViewport = window.visualViewport;
     let frame = 0;
 
     function sizeChat() {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
-        const chat = chatRef.current;
         if (!chat) return;
 
         if (!window.matchMedia("(max-width: 1023px)").matches) {
@@ -274,8 +287,8 @@ export function GroupChat({
     return () => {
       window.cancelAnimationFrame(frame);
       if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
-      chatRef.current?.style.removeProperty("top");
-      chatRef.current?.style.removeProperty("height");
+      chat?.style.removeProperty("top");
+      chat?.style.removeProperty("height");
       body.classList.remove("mac-chat-view-active", "mac-chat-composer-active");
       window.removeEventListener("resize", sizeChat);
       visualViewport?.removeEventListener("resize", sizeChat);
@@ -290,6 +303,14 @@ export function GroupChat({
     composer.style.height = "auto";
     composer.style.height = `${Math.min(composer.scrollHeight, 112)}px`;
   }, [draft]);
+
+  useEffect(
+    () => () => {
+      objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      objectUrlsRef.current.clear();
+    },
+    [],
+  );
 
   function setComposerFocused(focused: boolean) {
     document.body.classList.toggle("mac-chat-composer-active", focused);
@@ -343,7 +364,7 @@ export function GroupChat({
   function sendMessage() {
     const body = draft.trim();
 
-    if (!body) return;
+    if (!body && !imageDraft) return;
 
     const pendingMessage: PendingChatMessage = {
       body,
@@ -351,11 +372,16 @@ export function GroupChat({
       delivery: "sending",
       groupId,
       id: `pending-${crypto.randomUUID()}`,
+      imageFile: imageDraft?.file,
+      imagePath: null,
+      imageUrl: imageDraft?.previewUrl ?? null,
       userId: selfId,
     };
 
     setPendingMessages((current) => [...current, pendingMessage]);
     setDraft("");
+    setImageDraft(null);
+    if (imageInputRef.current) imageInputRef.current.value = "";
     setFeedback(null);
     shouldScrollToBottomRef.current = true;
     void deliverPendingMessage(pendingMessage);
@@ -364,20 +390,51 @@ export function GroupChat({
   async function deliverPendingMessage(pendingMessage: PendingChatMessage) {
     try {
       if (remoteClient) {
+        let imagePath = pendingMessage.imagePath ?? null;
+
+        if (pendingMessage.imageFile) {
+          const uploaded = await uploadRemoteGroupChatImage({
+            file: pendingMessage.imageFile,
+            groupId,
+            supabase: remoteClient,
+          });
+          imagePath = uploaded.imagePath;
+          setPendingMessages((current) =>
+            current.map((message) =>
+              message.id === pendingMessage.id
+                ? {
+                    ...message,
+                    imageFile: undefined,
+                    imagePath: uploaded.imagePath,
+                    imageUrl: uploaded.imageUrl,
+                  }
+                : message,
+            ),
+          );
+          revokeObjectUrl(pendingMessage.imageUrl);
+        }
+
         await sendRemoteGroupChatMessage({
           body: pendingMessage.body,
           groupId,
+          imagePath,
         });
         setPendingMessages((current) =>
           current.filter((message) => message.id !== pendingMessage.id),
         );
+        revokeObjectUrl(pendingMessage.imageUrl);
         await refresh().catch(() => undefined);
       } else {
+        const imageUrl = pendingMessage.imageFile
+          ? await readImageAsDataUrl(pendingMessage.imageFile)
+          : (pendingMessage.imageUrl ?? null);
         const deliveredMessage: RemoteGroupChatMessage = {
           body: pendingMessage.body,
           createdAt: pendingMessage.createdAt,
           groupId: pendingMessage.groupId,
           id: crypto.randomUUID(),
+          imagePath: null,
+          imageUrl,
           userId: pendingMessage.userId,
         };
         const nextMessages = [
@@ -388,15 +445,19 @@ export function GroupChat({
         setPendingMessages((current) =>
           current.filter((message) => message.id !== pendingMessage.id),
         );
+        revokeObjectUrl(pendingMessage.imageUrl);
         writeLocalMessages(groupId, nextMessages);
       }
-    } catch {
+    } catch (error) {
       setPendingMessages((current) =>
         current.map((message) =>
           message.id === pendingMessage.id
             ? { ...message, delivery: "failed" }
             : message,
         ),
+      );
+      setFeedback(
+        error instanceof Error ? error.message : "Message could not be sent.",
       );
     }
   }
@@ -421,6 +482,12 @@ export function GroupChat({
           messageId: message.id,
           supabase: remoteClient,
         });
+        if (message.imagePath) {
+          await deleteRemoteGroupChatImage({
+            imagePath: message.imagePath,
+            supabase: remoteClient,
+          }).catch(() => undefined);
+        }
         remoteMessageCache.delete(groupId);
         await refresh();
       } else {
@@ -459,6 +526,48 @@ export function GroupChat({
     isNearBottomRef.current = true;
     setUnreadCount(0);
     messageList.scrollTo({ behavior: "smooth", top: messageList.scrollHeight });
+  }
+
+  function chooseImage(file: File | null) {
+    if (!file) return;
+
+    if (!["image/gif", "image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setFeedback("Choose a JPG, PNG, WebP or GIF image.");
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      setFeedback("Photos must be 8 MB or smaller.");
+      return;
+    }
+
+    setFeedback(null);
+    setImageDraft((current) => {
+      if (current?.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(current.previewUrl);
+        objectUrlsRef.current.delete(current.previewUrl);
+      }
+      const previewUrl = URL.createObjectURL(file);
+      objectUrlsRef.current.add(previewUrl);
+      return { file, previewUrl };
+    });
+  }
+
+  function removeImageDraft() {
+    setImageDraft((current) => {
+      if (current?.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(current.previewUrl);
+        objectUrlsRef.current.delete(current.previewUrl);
+      }
+      return null;
+    });
+    if (imageInputRef.current) imageInputRef.current.value = "";
+  }
+
+  function revokeObjectUrl(url: string | null | undefined) {
+    if (!url?.startsWith("blob:")) return;
+    URL.revokeObjectURL(url);
+    objectUrlsRef.current.delete(url);
   }
 
   return (
@@ -561,7 +670,7 @@ export function GroupChat({
                     >
                       <div
                         className={cn(
-                          "group relative w-fit max-w-[92%] rounded-2xl px-3 py-1.5 sm:max-w-[82%]",
+                          "group relative w-fit max-w-[92%] rounded-lg px-3 py-1.5 sm:max-w-[82%]",
                           isOwn
                             ? "bg-[var(--color-mac-yellow)] text-[#141414]"
                             : "border border-[rgb(255_255_255/0.055)] bg-[var(--color-surface-raised)] text-[var(--color-text)]",
@@ -575,10 +684,37 @@ export function GroupChat({
                             {sender?.handle ?? "@member"}
                           </p>
                         ) : null}
-                        <div className="flex items-start gap-2">
-                          <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-snug">
-                            {message.body}
-                          </p>
+                        {message.imageUrl ? (
+                          <a
+                            className="mb-1 block overflow-hidden rounded-md bg-black/20"
+                            href={message.imageUrl}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            {/* Private signed URLs cannot use the static Next image loader. */}
+                            <img
+                              alt={`Photo from ${sender?.handle ?? "group member"}`}
+                              className="max-h-80 w-full max-w-[18rem] object-contain"
+                              loading="lazy"
+                              src={message.imageUrl}
+                            />
+                          </a>
+                        ) : message.imagePath ? (
+                          <div className="mb-1 flex h-32 w-52 items-center justify-center rounded-md bg-black/15 text-xs text-current opacity-60">
+                            Photo unavailable
+                          </div>
+                        ) : null}
+                        <div
+                          className={cn(
+                            "flex items-start gap-2",
+                            !message.body && "justify-end",
+                          )}
+                        >
+                          {message.body ? (
+                            <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-snug">
+                              {message.body}
+                            </p>
+                          ) : null}
                           {!pending ? (
                             <button
                               aria-expanded={openActionId === message.id}
@@ -698,7 +834,44 @@ export function GroupChat({
               {feedback}
             </p>
           ) : null}
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-1 transition focus-within:border-[rgb(255_227_48/0.7)] focus-within:shadow-[0_0_0_3px_rgb(255_227_48/0.1)]">
+          {imageDraft ? (
+            <div className="mb-2 flex items-center gap-2 rounded-md bg-[rgb(255_255_255/0.04)] p-2">
+              {/* Local preview uses a short-lived object URL. */}
+              <img
+                alt="Selected photo"
+                className="h-14 w-14 rounded-md object-cover"
+                src={imageDraft.previewUrl}
+              />
+              <p className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--color-text-muted)]">
+                {imageDraft.file.name}
+              </p>
+              <button
+                aria-label="Remove selected photo"
+                className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)]"
+                onClick={removeImageDraft}
+                type="button"
+              >
+                <X aria-hidden size={16} />
+              </button>
+            </div>
+          ) : null}
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-1 transition focus-within:border-[rgb(255_227_48/0.7)] focus-within:shadow-[0_0_0_3px_rgb(255_227_48/0.1)]">
+            <input
+              accept="image/gif,image/jpeg,image/png,image/webp"
+              className="sr-only"
+              onChange={(event) => chooseImage(event.target.files?.[0] ?? null)}
+              ref={imageInputRef}
+              type="file"
+            />
+            <button
+              aria-label="Add photo"
+              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.05)] hover:text-[var(--color-text)]"
+              onClick={() => imageInputRef.current?.click()}
+              onPointerDown={(event) => event.preventDefault()}
+              type="button"
+            >
+              <ImagePlus aria-hidden size={18} />
+            </button>
             <textarea
               aria-label="Message"
               className="min-h-10 min-w-0 resize-none overflow-y-auto border-0 bg-transparent px-2.5 py-[0.62rem] text-sm leading-snug text-[var(--color-text)] outline-none"
@@ -714,7 +887,7 @@ export function GroupChat({
             <button
               aria-label="Send message"
               className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414] transition active:scale-[0.97] disabled:opacity-45"
-              disabled={!draft.trim()}
+              disabled={!draft.trim() && !imageDraft}
               onPointerDown={(event) => event.preventDefault()}
               type="submit"
             >
@@ -878,4 +1051,13 @@ function writeLocalMessages(
 
   value[groupId] = messages;
   window.localStorage.setItem(LOCAL_CHAT_KEY, JSON.stringify(value));
+}
+
+function readImageAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Photo could not be read."));
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.readAsDataURL(file);
+  });
 }

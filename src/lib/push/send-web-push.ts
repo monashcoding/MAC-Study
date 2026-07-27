@@ -27,7 +27,7 @@ export async function sendWebPush({
   url,
   userId,
 }: {
-  body: string;
+  body?: string;
   category: NotificationCategory;
   tag: string;
   title?: string;

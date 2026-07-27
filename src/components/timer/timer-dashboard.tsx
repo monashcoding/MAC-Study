@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  BookOpen,
   CalendarClock,
   CircleStop,
   LoaderCircle,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
+import { EmptyStateCta } from "@/components/empty-state-cta";
 import {
   DateTimeField,
   type DateTimePickerPart,
@@ -617,33 +619,22 @@ export function TimerDashboard() {
               <CalendarClock aria-hidden size={15} />
               Session history
             </button>
-            <button
-              className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)] sm:w-auto sm:px-3"
-              onClick={() => {
-                if (!subjects.length) {
-                  openNewSubjectEditor();
-                  return;
-                }
-
-                setDraftSubjects(subjects);
-                setSubjectSaveError(null);
-                setInitialEditingSubjectId(null);
-                setIsEditingSubjects(true);
-              }}
-              type="button"
-            >
-              {subjects.length ? (
+            {subjects.length ? (
+              <button
+                className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)] sm:w-auto sm:px-3"
+                onClick={() => {
+                  setDraftSubjects(subjects);
+                  setSubjectSaveError(null);
+                  setInitialEditingSubjectId(null);
+                  setIsEditingSubjects(true);
+                }}
+                type="button"
+              >
                 <Pencil aria-hidden size={16} />
-              ) : (
-                <Plus aria-hidden size={16} />
-              )}
-              <span className="hidden sm:inline">
-                {subjects.length ? "Edit" : "Add"}
-              </span>
-              <span className="sr-only sm:hidden">
-                {subjects.length ? "Edit subjects" : "Add subject"}
-              </span>
-            </button>
+                <span className="hidden sm:inline">Edit</span>
+                <span className="sr-only sm:hidden">Edit subjects</span>
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -709,20 +700,21 @@ export function TimerDashboard() {
             resetKey="timer-subjects"
           />
         ) : (
-          <div className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-8 text-center">
-            <p className="font-semibold">No subjects yet</p>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Add one when you are ready to start studying.
-            </p>
-            <button
-              className="mac-focus mt-4 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
-              onClick={openNewSubjectEditor}
-              type="button"
-            >
-              <Plus aria-hidden size={17} />
-              Add subject
-            </button>
-          </div>
+          <EmptyStateCta
+            action={
+              <button
+                className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"
+                onClick={openNewSubjectEditor}
+                type="button"
+              >
+                <Plus aria-hidden size={17} />
+                Add subject
+              </button>
+            }
+            description="Create one to track where your study time goes."
+            icon={<BookOpen aria-hidden size={18} />}
+            title="Add your first subject"
+          />
         )}
       </section>
 
