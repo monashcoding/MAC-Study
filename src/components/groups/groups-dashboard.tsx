@@ -26,6 +26,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import { EmptyStateCta } from "@/components/empty-state-cta";
 import { PaginatedList } from "@/components/paginated-list";
 import { useAppHeaderDetail } from "@/components/app-header-detail";
 import {
@@ -102,6 +103,7 @@ export function GroupsDashboard() {
   const [isCreating, setIsCreating] = useState(false);
   const [isChoosingStudy, setIsChoosingStudy] = useState(false);
   const [isGroupSettingsOpen, setIsGroupSettingsOpen] = useState(false);
+  const [isInvitingFriends, setIsInvitingFriends] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [groupView, setGroupView] = useState<"class" | "rankings" | "chat">(
@@ -691,6 +693,14 @@ export function GroupsDashboard() {
     const selectedMemberNudgeState = selectedMember
       ? nudgeQueue.getState(`${selectedGroup.id}:${selectedMember.id}`)
       : null;
+    const canInviteFriends =
+      selectedGroup.currentUserRole === "owner" ||
+      selectedGroup.currentUserRole === "admin";
+    const pendingInviteFriendIds = new Set(
+      outgoingGroupInvites
+        .filter((invite) => invite.group.id === selectedGroup.id)
+        .map((invite) => invite.user.id),
+    );
 
     if (groupView === "chat") {
       return (
@@ -721,6 +731,7 @@ export function GroupsDashboard() {
                 setSelectedGroupId(null);
                 setSelectedMemberId(null);
                 setGroupView("class");
+                setIsInvitingFriends(false);
               }}
               type="button"
             >
@@ -734,14 +745,29 @@ export function GroupsDashboard() {
               <span className="shrink-0">{members.length} members</span>
               <VisibilityBadge />
             </div>
-            <button
-              aria-label="Group settings"
-              className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[rgb(255_255_255/0.045)] text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.08)]"
-              onClick={() => setIsGroupSettingsOpen(true)}
-              type="button"
-            >
-              <Settings aria-hidden size={18} />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {canInviteFriends ? (
+                <button
+                  className="mac-focus inline-flex h-11 items-center justify-center gap-1.5 rounded-md bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] transition active:scale-[0.98]"
+                  onClick={() => setIsInvitingFriends(true)}
+                  type="button"
+                >
+                  <UserPlus aria-hidden size={16} />
+                  <span className="hidden min-[390px]:inline">Invite</span>
+                  <span className="sr-only min-[390px]:hidden">
+                    Invite friends
+                  </span>
+                </button>
+              ) : null}
+              <button
+                aria-label="Group settings"
+                className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md bg-[rgb(255_255_255/0.045)] text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.08)]"
+                onClick={() => setIsGroupSettingsOpen(true)}
+                type="button"
+              >
+                <Settings aria-hidden size={18} />
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-3 rounded-xl bg-[rgb(255_255_255/0.04)] p-1 lg:max-w-lg">
@@ -867,6 +893,17 @@ export function GroupsDashboard() {
           />
         ) : null}
 
+        {isInvitingFriends ? (
+          <GroupFriendInviteDialog
+            currentUserId={currentUserId ?? "you"}
+            friends={socialState.friends}
+            group={selectedGroup}
+            onClose={() => setIsInvitingFriends(false)}
+            onInvite={inviteGroupMember}
+            pendingFriendIds={pendingInviteFriendIds}
+          />
+        ) : null}
+
         {isChoosingStudy ? (
           <StartStudyDialog
             onClose={() => setIsChoosingStudy(false)}
@@ -958,14 +995,16 @@ export function GroupsDashboard() {
             ? `${socialState.groups.length} ${socialState.groups.length === 1 ? "group" : "groups"}`
             : "No groups yet"}
         </p>
-        <button
-          className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
-          onClick={() => setIsCreating(true)}
-          type="button"
-        >
-          <Plus aria-hidden size={17} />
-          Create
-        </button>
+        {socialState.groups.length ? (
+          <button
+            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+            onClick={() => setIsCreating(true)}
+            type="button"
+          >
+            <Plus aria-hidden size={17} />
+            Create
+          </button>
+        ) : null}
       </div>
 
       <div
@@ -1057,12 +1096,21 @@ export function GroupsDashboard() {
               resetKey="groups"
             />
           ) : (
-            <div className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-8 text-center">
-              <p className="font-semibold">No groups yet</p>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Create one and invite friends when you are ready.
-              </p>
-            </div>
+            <EmptyStateCta
+              action={
+                <button
+                  className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"
+                  onClick={() => setIsCreating(true)}
+                  type="button"
+                >
+                  <Plus aria-hidden size={17} />
+                  Create group
+                </button>
+              }
+              description="Invite friends and study together."
+              icon={<UserPlus aria-hidden size={18} />}
+              title="Create your first group"
+            />
           )}
         </section>
       ) : (
@@ -1375,6 +1423,129 @@ function ProfileBadge({ friend }: { friend: SocialFriend }) {
   );
 }
 
+function GroupFriendInviteDialog({
+  currentUserId,
+  friends,
+  group,
+  onClose,
+  onInvite,
+  pendingFriendIds,
+}: {
+  currentUserId: string;
+  friends: SocialFriend[];
+  group: SocialGroup;
+  onClose: () => void;
+  onInvite: (friendId: string) => void | Promise<void>;
+  pendingFriendIds: Set<string>;
+}) {
+  const [busyFriendIds, setBusyFriendIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [sentFriendIds, setSentFriendIds] = useState<Set<string>>(
+    () => new Set(pendingFriendIds),
+  );
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const inviteableFriends = friends
+    .filter(
+      (friend) =>
+        friend.id !== currentUserId &&
+        friend.id !== "you" &&
+        friend.isFriend !== false &&
+        !group.memberIds.includes(friend.id),
+    )
+    .sort((first, second) => first.handle.localeCompare(second.handle));
+
+  async function invite(friend: SocialFriend) {
+    if (sentFriendIds.has(friend.id) || busyFriendIds.has(friend.id)) return;
+
+    setFeedback(null);
+    setSentFriendIds((current) => new Set(current).add(friend.id));
+    setBusyFriendIds((current) => new Set(current).add(friend.id));
+
+    try {
+      await onInvite(friend.id);
+    } catch (error) {
+      setSentFriendIds((current) => {
+        const next = new Set(current);
+        next.delete(friend.id);
+        return next;
+      });
+      setFeedback(
+        getErrorMessage(error, `Could not invite ${friend.handle}.`),
+      );
+    } finally {
+      setBusyFriendIds((current) => {
+        const next = new Set(current);
+        next.delete(friend.id);
+        return next;
+      });
+    }
+  }
+
+  return (
+    <AppDialog
+      bodyClassName="grid gap-3"
+      closeLabel="Close friend invitations"
+      maxWidthClassName="max-w-md"
+      onClose={onClose}
+      title="Invite friends"
+    >
+      {feedback ? (
+        <p className="text-sm text-[var(--color-danger)]" role="status">
+          {feedback}
+        </p>
+      ) : null}
+
+      {inviteableFriends.length ? (
+        <PaginatedList
+          className="grid gap-1.5"
+          items={inviteableFriends}
+          pageSize={8}
+          renderItem={(friend) => {
+            const sent = sentFriendIds.has(friend.id);
+            const busy = busyFriendIds.has(friend.id);
+
+            return (
+              <div
+                className="flex min-w-0 items-center gap-3 rounded-md bg-[rgb(255_255_255/0.03)] px-3 py-2.5"
+                key={friend.id}
+              >
+                <ProfileBadge friend={friend} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">
+                    {friend.name}
+                  </p>
+                  <p className="truncate text-xs text-[var(--color-text-muted)]">
+                    {friend.handle}
+                  </p>
+                </div>
+                <button
+                  className={cn(
+                    "mac-focus h-10 shrink-0 rounded-md px-3 text-xs font-semibold transition",
+                    sent
+                      ? "border border-[var(--color-border)] text-[var(--color-text-muted)]"
+                      : "bg-[var(--color-mac-yellow)] text-[#141414]",
+                  )}
+                  disabled={sent || busy}
+                  onClick={() => void invite(friend)}
+                  type="button"
+                >
+                  {sent ? "Invite sent" : "Invite"}
+                </button>
+              </div>
+            );
+          }}
+          resetKey={`${group.id}:invite-friends`}
+        />
+      ) : (
+        <p className="rounded-md bg-[rgb(255_255_255/0.03)] px-3 py-4 text-sm text-[var(--color-text-muted)]">
+          All available friends are already members or invited.
+        </p>
+      )}
+    </AppDialog>
+  );
+}
+
 function GroupMemberDialog({
   canNudge,
   group,
@@ -1457,14 +1628,17 @@ function GroupMemberDialog({
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <NudgePill
-          disabled={!canNudge}
+          disabled={!canNudge || member.studying}
+          disabledLabel={member.studying ? "Studying now" : undefined}
           onClick={onNudge}
           pendingCount={pendingNudges}
         />
         <p className="text-xs font-medium text-[var(--color-text-muted)]">
           {nudgeFeedback ??
             (canNudge
-              ? `Send from ${group.name}`
+              ? member.studying
+                ? "They are already studying."
+                : `Send from ${group.name}`
               : "You cannot nudge yourself.")}
         </p>
       </div>
@@ -1751,7 +1925,7 @@ function GroupSettingsDialog({
                     void runAction(
                       `invite:${friend.id}`,
                       () => onInvite(friend.id),
-                      `${friend.name} invited.`,
+                      `Invite sent to ${friend.name}.`,
                     )
                   }
                   type="button"

@@ -245,3 +245,11 @@ Logout:
 7. Destructive-action confirmation/undo.
 8. Statistics touch/readability improvements.
 9. Authentication and profile polish.
+
+## Low-priority backlog
+
+- Build a secure special-unit administration dashboard for the MAC Projects
+  account (`projects@monashcoding.com`). Bind access to its permanent verified
+  MAC user ID, enforce the allowlist in Supabase/RLS, keep admin grants outside
+  the dashboard, support unit/alias management and request review, and record
+  every change in an immutable audit log.

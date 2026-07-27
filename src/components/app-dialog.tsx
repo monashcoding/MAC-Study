@@ -46,27 +46,22 @@ export function AppDialog({
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const keepEditingButtonRef = useRef<HTMLButtonElement>(null);
-  const onCloseRef = useRef(onClose);
-  const isDirtyRef = useRef(isDirty);
   const openerRef = useRef<HTMLElement | null>(null);
   const [showDiscardPrompt, setShowDiscardPrompt] = useState(false);
   const titleId = useId();
 
-  onCloseRef.current = onClose;
-  isDirtyRef.current = isDirty;
+  const closeImmediately = useCallback(() => {
+    onClose();
+  }, [onClose]);
 
-  const requestClose = useCallback(() => {
-    if (confirmDiscard && isDirtyRef.current) {
+  const requestBackdropClose = useCallback(() => {
+    if (confirmDiscard && isDirty) {
       setShowDiscardPrompt(true);
       return;
     }
 
-    onCloseRef.current();
-  }, [confirmDiscard]);
-
-  useEffect(() => {
-    if (!isDirty) setShowDiscardPrompt(false);
-  }, [isDirty]);
+    onClose();
+  }, [confirmDiscard, isDirty, onClose]);
 
   useEffect(() => {
     if (!showDiscardPrompt) return;
@@ -102,7 +97,7 @@ export function AppDialog({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        requestClose();
+        closeImmediately();
         return;
       }
 
@@ -144,7 +139,7 @@ export function AppDialog({
       const opener = openerRef.current;
       window.requestAnimationFrame(() => opener?.focus());
     };
-  }, [requestClose]);
+  }, [closeImmediately]);
 
   return (
     <div
@@ -152,13 +147,13 @@ export function AppDialog({
       aria-modal="true"
       className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] items-center justify-center bg-black/58 px-3 pb-[calc(var(--mobile-nav-height)+0.75rem)] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm lg:pb-[max(0.75rem,var(--safe-area-bottom))]"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) requestClose();
+        if (event.target === event.currentTarget) requestBackdropClose();
       }}
       role="dialog"
     >
       <div
         className={cn(
-          "flex max-h-[min(88dvh,720px)] w-full flex-col overflow-hidden shadow-2xl",
+          "relative flex max-h-[min(88dvh,720px)] w-full flex-col overflow-hidden shadow-2xl",
           variant === "confirmation"
             ? "rounded-lg bg-[var(--color-background)]"
             : "rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)]",
@@ -186,7 +181,7 @@ export function AppDialog({
                 : "rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] hover:bg-[rgb(255_255_255/0.06)]",
             )}
             data-dialog-close
-            onClick={requestClose}
+            onClick={closeImmediately}
             ref={closeButtonRef}
             type="button"
           >
@@ -205,31 +200,7 @@ export function AppDialog({
           </div>
         ) : null}
 
-        {showDiscardPrompt ? (
-          <div
-            className="shrink-0 border-t border-[var(--color-border)] bg-[rgb(20_20_20/0.98)] p-4"
-            role="alert"
-          >
-            <p className="text-sm font-semibold">Discard unsaved changes?</p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
-                className="mac-focus h-11 rounded-md border border-[var(--color-border)] text-sm font-semibold"
-                onClick={() => setShowDiscardPrompt(false)}
-                ref={keepEditingButtonRef}
-                type="button"
-              >
-                Keep editing
-              </button>
-              <button
-                className="mac-focus h-11 rounded-md border border-[rgb(255_107_107/0.45)] text-sm font-semibold text-[var(--color-danger)]"
-                onClick={() => onCloseRef.current()}
-                type="button"
-              >
-                Discard
-              </button>
-            </div>
-          </div>
-        ) : footer ? (
+        {footer ? (
           <div
             className={cn(
               "shrink-0 p-4",
@@ -238,6 +209,41 @@ export function AppDialog({
             )}
           >
             {footer}
+          </div>
+        ) : null}
+
+        {showDiscardPrompt ? (
+          <div
+            className="absolute inset-0 z-30 flex items-center justify-center bg-black/72 p-4 backdrop-blur-[2px]"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setShowDiscardPrompt(false);
+              }
+            }}
+          >
+            <div
+              className="w-full max-w-sm rounded-lg border border-[rgb(255_227_48/0.42)] bg-[var(--color-surface-raised)] p-4 shadow-[0_22px_70px_rgb(0_0_0/0.7)]"
+              role="alert"
+            >
+              <p className="font-semibold">Discard unsaved changes?</p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  className="mac-focus h-11 rounded-md border border-[var(--color-border)] text-sm font-semibold"
+                  onClick={() => setShowDiscardPrompt(false)}
+                  ref={keepEditingButtonRef}
+                  type="button"
+                >
+                  Keep editing
+                </button>
+                <button
+                  className="mac-focus h-11 rounded-md border border-[rgb(255_107_107/0.55)] bg-[rgb(255_107_107/0.07)] text-sm font-semibold text-[var(--color-danger)]"
+                  onClick={onClose}
+                  type="button"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
           </div>
         ) : null}
       </div>

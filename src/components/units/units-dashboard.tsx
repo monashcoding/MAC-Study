@@ -12,12 +12,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ArrowLeft,
   BookOpen,
+  BriefcaseBusiness,
   Check,
   Info,
   Link2,
   LoaderCircle,
   Plus,
   Search,
+  Send,
   UserPlus,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
@@ -31,6 +33,7 @@ import {
   fetchRemoteUnitState,
   inviteRemoteFriendToGroup,
   leaveRemoteUnitEnrollment,
+  requestRemoteSpecialUnit,
   setRemoteSubjectUnitOffering,
   subscribeToRemoteAppChanges,
   upsertRemoteUnitEnrollment,
@@ -45,6 +48,7 @@ import {
 } from "@/lib/social-state";
 import {
   TEACHING_PERIODS,
+  findSpecialUnitByAlias,
   getCohortLabel,
   getDefaultTeachingPeriod,
   getTeachingPeriodLabel,
@@ -54,6 +58,7 @@ import {
   isValidUnitCode,
   normalizeUnitCode,
   normalizeUnitNickname,
+  type SpecialUnit,
   type TeachingPeriod,
   type UnitCohortMember,
   type UnitEnrollment,
@@ -86,6 +91,14 @@ const demoEnrollments: UnitEnrollment[] = [
 
 const demoUnitState: RemoteUnitState = {
   enrollments: demoEnrollments,
+  specialUnits: [
+    {
+      aliasCodes: ["FIT3045", "FIT4042"],
+      code: "IBL",
+      description: "Industry experience completed as part of your studies.",
+      name: "Industry Based Learning",
+    },
+  ],
   subjects: [
     {
       color: "#6CB6FF",
@@ -111,6 +124,7 @@ const demoUnitState: RemoteUnitState = {
 export function UnitsDashboard() {
   const [unitState, setUnitState] = useState<RemoteUnitState>({
     enrollments: [],
+    specialUnits: [],
     subjects: [],
     suggestions: [],
   });
@@ -126,6 +140,10 @@ export function UnitsDashboard() {
   const [cohort, setCohort] = useState<UnitCohortMember[]>([]);
   const [cohortLoading, setCohortLoading] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [isRequestingUnit, setIsRequestingUnit] = useState(false);
+  const [isSpecialUnitsOpen, setIsSpecialUnitsOpen] = useState(false);
+  const [selectedSpecialUnit, setSelectedSpecialUnit] =
+    useState<SpecialUnit | null>(null);
   const [search, setSearch] = useState("");
   const [scope, setScope] = useState<CohortScope>("all");
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -133,6 +151,7 @@ export function UnitsDashboard() {
     [],
   );
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [requestUnitError, setRequestUnitError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const refreshRemote = useCallback(async (supabase: SupabaseClient) => {
@@ -170,7 +189,12 @@ export function UnitsDashboard() {
         if (!cancelled) {
           setFeedback("Run the latest unit discovery migration, then reload.");
           setDataMode("remote");
-          setUnitState({ enrollments: [], subjects: [], suggestions: [] });
+          setUnitState({
+            enrollments: [],
+            specialUnits: [],
+            subjects: [],
+            suggestions: [],
+          });
         }
       });
 
@@ -291,9 +315,35 @@ export function UnitsDashboard() {
       }
 
       setIsAdding(false);
+      setSelectedSpecialUnit(null);
       setToastMessage("Unit added");
     } catch (error) {
       setFeedback(getErrorMessage(error, "Could not add that unit."));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function requestSpecialUnit(input: {
+    code: string | null;
+    comment: string | null;
+    name: string;
+  }) {
+    setBusyKey("request-unit");
+    setRequestUnitError(null);
+
+    try {
+      if (remoteClient) {
+        await requestRemoteSpecialUnit({
+          ...input,
+          supabase: remoteClient,
+        });
+      }
+
+      setIsRequestingUnit(false);
+      setToastMessage("Unit request sent");
+    } catch (error) {
+      setRequestUnitError(getUnitRequestError(error));
     } finally {
       setBusyKey(null);
     }
@@ -491,7 +541,10 @@ export function UnitsDashboard() {
       <section className="flex justify-end">
         <button
           className="mac-focus inline-flex h-10 shrink-0 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
-          onClick={() => setIsAdding(true)}
+          onClick={() => {
+            setSelectedSpecialUnit(null);
+            setIsAdding(true);
+          }}
           type="button"
         >
           <Plus aria-hidden size={17} />
@@ -525,10 +578,47 @@ export function UnitsDashboard() {
 
       {isAdding ? (
         <AddUnitDialog
+          initialSpecialUnit={selectedSpecialUnit}
           isSaving={busyKey === "add-unit"}
           onAdd={(input) => void addEnrollment(input)}
-          onClose={() => setIsAdding(false)}
+          onClose={() => {
+            setIsAdding(false);
+            setSelectedSpecialUnit(null);
+          }}
+          onOpenSpecialUnits={() => {
+            setIsAdding(false);
+            setIsSpecialUnitsOpen(true);
+          }}
+          specialUnits={unitState.specialUnits}
           suggestions={unitState.suggestions}
+        />
+      ) : null}
+      {isSpecialUnitsOpen ? (
+        <SpecialUnitsDialog
+          onClose={() => setIsSpecialUnitsOpen(false)}
+          onRequest={() => {
+            setRequestUnitError(null);
+            setIsSpecialUnitsOpen(false);
+            setIsRequestingUnit(true);
+          }}
+          onSelect={(unit) => {
+            setSelectedSpecialUnit(unit);
+            setIsSpecialUnitsOpen(false);
+            setIsAdding(true);
+          }}
+          units={unitState.specialUnits}
+        />
+      ) : null}
+      {isRequestingUnit ? (
+        <RequestUnitDialog
+          error={requestUnitError}
+          isSaving={busyKey === "request-unit"}
+          onClose={() => {
+            setIsRequestingUnit(false);
+            setRequestUnitError(null);
+            setIsSpecialUnitsOpen(true);
+          }}
+          onSubmit={(input) => void requestSpecialUnit(input)}
         />
       ) : null}
       <TransientToast
@@ -1029,11 +1119,15 @@ function CohortMemberCard({
 }
 
 function AddUnitDialog({
+  initialSpecialUnit,
   isSaving,
   onAdd,
   onClose,
+  onOpenSpecialUnits,
+  specialUnits,
   suggestions,
 }: {
+  initialSpecialUnit: SpecialUnit | null;
   isSaving: boolean;
   onAdd: (input: {
     code: string;
@@ -1042,11 +1136,15 @@ function AddUnitDialog({
     year: number;
   }) => void;
   onClose: () => void;
+  onOpenSpecialUnits: () => void;
+  specialUnits: SpecialUnit[];
   suggestions: RemoteUnitState["suggestions"];
 }) {
   const years = getUnitYearOptions();
-  const [codeInput, setCodeInput] = useState("");
-  const [nickname, setNickname] = useState("");
+  const initialCode = initialSpecialUnit?.code ?? "";
+  const initialNickname = initialSpecialUnit?.name ?? "";
+  const [codeInput, setCodeInput] = useState(initialCode);
+  const [nickname, setNickname] = useState(initialNickname);
   const [year, setYear] = useState(new Date().getFullYear());
   const [period, setPeriod] = useState<TeachingPeriod>(
     getDefaultTeachingPeriod(),
@@ -1054,10 +1152,17 @@ function AddUnitDialog({
   const initialYearRef = useRef(year);
   const initialPeriodRef = useRef(period);
   const normalizedCode = normalizeUnitCode(codeInput);
-  const valid = isValidUnitCode(codeInput);
+  const aliasSpecialUnit = findSpecialUnitByAlias(
+    specialUnits,
+    normalizedCode,
+  );
+  const valid = isValidUnitCode(
+    codeInput,
+    specialUnits.map((unit) => unit.code),
+  );
   const isDirty = Boolean(
-    codeInput.trim() ||
-    nickname.trim() ||
+    codeInput.trim() !== initialCode ||
+    nickname.trim() !== initialNickname ||
     year !== initialYearRef.current ||
     period !== initialPeriodRef.current,
   );
@@ -1072,12 +1177,25 @@ function AddUnitDialog({
   const offeringValue = `${year}:${period}`;
 
   function updateCode(value: string) {
-    setCodeInput(value.toUpperCase());
-    const suggestion = suggestions.find(
-      (item) => item.code === normalizeUnitCode(value),
+    const nextCode = normalizeUnitCode(value);
+    const previousSpecialUnit = specialUnits.find(
+      (unit) => unit.code === normalizedCode,
     );
+    const nextSpecialUnit = specialUnits.find(
+      (unit) => unit.code === nextCode,
+    );
+    const suggestion = suggestions.find((item) => item.code === nextCode);
 
-    if (suggestion?.nickname && !nickname.trim()) {
+    setCodeInput(value.toUpperCase());
+
+    if (nextSpecialUnit) {
+      setNickname(nextSpecialUnit.name);
+    } else if (
+      previousSpecialUnit &&
+      nickname.trim() === previousSpecialUnit.name
+    ) {
+      setNickname(suggestion?.nickname ?? "");
+    } else if (suggestion?.nickname && !nickname.trim()) {
       setNickname(suggestion.nickname);
     }
   }
@@ -1125,6 +1243,31 @@ function AddUnitDialog({
         value={codeInput}
       />
 
+      {aliasSpecialUnit ? (
+        <div className="flex items-center gap-2.5 rounded-md border border-[rgb(255_227_48/0.28)] bg-[rgb(255_227_48/0.07)] p-2.5">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[rgb(255_227_48/0.14)] text-[var(--color-mac-yellow)]">
+            <BriefcaseBusiness aria-hidden size={14} />
+          </span>
+          <p className="min-w-0 flex-1 text-sm">
+            <span className="font-mono font-semibold">{normalizedCode}</span>
+            <span className="text-[var(--color-text-muted)]">
+              {" "}
+              is part of {aliasSpecialUnit.name}.
+            </span>
+          </p>
+          <button
+            className="mac-focus h-9 shrink-0 rounded-md bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414]"
+            onClick={() => {
+              setCodeInput(aliasSpecialUnit.code);
+              setNickname(aliasSpecialUnit.name);
+            }}
+            type="button"
+          >
+            Join {aliasSpecialUnit.code}
+          </button>
+        </div>
+      ) : null}
+
       <label className="block text-sm font-medium">
         Nickname{" "}
         <span className="text-[var(--color-text-muted)]">(optional)</span>
@@ -1164,6 +1307,166 @@ function AddUnitDialog({
           </p>
         </div>
       ) : null}
+
+      <button
+        className="mac-focus flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[rgb(255_227_48/0.3)] text-sm font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
+        onClick={onOpenSpecialUnits}
+        type="button"
+      >
+        <BriefcaseBusiness aria-hidden size={16} />
+        Special units
+      </button>
+    </AppDialog>
+  );
+}
+
+function SpecialUnitsDialog({
+  onClose,
+  onRequest,
+  onSelect,
+  units,
+}: {
+  onClose: () => void;
+  onRequest: () => void;
+  onSelect: (unit: SpecialUnit) => void;
+  units: SpecialUnit[];
+}) {
+  return (
+    <AppDialog
+      bodyClassName="grid gap-1.5 p-3"
+      closeLabel="Close special units"
+      footer={
+        <button
+          className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[var(--color-border)] text-sm font-semibold transition hover:bg-[rgb(255_255_255/0.04)]"
+          onClick={onRequest}
+          type="button"
+        >
+          <Plus aria-hidden size={16} />
+          Request a unit
+        </button>
+      }
+      maxWidthClassName="max-w-md"
+      onClose={onClose}
+      title="Special units"
+    >
+      {units.length ? (
+        units.map((unit, index) => (
+          <button
+            className="mac-focus grid min-h-12 w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-2.5 rounded-md border border-[rgb(255_227_48/0.22)] bg-[rgb(255_227_48/0.055)] px-3 py-2 text-left transition hover:border-[rgb(255_227_48/0.45)]"
+            data-dialog-autofocus={index === 0 ? "" : undefined}
+            key={unit.code}
+            onClick={() => onSelect(unit)}
+            type="button"
+          >
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414]">
+              <BriefcaseBusiness aria-hidden size={14} />
+            </span>
+            <span className="truncate text-sm font-semibold">{unit.name}</span>
+          </button>
+        ))
+      ) : (
+        <p className="py-5 text-center text-sm text-[var(--color-text-muted)]">
+          No special units available.
+        </p>
+      )}
+    </AppDialog>
+  );
+}
+
+function RequestUnitDialog({
+  error,
+  isSaving,
+  onClose,
+  onSubmit,
+}: {
+  error: string | null;
+  isSaving: boolean;
+  onClose: () => void;
+  onSubmit: (input: {
+    code: string | null;
+    comment: string | null;
+    name: string;
+  }) => void;
+}) {
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [comment, setComment] = useState("");
+  const valid = Boolean(name.trim());
+
+  return (
+    <AppDialog
+      bodyClassName="space-y-4 p-3"
+      closeLabel="Close unit request"
+      confirmDiscard={false}
+      footer={
+        <button
+          className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] disabled:opacity-45"
+          disabled={!valid || isSaving}
+          onClick={() =>
+            onSubmit({
+              code: normalizeUnitCode(code) || null,
+              comment: comment.trim() || null,
+              name: name.trim(),
+            })
+          }
+          type="button"
+        >
+          {isSaving ? (
+            <LoaderCircle aria-hidden className="animate-spin" size={16} />
+          ) : (
+            <Send aria-hidden size={16} />
+          )}
+          {isSaving ? "Sending…" : "Send request"}
+        </button>
+      }
+      maxWidthClassName="max-w-md"
+      onClose={onClose}
+      title="Request a unit"
+    >
+      {error ? (
+        <p className="rounded-md border border-[rgb(255_107_107/0.35)] bg-[rgb(255_107_107/0.08)] p-3 text-sm text-[var(--color-danger)]">
+          {error}
+        </p>
+      ) : null}
+
+      <label className="block text-sm font-medium">
+        Unit name
+        <input
+          className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
+          data-dialog-autofocus
+          maxLength={80}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Industry Based Learning"
+          value={name}
+        />
+      </label>
+
+      <label className="block text-sm font-medium">
+        Unit code{" "}
+        <span className="text-[var(--color-text-muted)]">
+          (if available)
+        </span>
+        <input
+          autoCapitalize="characters"
+          className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 font-mono uppercase"
+          maxLength={14}
+          onChange={(event) => setCode(event.target.value.toUpperCase())}
+          placeholder="IBL"
+          value={code}
+        />
+      </label>
+
+      <label className="block text-sm font-medium">
+        Extra information{" "}
+        <span className="text-[var(--color-text-muted)]">(optional)</span>
+        <textarea
+          className="mac-focus mt-2 min-h-24 w-full resize-none rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"
+          maxLength={500}
+          onChange={(event) => setComment(event.target.value)}
+          placeholder="Anything that will help us identify the unit."
+          value={comment}
+        />
+      </label>
     </AppDialog>
   );
 }
@@ -1338,4 +1641,17 @@ function compareUnitEnrollments(first: UnitEnrollment, second: UnitEnrollment) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function getUnitRequestError(error: unknown) {
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === "23505"
+  ) {
+    return "You have already requested this unit.";
+  }
+
+  return getErrorMessage(error, "Could not send that request.");
 }

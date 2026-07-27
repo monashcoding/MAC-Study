@@ -22,9 +22,7 @@ export function LoginForm({
   const [pendingProvider, setPendingProvider] = useState<MacProvider | null>(
     null,
   );
-  const [isCompletingReturn, setIsCompletingReturn] = useState(
-    returnedFromProvider,
-  );
+  const [isCheckingSession, setIsCheckingSession] = useState(autoComplete);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -49,13 +47,13 @@ export function LoginForm({
         if (caughtError instanceof MacSignInRequiredError) {
           if (returnedFromProvider) {
             setError("Sign-in did not complete. Please try again.");
-            setIsCompletingReturn(false);
           }
+          setIsCheckingSession(false);
           return;
         }
 
         setError(getErrorMessage(caughtError));
-        setIsCompletingReturn(false);
+        setIsCheckingSession(false);
       }
     }
 
@@ -93,8 +91,8 @@ export function LoginForm({
     });
   }
 
-  if (pendingProvider || isCompletingReturn) {
-    return <SigningInState />;
+  if (pendingProvider || isCheckingSession) {
+    return <SigningInState checkingSession={!pendingProvider} />;
   }
 
   return (
@@ -128,7 +126,7 @@ export function LoginForm({
   );
 }
 
-function SigningInState() {
+function SigningInState({ checkingSession }: { checkingSession: boolean }) {
   return (
     <div
       aria-live="polite"
@@ -145,10 +143,12 @@ function SigningInState() {
           width={80}
         />
         <h1 className="mt-7 text-2xl font-semibold tracking-tight">
-          Signing you in
+          {checkingSession ? "Checking your account" : "Signing you in"}
         </h1>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-          Securely connecting your account
+          {checkingSession
+            ? "Getting everything ready"
+            : "Securely connecting your account"}
         </p>
         <span className="mt-7 h-1 w-16 overflow-hidden rounded-full bg-[rgb(255_227_48/0.16)]">
           <span className="mac-auth-progress block h-full w-1/2 rounded-full bg-[var(--color-mac-yellow)]" />

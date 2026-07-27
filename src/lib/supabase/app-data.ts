@@ -14,6 +14,7 @@ import {
 } from "@/lib/social-state";
 import { getElapsedSeconds, getLocalDateKey } from "@/lib/timer";
 import {
+  type SpecialUnit,
   type TeachingPeriod,
   type UnitCohortMember,
   type UnitEnrollment,
@@ -31,6 +32,7 @@ export type RemoteSubject = {
 
 export type RemoteUnitState = {
   enrollments: UnitEnrollment[];
+  specialUnits: SpecialUnit[];
   subjects: RemoteSubject[];
   suggestions: UnitSuggestion[];
 };
@@ -114,6 +116,8 @@ export type RemoteGroupChatMessage = {
   userId: string;
   body: string;
   createdAt: string;
+  imagePath?: string | null;
+  imageUrl?: string | null;
 };
 
 export type RemoteGroupChatPage = {
@@ -302,8 +306,18 @@ type GroupChatRow = {
   id: string;
   group_id: string;
   user_id: string;
-  body: string;
+  body: string | null;
   created_at: string;
+  image_path: string | null;
+};
+
+const GROUP_CHAT_IMAGE_BUCKET = "group-chat-images";
+const GROUP_CHAT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+const GROUP_CHAT_IMAGE_EXTENSIONS: Record<string, string> = {
+  "image/gif": "gif",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
 };
 
 export async function getRemoteUserId() {
@@ -385,10 +399,12 @@ export async function fetchRemoteTimerState(
 
 export async function startRemoteStudySession({
   groupId = null,
+  startedAt = new Date().toISOString(),
   subjectId,
   supabase,
 }: {
   groupId?: string | null;
+  startedAt?: string;
   subjectId: string | null;
   supabase: SupabaseClient;
 }) {
@@ -402,7 +418,7 @@ export async function startRemoteStudySession({
     user_id: userId,
     subject_id: subjectId,
     group_id: groupId,
-    started_at: new Date().toISOString(),
+    started_at: startedAt,
     status: "active",
     source: "timer",
   });
@@ -433,7 +449,7 @@ export async function stopRemoteStudySession(supabase: SupabaseClient) {
   const endedAt = new Date();
   const durationMs =
     endedAt.getTime() - new Date(activeSession.started_at).getTime();
-  const status =
+  const status: "needs_confirmation" | "completed" =
     durationMs >= 6 * 60 * 60 * 1000 ? "needs_confirmation" : "completed";
   const { error } = await supabase
     .from("study_sessions")
@@ -445,7 +461,7 @@ export async function stopRemoteStudySession(supabase: SupabaseClient) {
     throw error;
   }
 
-  return { id: activeSession.id, status };
+  return { endedAt: endedAt.toISOString(), id: activeSession.id, status };
 }
 
 export async function updateRemoteStudySession({
@@ -635,23 +651,39 @@ export async function fetchRemoteUnitState(
     return null;
   }
 
-  const [enrolmentsResult, unitsResult, subjectsResult] = await Promise.all([
-    supabase
-      .from("unit_enrolments")
-      .select(
-        "offering_id, nickname, joined_at, unit_offerings!inner(id, unit_id, study_year, teaching_period, units!inner(id, code))",
-      )
-      .eq("user_id", userId)
-      .is("left_at", null)
-      .order("joined_at", { ascending: false }),
-    supabase.from("units").select("id, code").order("code").limit(500),
-    supabase
-      .from("subjects")
-      .select("id, code, name, color, unit_offering_id")
-      .eq("user_id", userId)
-      .is("archived_at", null)
-      .order("created_at", { ascending: true }),
-  ]);
+  const [
+    enrolmentsResult,
+    unitsResult,
+    subjectsResult,
+    specialUnitsResult,
+    specialUnitAliasesResult,
+  ] = await Promise.all([
+      supabase
+        .from("unit_enrolments")
+        .select(
+          "offering_id, nickname, joined_at, unit_offerings!inner(id, unit_id, study_year, teaching_period, units!inner(id, code))",
+        )
+        .eq("user_id", userId)
+        .is("left_at", null)
+        .order("joined_at", { ascending: false }),
+      supabase.from("units").select("id, code").order("code").limit(500),
+      supabase
+        .from("subjects")
+        .select("id, code, name, color, unit_offering_id")
+        .eq("user_id", userId)
+        .is("archived_at", null)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("special_units")
+        .select("code, name, description")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true }),
+      supabase
+        .from("special_unit_aliases")
+        .select("alias_code, special_unit_code")
+        .order("alias_code", { ascending: true }),
+    ]);
 
   if (enrolmentsResult.error) throw enrolmentsResult.error;
   if (unitsResult.error) throw unitsResult.error;
@@ -673,9 +705,27 @@ export async function fetchRemoteUnitState(
   const catalogueSuggestions = (
     (unitsResult.data ?? []) as { code: string }[]
   ).map((unit) => ({ code: unit.code, nickname: null }));
+  const specialUnitAliases = specialUnitAliasesResult.error
+    ? []
+    : ((specialUnitAliasesResult.data ?? []) as {
+        alias_code: string;
+        special_unit_code: string;
+      }[]);
+  const specialUnits = specialUnitsResult.error
+    ? []
+    : ((specialUnitsResult.data ?? []) as Omit<
+        SpecialUnit,
+        "aliasCodes"
+      >[]).map((unit) => ({
+        ...unit,
+        aliasCodes: specialUnitAliases
+          .filter((alias) => alias.special_unit_code === unit.code)
+          .map((alias) => alias.alias_code),
+      }));
 
   return {
     enrollments,
+    specialUnits,
     subjects: ((subjectsResult.data ?? []) as SubjectRow[]).map(subjectFromRow),
     suggestions: uniqueUnitSuggestions([
       ...subjectSuggestions,
@@ -730,6 +780,35 @@ export async function upsertRemoteUnitEnrollment({
   }
 
   return data as string;
+}
+
+export async function requestRemoteSpecialUnit({
+  code,
+  comment,
+  name,
+  supabase,
+}: {
+  code: string | null;
+  comment: string | null;
+  name: string;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+
+  if (!userId) {
+    throw new Error("Sign in to request a unit.");
+  }
+
+  const { error } = await supabase.from("special_unit_requests").insert({
+    requester_id: userId,
+    unit_code: code,
+    unit_name: name,
+    comment,
+  });
+
+  if (error) {
+    throw error;
+  }
 }
 
 export async function leaveRemoteUnitEnrollment({
@@ -1044,7 +1123,7 @@ export async function fetchRemoteGroupChatMessages(
   const pageSize = Math.min(Math.max(options.limit ?? 50, 1), 100);
   let query = supabase
     .from("group_chat_messages")
-    .select("id, group_id, user_id, body, created_at")
+    .select("id, group_id, user_id, body, image_path, created_at")
     .eq("group_id", groupId)
     .is("deleted_at", null);
 
@@ -1060,25 +1139,32 @@ export async function fetchRemoteGroupChatMessages(
 
   const rows = (data ?? []) as GroupChatRow[];
 
+  const messages = rows
+    .slice(0, pageSize)
+    .map(groupChatMessageFromRow)
+    .reverse();
+
   return {
     hasMore: rows.length > pageSize,
-    messages: rows.slice(0, pageSize).map(groupChatMessageFromRow).reverse(),
+    messages: await signRemoteGroupChatImages(supabase, messages),
   } satisfies RemoteGroupChatPage;
 }
 
 export async function sendRemoteGroupChatMessage({
   body,
   groupId,
+  imagePath = null,
 }: {
-  body: string;
+  body?: string;
   groupId: string;
+  imagePath?: string | null;
 }) {
-  const trimmedBody = body.trim();
+  const trimmedBody = body?.trim() ?? "";
 
-  if (!trimmedBody) return;
+  if (!trimmedBody && !imagePath) return;
 
   const response = await fetch("/api/groups/messages", {
-    body: JSON.stringify({ body: trimmedBody, groupId }),
+    body: JSON.stringify({ body: trimmedBody, groupId, imagePath }),
     headers: { "Content-Type": "application/json" },
     method: "POST",
   });
@@ -1089,6 +1175,65 @@ export async function sendRemoteGroupChatMessage({
 
   const result = (await response.json()) as { messageId?: string };
   return result.messageId ?? null;
+}
+
+export async function uploadRemoteGroupChatImage({
+  file,
+  groupId,
+  supabase,
+}: {
+  file: File;
+  groupId: string;
+  supabase: SupabaseClient;
+}) {
+  const extension = GROUP_CHAT_IMAGE_EXTENSIONS[file.type];
+
+  if (!extension) {
+    throw new Error("Choose a JPG, PNG, WebP or GIF image.");
+  }
+
+  if (file.size > GROUP_CHAT_IMAGE_MAX_BYTES) {
+    throw new Error("Photos must be 8 MB or smaller.");
+  }
+
+  const userId = await getRemoteUserId();
+  if (!userId) throw new Error("Sign in to send photos.");
+
+  const imagePath = `${groupId}/${userId}/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await supabase.storage
+    .from(GROUP_CHAT_IMAGE_BUCKET)
+    .upload(imagePath, file, {
+      cacheControl: "3600",
+      contentType: file.type,
+      upsert: false,
+    });
+
+  if (uploadError) throw uploadError;
+
+  const { data, error: signError } = await supabase.storage
+    .from(GROUP_CHAT_IMAGE_BUCKET)
+    .createSignedUrl(imagePath, 60 * 60);
+
+  if (signError) {
+    await supabase.storage.from(GROUP_CHAT_IMAGE_BUCKET).remove([imagePath]);
+    throw signError;
+  }
+
+  return { imagePath, imageUrl: data.signedUrl };
+}
+
+export async function deleteRemoteGroupChatImage({
+  imagePath,
+  supabase,
+}: {
+  imagePath: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.storage
+    .from(GROUP_CHAT_IMAGE_BUCKET)
+    .remove([imagePath]);
+
+  if (error) throw error;
 }
 
 export async function deleteRemoteGroupChatMessage({
@@ -1274,8 +1419,12 @@ export function subscribeToRemoteGroupChat(
         schema: "public",
         table: "group_chat_messages",
       },
-      (payload) =>
-        onMessage(groupChatMessageFromRow(payload.new as GroupChatRow)),
+      (payload) => {
+        const message = groupChatMessageFromRow(payload.new as GroupChatRow);
+        void signRemoteGroupChatImages(supabase, [message])
+          .then(([signedMessage]) => onMessage(signedMessage ?? message))
+          .catch(() => onMessage(message));
+      },
     )
     .subscribe();
 
@@ -1598,6 +1747,16 @@ export function subscribeToRemoteAppChanges(
       { event: "*", schema: "public", table: "unit_enrolments" },
       () => onChange("unit_enrolments"),
     )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "special_units" },
+      () => onChange("special_units"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "special_unit_aliases" },
+      () => onChange("special_unit_aliases"),
+    )
     .subscribe();
 
   return () => {
@@ -1872,9 +2031,45 @@ function groupChatMessageFromRow(row: GroupChatRow): RemoteGroupChatMessage {
     id: row.id,
     groupId: row.group_id,
     userId: row.user_id,
-    body: row.body,
+    body: row.body ?? "",
     createdAt: row.created_at,
+    imagePath: row.image_path,
+    imageUrl: null,
   };
+}
+
+async function signRemoteGroupChatImages(
+  supabase: SupabaseClient,
+  messages: RemoteGroupChatMessage[],
+) {
+  const imagePaths = [
+    ...new Set(
+      messages
+        .map((message) => message.imagePath)
+        .filter((path): path is string => Boolean(path)),
+    ),
+  ];
+
+  if (!imagePaths.length) return messages;
+
+  const { data, error } = await supabase.storage
+    .from(GROUP_CHAT_IMAGE_BUCKET)
+    .createSignedUrls(imagePaths, 60 * 60);
+
+  if (error) return messages;
+
+  const urlsByPath = new Map<string, string>();
+  (data ?? []).forEach((item, index) => {
+    const path = item.path ?? imagePaths[index];
+    if (path && item.signedUrl) urlsByPath.set(path, item.signedUrl);
+  });
+
+  return messages.map((message) => ({
+    ...message,
+    imageUrl: message.imagePath
+      ? (urlsByPath.get(message.imagePath) ?? null)
+      : null,
+  }));
 }
 
 function normalizePersonIcon(icon: string | null | undefined): PersonIconKey {
