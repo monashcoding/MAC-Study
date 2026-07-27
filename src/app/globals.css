@@ -401,6 +401,58 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.mac-duration-slider {
+  height: 1.25rem;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.mac-duration-slider::-webkit-slider-runnable-track {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--color-mac-yellow) 0,
+    var(--color-mac-yellow) var(--duration-progress),
+    var(--color-border) var(--duration-progress),
+    var(--color-border) 100%
+  );
+}
+
+.mac-duration-slider::-webkit-slider-thumb {
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-top: -0.3125rem;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-mac-yellow);
+  box-shadow: 0 2px 5px rgb(0 0 0 / 0.4);
+}
+
+.mac-duration-slider::-moz-range-track {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+.mac-duration-slider::-moz-range-progress {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--color-mac-yellow);
+}
+
+.mac-duration-slider::-moz-range-thumb {
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-mac-yellow);
+  box-shadow: 0 2px 5px rgb(0 0 0 / 0.4);
+}
+
 input.rounded-md,
 select.rounded-md,
 textarea.rounded-md {

@@ -152,8 +152,8 @@ export function PushNotificationSettings() {
         <p className="font-semibold">Notifications</p>
       </div>
 
-      <div className="overflow-hidden rounded-md border border-[var(--color-border)] bg-[rgb(255_255_255/0.018)]">
-        <div className="flex items-center justify-between gap-4 px-3 py-3.5">
+      <div>
+        <div className="flex items-center justify-between gap-4 py-2">
           <SettingIcon>
             {enabled ? (
               <CheckCircle2 aria-hidden size={18} />
@@ -184,7 +184,7 @@ export function PushNotificationSettings() {
         </div>
 
         {enabled ? (
-          <div className="border-t border-[var(--color-border)]">
+          <div className="mt-2 border-t border-[var(--color-border)]">
             <PreferenceRow
               checked={preferences.friendNotifications}
               disabled={savingKey !== null}

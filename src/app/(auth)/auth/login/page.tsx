@@ -1,5 +1,4 @@
 import Image from "next/image";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/auth/login-form";
 import { getSafeNextPath } from "@/lib/auth/safe-next-path";
@@ -24,55 +23,36 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   }
 
   return (
-    <main className="min-h-dvh bg-[var(--color-background)] px-4 pb-8 pt-[calc(var(--safe-area-top)+2rem)]">
-      <div className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-md flex-col justify-center">
-        <Link
-          className="mac-focus mb-8 inline-flex items-center gap-3 rounded-md"
-          href="/"
-        >
+    <main className="grid h-[var(--app-viewport-height)] min-h-0 place-items-center overflow-hidden bg-[var(--color-background)] px-5 pb-[calc(var(--safe-area-bottom)+1.5rem)] pt-[calc(var(--safe-area-top)+1.5rem)]">
+      <section
+        aria-labelledby="login-title"
+        className="relative -top-[clamp(0rem,4vh,2rem)] w-full max-w-sm"
+      >
+        <div className="flex flex-col items-center text-center">
           <Image
-            alt=""
-            aria-hidden
-            className="rounded-md"
-            height={42}
+            alt="MAC Study"
+            className="rounded-lg"
+            height={64}
             priority
             src="/icons/mac-square.png"
-            width={42}
+            width={64}
           />
-          <span>
-            <span className="block text-xl font-semibold">MAC Study</span>
-            <span className="text-sm text-[var(--color-text-muted)]">
-              Sign in to keep sessions synced
-            </span>
-          </span>
-        </Link>
+          <h1
+            className="mt-4 text-2xl font-semibold tracking-tight"
+            id="login-title"
+          >
+            MAC Study
+          </h1>
+        </div>
 
-        <section className="mac-panel p-5">
-          <div>
-            <p className="text-sm font-medium text-[var(--color-mac-yellow)]">
-              Welcome back
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold">
-              Study with your crew
-            </h1>
-            <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-              Sign in to sync your sessions across devices.
-            </p>
-          </div>
-
-          {params.signedOut === "1" ? (
-            <p className="mt-5 rounded-md border border-[rgb(66_211_146/0.35)] bg-[rgb(66_211_146/0.07)] p-3 text-sm text-[var(--color-success)]">
-              You have been signed out of your account.
-            </p>
-          ) : null}
-
+        <div className="mt-9">
           <LoginForm
             autoComplete={params.signedOut !== "1"}
             nextPath={next}
             returnedFromProvider={params.complete === "1"}
           />
-        </section>
-      </div>
+        </div>
+      </section>
     </main>
   );
 }

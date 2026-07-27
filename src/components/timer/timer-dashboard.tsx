@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   BookOpen,
@@ -15,10 +22,7 @@ import {
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
 import { EmptyStateCta } from "@/components/empty-state-cta";
-import {
-  DateTimeField,
-  type DateTimePickerPart,
-} from "@/components/date-time-field";
+import { DateField } from "@/components/date-time-field";
 import { PaginatedList } from "@/components/paginated-list";
 import {
   cacheRemoteTimerState,
@@ -806,7 +810,7 @@ function SessionHistoryDialog({
     <AppDialog
       bodyClassName="p-0"
       closeLabel="Close session history"
-      maxWidthClassName="max-w-lg"
+      maxWidthClassName="max-w-lg lg:max-w-[28rem]"
       onClose={onClose}
       title="Session history"
     >
@@ -830,7 +834,7 @@ function SessionHistoryDialog({
 
             return (
               <div
-                className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3"
+                className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-3"
                 key={session.id}
               >
                 <div className="min-w-0">
@@ -845,13 +849,14 @@ function SessionHistoryDialog({
                     ) : null}
                   </div>
                   <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]">
-                    {formatSessionDate(session.startedAt)} ·{" "}
-                    {formatSessionTime(session.startedAt)} ·{" "}
-                    {formatDuration(durationSeconds)}
+                    {formatSessionDate(session.startedAt)}
                   </p>
                 </div>
+                <p className="shrink-0 font-mono text-xs font-semibold tabular-nums text-[var(--color-mac-yellow)] sm:text-sm">
+                  {formatDuration(durationSeconds)}
+                </p>
                 <button
-                  className="mac-focus inline-flex h-11 items-center justify-center rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold"
+                  className="mac-focus inline-flex h-10 items-center justify-center rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold"
                   onClick={() => onEdit(session.id)}
                   type="button"
                 >
@@ -895,32 +900,47 @@ function SessionEditor({
   const [subjectId, setSubjectId] = useState(
     session.subjectId ?? GENERAL_SESSION_SUBJECT,
   );
-  const [startedAt, setStartedAt] = useState(() =>
-    toDateTimeLocal(session.startedAt),
+  const initialDurationSeconds = getSessionDurationSeconds(session);
+  const [sessionDate, setSessionDate] = useState(() =>
+    toLocalDateInput(session.startedAt),
   );
-  const [endedAt, setEndedAt] = useState(() =>
-    toDateTimeLocal(session.endedAt),
+  const [durationSeconds, setDurationSeconds] = useState(
+    initialDurationSeconds,
   );
-  const [activePicker, setActivePicker] = useState<{
-    field: "ended" | "started";
-    part: DateTimePickerPart;
-  } | null>(null);
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const startedDate = new Date(startedAt);
-  const endedDate = new Date(endedAt);
+  const startedDate = applySessionDate(session.startedAt, sessionDate);
+  const endedDate = new Date(
+    startedDate.getTime() + durationSeconds * 1000,
+  );
+  const durationMaxSeconds = Math.max(
+    8 * 60 * 60,
+    Math.ceil(initialDurationSeconds / 3600) * 3600,
+  );
+  const durationProgress =
+    ((durationSeconds - 1) / Math.max(1, durationMaxSeconds - 1)) * 100;
   const valid =
     !Number.isNaN(startedDate.getTime()) &&
     !Number.isNaN(endedDate.getTime()) &&
-    endedDate.getTime() > startedDate.getTime();
+    durationSeconds > 0;
   const isDirty =
     subjectId !== (session.subjectId ?? GENERAL_SESSION_SUBJECT) ||
-    startedAt !== toDateTimeLocal(session.startedAt) ||
-    endedAt !== toDateTimeLocal(session.endedAt);
+    sessionDate !== toLocalDateInput(session.startedAt) ||
+    durationSeconds !== initialDurationSeconds;
+
+  function adjustDuration(changeSeconds: number) {
+    setDurationSeconds((current) =>
+      Math.min(
+        durationMaxSeconds,
+        Math.max(1, current + changeSeconds),
+      ),
+    );
+  }
 
   return (
     <>
       <AppDialog
-        bodyClassName="space-y-4"
+        bodyClassName="space-y-4 lg:space-y-5 lg:p-5"
         closeLabel="Close session editor"
         footer={
           <button
@@ -949,7 +969,7 @@ function SessionEditor({
           </button>
         }
         isDirty={isDirty}
-        maxWidthClassName="max-w-md"
+        maxWidthClassName="max-w-lg lg:max-w-[25rem]"
         onClose={onClose}
         title={
           session.status === "needs_confirmation"
@@ -959,12 +979,13 @@ function SessionEditor({
       >
         {session.status === "needs_confirmation" ? (
           <p className="rounded-md bg-[rgb(255_227_48/0.08)] p-3 text-sm text-[var(--color-text-muted)]">
-            This timer ran for over six hours. Check the times before confirming.
+            This timer ran for over six hours. Check the duration before
+            confirming.
           </p>
         ) : null}
 
         <div className="text-sm font-medium">
-          <p className="mb-2">Subject</p>
+          <p className="mb-2 text-[var(--color-text-muted)]">Subject</p>
           <CustomSelect
             ariaLabel="Session subject"
             onChange={setSubjectId}
@@ -980,35 +1001,71 @@ function SessionEditor({
           />
         </div>
 
-        <DateTimeField
-          activePart={
-            activePicker?.field === "started" ? activePicker.part : null
-          }
-          label="Started"
-          onChange={setStartedAt}
-          onPartChange={(part) =>
-            setActivePicker(part ? { field: "started", part } : null)
-          }
-          value={startedAt}
+        <DateField
+          isOpen={isDatePickerOpen}
+          label="Date"
+          onChange={(value) => setSessionDate(value.slice(0, 10))}
+          onOpenChange={setIsDatePickerOpen}
+          value={sessionDate}
         />
 
-        <DateTimeField
-          activePart={
-            activePicker?.field === "ended" ? activePicker.part : null
-          }
-          label="Ended"
-          onChange={setEndedAt}
-          onPartChange={(part) =>
-            setActivePicker(part ? { field: "ended", part } : null)
-          }
-          value={endedAt}
-        />
+        <div className="space-y-4 pt-1">
+          <div className="flex items-baseline justify-between gap-4">
+            <p className="text-sm font-medium text-[var(--color-text-muted)]">
+              Studied
+            </p>
+            <p className="hidden font-mono text-2xl font-semibold tabular-nums text-[var(--color-mac-yellow)] lg:block">
+              {formatEditableDuration(durationSeconds)}
+            </p>
+          </div>
 
-        {!valid ? (
-          <p className="text-sm text-[var(--color-danger)]">
-            End time must be after start time.
-          </p>
-        ) : null}
+          <div className="flex items-center justify-center gap-4 lg:hidden">
+            <button
+              aria-label="Reduce duration by 5 minutes"
+              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-lg text-[var(--color-text-muted)]"
+              onClick={() => adjustDuration(-5 * 60)}
+              type="button"
+            >
+              −
+            </button>
+            <p className="min-w-32 text-center font-mono text-3xl font-semibold tabular-nums text-[var(--color-mac-yellow)]">
+              {formatEditableDuration(durationSeconds)}
+            </p>
+            <button
+              aria-label="Increase duration by 5 minutes"
+              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-lg text-[var(--color-text-muted)]"
+              onClick={() => adjustDuration(5 * 60)}
+              type="button"
+            >
+              +
+            </button>
+          </div>
+
+          <div className="space-y-1.5">
+            <input
+              aria-label="Study duration"
+              className="mac-duration-slider w-full"
+              max={durationMaxSeconds}
+              min={1}
+              onChange={(event) =>
+                setDurationSeconds(Number(event.target.value))
+              }
+              step={1}
+              style={
+                {
+                  "--duration-progress": `${durationProgress}%`,
+                } as CSSProperties
+              }
+              type="range"
+              value={durationSeconds}
+            />
+            <div className="flex justify-between text-[10px] font-medium text-[var(--color-text-muted)]">
+              <span>0h</span>
+              <span>{Math.round(durationMaxSeconds / 3600)}h</span>
+            </div>
+          </div>
+        </div>
+
         {error ? (
           <p className="text-sm text-[var(--color-danger)]" role="status">
             {error}
@@ -1310,14 +1367,50 @@ function SubjectEditor({
   );
 }
 
-function toDateTimeLocal(value: string) {
+function toLocalDateInput(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
 
   const localDate = new Date(
     date.getTime() - date.getTimezoneOffset() * 60 * 1000,
   );
-  return localDate.toISOString().slice(0, 16);
+  return localDate.toISOString().slice(0, 10);
+}
+
+function applySessionDate(originalStartedAt: string, localDate: string) {
+  const original = new Date(originalStartedAt);
+  const [year, month, day] = localDate.split("-").map(Number);
+
+  if (Number.isNaN(original.getTime()) || !year || !month || !day) {
+    return new Date(Number.NaN);
+  }
+
+  original.setFullYear(year, month - 1, day);
+  return original;
+}
+
+function getSessionDurationSeconds(session: StoredSession) {
+  const duration = Math.floor(
+    (new Date(session.endedAt).getTime() -
+      new Date(session.startedAt).getTime()) /
+      1000,
+  );
+
+  return Number.isFinite(duration) ? Math.max(1, duration) : 1;
+}
+
+function formatEditableDuration(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+
+  if (hours) return `${hours}h ${minutes}m`;
+  if (minutes) {
+    return seconds ? `${minutes}m ${seconds}s` : `${minutes} min`;
+  }
+
+  return `${seconds} sec`;
 }
 
 function formatSessionDate(value: string) {
@@ -1328,17 +1421,6 @@ function formatSessionDate(value: string) {
     day: "numeric",
     month: "short",
     year: "numeric",
-  }).format(date);
-}
-
-function formatSessionTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  return new Intl.DateTimeFormat("en-AU", {
-    hour: "numeric",
-    hour12: true,
-    minute: "2-digit",
   }).format(date);
 }
 
