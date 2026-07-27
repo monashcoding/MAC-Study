@@ -14,6 +14,7 @@ import {
 } from "@/lib/social-state";
 import { getElapsedSeconds, getLocalDateKey } from "@/lib/timer";
 import {
+  type SpecialUnit,
   type TeachingPeriod,
   type UnitCohortMember,
   type UnitEnrollment,
@@ -31,6 +32,7 @@ export type RemoteSubject = {
 
 export type RemoteUnitState = {
   enrollments: UnitEnrollment[];
+  specialUnits: SpecialUnit[];
   subjects: RemoteSubject[];
   suggestions: UnitSuggestion[];
 };
@@ -385,10 +387,12 @@ export async function fetchRemoteTimerState(
 
 export async function startRemoteStudySession({
   groupId = null,
+  startedAt = new Date().toISOString(),
   subjectId,
   supabase,
 }: {
   groupId?: string | null;
+  startedAt?: string;
   subjectId: string | null;
   supabase: SupabaseClient;
 }) {
@@ -402,7 +406,7 @@ export async function startRemoteStudySession({
     user_id: userId,
     subject_id: subjectId,
     group_id: groupId,
-    started_at: new Date().toISOString(),
+    started_at: startedAt,
     status: "active",
     source: "timer",
   });
@@ -433,7 +437,7 @@ export async function stopRemoteStudySession(supabase: SupabaseClient) {
   const endedAt = new Date();
   const durationMs =
     endedAt.getTime() - new Date(activeSession.started_at).getTime();
-  const status =
+  const status: "needs_confirmation" | "completed" =
     durationMs >= 6 * 60 * 60 * 1000 ? "needs_confirmation" : "completed";
   const { error } = await supabase
     .from("study_sessions")
@@ -445,7 +449,7 @@ export async function stopRemoteStudySession(supabase: SupabaseClient) {
     throw error;
   }
 
-  return { id: activeSession.id, status };
+  return { endedAt: endedAt.toISOString(), id: activeSession.id, status };
 }
 
 export async function updateRemoteStudySession({
@@ -635,23 +639,39 @@ export async function fetchRemoteUnitState(
     return null;
   }
 
-  const [enrolmentsResult, unitsResult, subjectsResult] = await Promise.all([
-    supabase
-      .from("unit_enrolments")
-      .select(
-        "offering_id, nickname, joined_at, unit_offerings!inner(id, unit_id, study_year, teaching_period, units!inner(id, code))",
-      )
-      .eq("user_id", userId)
-      .is("left_at", null)
-      .order("joined_at", { ascending: false }),
-    supabase.from("units").select("id, code").order("code").limit(500),
-    supabase
-      .from("subjects")
-      .select("id, code, name, color, unit_offering_id")
-      .eq("user_id", userId)
-      .is("archived_at", null)
-      .order("created_at", { ascending: true }),
-  ]);
+  const [
+    enrolmentsResult,
+    unitsResult,
+    subjectsResult,
+    specialUnitsResult,
+    specialUnitAliasesResult,
+  ] = await Promise.all([
+      supabase
+        .from("unit_enrolments")
+        .select(
+          "offering_id, nickname, joined_at, unit_offerings!inner(id, unit_id, study_year, teaching_period, units!inner(id, code))",
+        )
+        .eq("user_id", userId)
+        .is("left_at", null)
+        .order("joined_at", { ascending: false }),
+      supabase.from("units").select("id, code").order("code").limit(500),
+      supabase
+        .from("subjects")
+        .select("id, code, name, color, unit_offering_id")
+        .eq("user_id", userId)
+        .is("archived_at", null)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("special_units")
+        .select("code, name, description")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true }),
+      supabase
+        .from("special_unit_aliases")
+        .select("alias_code, special_unit_code")
+        .order("alias_code", { ascending: true }),
+    ]);
 
   if (enrolmentsResult.error) throw enrolmentsResult.error;
   if (unitsResult.error) throw unitsResult.error;
@@ -673,9 +693,27 @@ export async function fetchRemoteUnitState(
   const catalogueSuggestions = (
     (unitsResult.data ?? []) as { code: string }[]
   ).map((unit) => ({ code: unit.code, nickname: null }));
+  const specialUnitAliases = specialUnitAliasesResult.error
+    ? []
+    : ((specialUnitAliasesResult.data ?? []) as {
+        alias_code: string;
+        special_unit_code: string;
+      }[]);
+  const specialUnits = specialUnitsResult.error
+    ? []
+    : ((specialUnitsResult.data ?? []) as Omit<
+        SpecialUnit,
+        "aliasCodes"
+      >[]).map((unit) => ({
+        ...unit,
+        aliasCodes: specialUnitAliases
+          .filter((alias) => alias.special_unit_code === unit.code)
+          .map((alias) => alias.alias_code),
+      }));
 
   return {
     enrollments,
+    specialUnits,
     subjects: ((subjectsResult.data ?? []) as SubjectRow[]).map(subjectFromRow),
     suggestions: uniqueUnitSuggestions([
       ...subjectSuggestions,
@@ -730,6 +768,35 @@ export async function upsertRemoteUnitEnrollment({
   }
 
   return data as string;
+}
+
+export async function requestRemoteSpecialUnit({
+  code,
+  comment,
+  name,
+  supabase,
+}: {
+  code: string | null;
+  comment: string | null;
+  name: string;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+
+  if (!userId) {
+    throw new Error("Sign in to request a unit.");
+  }
+
+  const { error } = await supabase.from("special_unit_requests").insert({
+    requester_id: userId,
+    unit_code: code,
+    unit_name: name,
+    comment,
+  });
+
+  if (error) {
+    throw error;
+  }
 }
 
 export async function leaveRemoteUnitEnrollment({
@@ -1597,6 +1664,16 @@ export function subscribeToRemoteAppChanges(
       "postgres_changes",
       { event: "*", schema: "public", table: "unit_enrolments" },
       () => onChange("unit_enrolments"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "special_units" },
+      () => onChange("special_units"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "special_unit_aliases" },
+      () => onChange("special_unit_aliases"),
     )
     .subscribe();
 

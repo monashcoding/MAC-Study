@@ -126,6 +126,7 @@ export function TimerDashboard() {
   const [sessionBusy, setSessionBusy] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const isSavingSubjectsRef = useRef(false);
+  const isSessionMutationInFlightRef = useRef(false);
 
   const applyRemoteTimerState = useCallback((remoteState: RemoteTimerState) => {
     setSubjects(remoteState.subjects);
@@ -234,7 +235,12 @@ export function TimerDashboard() {
     }
 
     return subscribeToRemoteAppChanges(remoteClient, () => {
-      if (isSavingSubjectsRef.current) return;
+      if (
+        isSavingSubjectsRef.current ||
+        isSessionMutationInFlightRef.current
+      ) {
+        return;
+      }
       void refreshRemoteTimer(remoteClient);
     });
   }, [refreshRemoteTimer, remoteClient]);
@@ -278,7 +284,7 @@ export function TimerDashboard() {
     subjectId: string | null,
     groupId: string | null = null,
   ) {
-    if (activeSession) {
+    if (activeSession || isSessionMutationInFlightRef.current) {
       return;
     }
 
@@ -292,18 +298,23 @@ export function TimerDashboard() {
     setNow(new Date());
 
     if (dataMode === "remote" && remoteClient) {
+      isSessionMutationInFlightRef.current = true;
       try {
         await startRemoteStudySession({
           groupId,
+          startedAt: optimisticSession.startedAt,
           subjectId,
           supabase: remoteClient,
         });
-        await refreshRemoteTimer(remoteClient);
+        await refreshRemoteTimer(remoteClient).catch(() => undefined);
       } catch {
         setActiveSession((current) =>
           current?.startedAt === optimisticSession.startedAt ? null : current,
         );
         await refreshRemoteTimer(remoteClient).catch(() => undefined);
+        setSubjectToastMessage("Session could not be started");
+      } finally {
+        isSessionMutationInFlightRef.current = false;
       }
 
       return;
@@ -311,41 +322,65 @@ export function TimerDashboard() {
   }
 
   async function stopStudy() {
-    if (!activeSession) {
+    if (!activeSession || isSessionMutationInFlightRef.current) {
       return;
     }
 
+    const stoppingSession = activeSession;
+    const previousSessions = sessions;
+    const endedAt = new Date();
+    const sessionId = crypto.randomUUID();
+    const needsConfirmation = isLongSession(stoppingSession.startedAt, endedAt);
+    const optimisticCompletedSession: StoredSession = {
+      id: sessionId,
+      subjectId: stoppingSession.subjectId,
+      groupId: stoppingSession.groupId ?? null,
+      startedAt: stoppingSession.startedAt,
+      endedAt: endedAt.toISOString(),
+      status: needsConfirmation ? "needs_confirmation" : "completed",
+      source: "timer",
+    };
+
+    setSessions((current) => [optimisticCompletedSession, ...current]);
+    setActiveSession(null);
+
     if (dataMode === "remote" && remoteClient) {
+      isSessionMutationInFlightRef.current = true;
       try {
         const stopped = await stopRemoteStudySession(remoteClient);
-        if (stopped?.status === "needs_confirmation") {
-          setReturnToSessionHistory(false);
-          setEditingSessionId(stopped.id);
+
+        if (stopped) {
+          setSessions((current) =>
+            current.map((session) =>
+              session.id === sessionId
+                ? {
+                    ...session,
+                    endedAt: stopped.endedAt,
+                    id: stopped.id,
+                    status: stopped.status,
+                  }
+                : session,
+            ),
+          );
+
+          if (stopped.status === "needs_confirmation") {
+            setReturnToSessionHistory(false);
+            setEditingSessionId(stopped.id);
+          }
         }
+
+        await refreshRemoteTimer(remoteClient).catch(() => undefined);
+      } catch {
+        setSessions(previousSessions);
+        setActiveSession(stoppingSession);
+        setSubjectToastMessage("Session could not be stopped");
       } finally {
-        await refreshRemoteTimer(remoteClient);
+        isSessionMutationInFlightRef.current = false;
       }
 
       return;
     }
 
-    const endedAt = new Date();
-    const sessionId = crypto.randomUUID();
-    const needsConfirmation = isLongSession(activeSession.startedAt, endedAt);
-
-    setSessions((current) => [
-      {
-        id: sessionId,
-        subjectId: activeSession.subjectId,
-        groupId: activeSession.groupId ?? null,
-        startedAt: activeSession.startedAt,
-        endedAt: endedAt.toISOString(),
-        status: needsConfirmation ? "needs_confirmation" : "completed",
-        source: "timer",
-      },
-      ...current,
-    ]);
-    setActiveSession(null);
     if (needsConfirmation) {
       setReturnToSessionHistory(false);
       setEditingSessionId(sessionId);

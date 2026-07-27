@@ -1122,7 +1122,7 @@ function AddFriendDialog({
 
   return (
     <AppDialog
-      bodyClassName={remoteCandidates ? "grid gap-2" : "space-y-5"}
+      bodyClassName={remoteCandidates ? "grid gap-1.5 p-3" : "space-y-4 p-3"}
       closeLabel="Close add friend"
       footer={
         remoteCandidates ? null : (
@@ -1143,15 +1143,15 @@ function AddFriendDialog({
       {remoteCandidates ? (
         remoteCandidates.length ? (
           <PaginatedList
-            className="grid gap-2"
+            className="grid gap-1.5"
             items={sortFriendCandidates(remoteCandidates)}
             pageSize={10}
             renderItem={(candidate, index) => (
               <div
-                className="grid min-h-16 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-3 py-3"
+                className="grid min-h-14 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-2.5 py-2"
                 key={candidate.id}
               >
-                <ProfileBadge friend={candidate} />
+                <ProfileBadge friend={candidate} size="sm" />
                 <button
                   aria-expanded={revealedCandidateIds.has(candidate.id)}
                   className="mac-focus min-w-0 rounded-md text-left"
@@ -1186,7 +1186,7 @@ function AddFriendDialog({
                 </button>
                 {candidate.requestDirection === "incoming" ? (
                   <button
-                    className="mac-focus h-11 rounded-lg border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)]"
+                    className="mac-focus h-10 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)]"
                     data-dialog-autofocus={index === 0 ? "" : undefined}
                     onClick={onShowRequests}
                     type="button"
@@ -1194,13 +1194,13 @@ function AddFriendDialog({
                     View request
                   </button>
                 ) : candidate.requestDirection === "outgoing" ? (
-                  <span className="inline-flex h-11 items-center gap-1.5 px-2 text-sm font-semibold text-[var(--color-text-muted)]">
+                  <span className="inline-flex h-10 items-center gap-1.5 px-2 text-sm font-semibold text-[var(--color-text-muted)]">
                     <Clock3 aria-hidden size={15} />
                     Sent
                   </span>
                 ) : (
                   <button
-                    className="mac-focus h-11 rounded-lg border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-mac-yellow)] disabled:opacity-45"
+                    className="mac-focus h-10 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)] disabled:opacity-45"
                     data-dialog-autofocus={index === 0 ? "" : undefined}
                     onClick={() => onAddRemote(candidate.id)}
                     type="button"
@@ -1396,13 +1396,17 @@ function ProfileBadge({
   size = "md",
 }: {
   friend: SocialFriend;
-  size?: "md" | "lg";
+  size?: "sm" | "md" | "lg";
 }) {
   return (
     <span
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-[#141414]",
-        size === "lg" ? "h-16 w-16 text-lg" : "h-11 w-11 text-sm",
+        size === "lg"
+          ? "h-16 w-16 text-lg"
+          : size === "sm"
+            ? "h-10 w-10 text-xs"
+            : "h-11 w-11 text-sm",
         friend.studying
           ? "ring-2 ring-[var(--color-success)] ring-offset-2 ring-offset-[var(--color-background)]"
           : "grayscale",

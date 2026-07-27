@@ -33,6 +33,13 @@ export type UnitSuggestion = {
   nickname: string | null;
 };
 
+export type SpecialUnit = {
+  aliasCodes: string[];
+  code: string;
+  description: string | null;
+  name: string;
+};
+
 const UNIT_CODE_PATTERN = /^[A-Z]{3}[0-9]{4}$/;
 
 const periodLabels: Record<TeachingPeriod, string> = {
@@ -56,10 +63,33 @@ export function normalizeUnitCode(value: string) {
     .replace(/[\s-]+/g, "");
 }
 
-export function isValidUnitCode(value: string) {
+export function isValidUnitCode(
+  value: string,
+  specialUnitCodes: Iterable<string> = [],
+) {
+  const normalizedCode = normalizeUnitCode(value);
+
   return (
     value.trim().length <= 14 &&
-    UNIT_CODE_PATTERN.test(normalizeUnitCode(value))
+    (UNIT_CODE_PATTERN.test(normalizedCode) ||
+      Array.from(specialUnitCodes).some(
+        (code) => normalizeUnitCode(code) === normalizedCode,
+      ))
+  );
+}
+
+export function findSpecialUnitByAlias(
+  specialUnits: SpecialUnit[],
+  value: string,
+) {
+  const normalizedCode = normalizeUnitCode(value);
+
+  return (
+    specialUnits.find((unit) =>
+      unit.aliasCodes.some(
+        (aliasCode) => normalizeUnitCode(aliasCode) === normalizedCode,
+      ),
+    ) ?? null
   );
 }
 

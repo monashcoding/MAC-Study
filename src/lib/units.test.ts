@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  findSpecialUnitByAlias,
   getCohortLabel,
   isPastUnitEnrollment,
   isValidUnitCode,
@@ -25,6 +26,23 @@ describe("unit codes", () => {
     "FIT30770",
     "FIT----------------3077",
   ])("rejects %s", (input) => expect(isValidUnitCode(input)).toBe(false));
+
+  it("accepts catalogue-backed special unit codes only when supplied", () => {
+    expect(isValidUnitCode("IBL")).toBe(false);
+    expect(isValidUnitCode("IBL", ["IBL"])).toBe(true);
+  });
+
+  it("finds the special unit represented by an alias code", () => {
+    const ibl = {
+      aliasCodes: ["FIT3045", "FIT4042"],
+      code: "IBL",
+      description: null,
+      name: "Industry Based Learning",
+    };
+
+    expect(findSpecialUnitByAlias([ibl], "fit 3045")).toEqual(ibl);
+    expect(findSpecialUnitByAlias([ibl], "FIT3077")).toBeNull();
+  });
 
   it("deduplicates suggestions by canonical code", () => {
     expect(
