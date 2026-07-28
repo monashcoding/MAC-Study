@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +9,13 @@ export type CustomSelectOption<T extends string | number> = {
   label: string;
   swatchColor?: string;
   value: T;
+};
+
+type MenuPosition = {
+  left: number;
+  maxHeight: number;
+  top: number;
+  width: number;
 };
 
 export function CustomSelect<T extends string | number>({
@@ -33,7 +41,9 @@ export function CustomSelect<T extends string | number>({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const listboxId = useId();
+  const listboxRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const optionsRef = useRef(options);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -44,14 +54,54 @@ export function CustomSelect<T extends string | number>({
   const selectedOption =
     options.find((option) => option.value === value) ?? null;
 
+  const updateMenuPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportTop = viewport?.offsetTop ?? 0;
+    const viewportLeft = viewport?.offsetLeft ?? 0;
+    const viewportHeight = viewport?.height ?? window.innerHeight;
+    const viewportWidth = viewport?.width ?? window.innerWidth;
+    const viewportBottom = viewportTop + viewportHeight;
+    const gap = 7;
+    const edge = 8;
+    const availableAbove = Math.max(0, rect.top - viewportTop - gap - edge);
+    const availableBelow = Math.max(
+      0,
+      viewportBottom - rect.bottom - gap - edge,
+    );
+    const openAbove =
+      placement === "top"
+        ? availableAbove >= 120 || availableAbove > availableBelow
+        : availableBelow < 120 && availableAbove > availableBelow;
+    const available = openAbove ? availableAbove : availableBelow;
+    const maxHeight = Math.max(80, Math.min(240, available));
+    const estimatedMenuHeight = Math.min(
+      maxHeight,
+      optionsRef.current.length * 48 + 12,
+    );
+    const width = Math.min(rect.width, viewportWidth - edge * 2);
+    const left = Math.min(
+      Math.max(rect.left, viewportLeft + edge),
+      viewportLeft + viewportWidth - width - edge,
+    );
+    const top = openAbove
+      ? Math.max(viewportTop + edge, rect.top - gap - estimatedMenuHeight)
+      : rect.bottom + gap;
+
+    setMenuPosition({ left, maxHeight, top, width });
+  }, [placement]);
+
   useEffect(() => {
     if (!isOpen) return;
 
     function handlePointerDown(event: PointerEvent) {
       if (
-        rootRef.current &&
         event.target instanceof Node &&
-        !rootRef.current.contains(event.target)
+        !rootRef.current?.contains(event.target) &&
+        !listboxRef.current?.contains(event.target)
       ) {
         setIsOpen(false);
       }
@@ -60,6 +110,27 @@ export function CustomSelect<T extends string | number>({
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setMenuPosition(null);
+      return;
+    }
+
+    updateMenuPosition();
+    const viewport = window.visualViewport;
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    viewport?.addEventListener("resize", updateMenuPosition);
+    viewport?.addEventListener("scroll", updateMenuPosition);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+      viewport?.removeEventListener("resize", updateMenuPosition);
+      viewport?.removeEventListener("scroll", updateMenuPosition);
+    };
+  }, [isOpen, updateMenuPosition]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -164,67 +235,74 @@ export function CustomSelect<T extends string | number>({
         />
       </button>
 
-      {isOpen ? (
-        <div
-          className={cn(
-            "absolute z-50 max-h-60 min-w-full overflow-y-auto overscroll-contain rounded-xl border border-[var(--color-border)] bg-[rgb(30_30_30/0.99)] p-1.5 shadow-[0_18px_50px_rgb(0_0_0/0.52)] backdrop-blur-xl",
-            placement === "top"
-              ? "bottom-[calc(100%+0.45rem)] right-0"
-              : "left-0 top-[calc(100%+0.45rem)]",
-            size === "compact" && "w-max max-w-[15rem]",
-          )}
-          id={listboxId}
-          role="listbox"
-        >
-          {options.map((option) => {
-            const selected = option.value === value;
-            const optionIndex = options.indexOf(option);
+      {isOpen && menuPosition
+        ? createPortal(
+            <div
+              className={cn(
+                "fixed z-[120] overflow-y-auto overscroll-contain rounded-xl border border-[var(--color-border)] bg-[rgb(30_30_30/0.99)] p-1.5 shadow-[0_18px_50px_rgb(0_0_0/0.52)] backdrop-blur-xl",
+              )}
+              id={listboxId}
+              ref={listboxRef}
+              role="listbox"
+              style={{
+                left: menuPosition.left,
+                maxHeight: menuPosition.maxHeight,
+                top: menuPosition.top,
+                width: menuPosition.width,
+              }}
+            >
+              {options.map((option, optionIndex) => {
+                const selected = option.value === value;
 
-            return (
-              <button
-                aria-selected={selected}
-                className={cn(
-                  "mac-focus grid min-h-10 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition",
-                  selected
-                    ? "bg-[rgb(255_227_48/0.12)] text-[var(--color-text)]"
-                    : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
-                )}
-                key={option.value}
-                onClick={() => {
-                  onChange(option.value);
-                  setIsOpen(false);
-                  triggerRef.current?.focus();
-                }}
-                onFocus={() => setActiveIndex(optionIndex)}
-                ref={(element) => {
-                  optionRefs.current[optionIndex] = element;
-                }}
-                role="option"
-                tabIndex={activeIndex === optionIndex ? 0 : -1}
-                type="button"
-              >
-                <span className="flex min-w-0 items-center gap-2.5">
-                  {option.swatchColor ? (
-                    <span
-                      aria-hidden
-                      className="h-4 w-4 shrink-0 rounded-full border border-black/15"
-                      style={{ backgroundColor: option.swatchColor }}
-                    />
-                  ) : null}
-                  <span className="truncate font-medium">{option.label}</span>
-                </span>
-                {selected ? (
-                  <Check
-                    aria-hidden
-                    className="text-[var(--color-mac-yellow)]"
-                    size={15}
-                  />
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+                return (
+                  <button
+                    aria-selected={selected}
+                    className={cn(
+                      "mac-focus grid min-h-10 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition",
+                      selected
+                        ? "bg-[rgb(255_227_48/0.12)] text-[var(--color-text)]"
+                        : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
+                    )}
+                    key={option.value}
+                    onClick={() => {
+                      onChange(option.value);
+                      setIsOpen(false);
+                      triggerRef.current?.focus();
+                    }}
+                    onFocus={() => setActiveIndex(optionIndex)}
+                    ref={(element) => {
+                      optionRefs.current[optionIndex] = element;
+                    }}
+                    role="option"
+                    tabIndex={activeIndex === optionIndex ? 0 : -1}
+                    type="button"
+                  >
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      {option.swatchColor ? (
+                        <span
+                          aria-hidden
+                          className="h-4 w-4 shrink-0 rounded-full border border-black/15"
+                          style={{ backgroundColor: option.swatchColor }}
+                        />
+                      ) : null}
+                      <span className="truncate font-medium">
+                        {option.label}
+                      </span>
+                    </span>
+                    {selected ? (
+                      <Check
+                        aria-hidden
+                        className="text-[var(--color-mac-yellow)]"
+                        size={15}
+                      />
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

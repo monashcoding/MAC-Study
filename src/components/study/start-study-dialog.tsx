@@ -37,12 +37,7 @@ export function StartStudyDialog({
         <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414]">
           <Play aria-hidden size={18} />
         </span>
-        <span className="min-w-0">
-          <span className="block truncate font-semibold">General study</span>
-          <span className="block truncate text-sm text-[var(--color-text-muted)]">
-            No subject
-          </span>
-        </span>
+        <span className="min-w-0 truncate font-semibold">General study</span>
         <BookOpen
           aria-hidden
           className="text-[var(--color-text-muted)]"

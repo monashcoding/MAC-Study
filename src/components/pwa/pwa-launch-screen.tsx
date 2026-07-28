@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 type LaunchPhase = "visible" | "leaving" | "hidden";
-const MAX_VISIBLE_MS = 2500;
+const MAX_VISIBLE_MS = 12000;
 const FADE_MS = 300;
 
 export function PwaLaunchScreen() {
@@ -23,6 +23,7 @@ export function PwaLaunchScreen() {
       return () => window.cancelAnimationFrame(frame);
     }
 
+    document.body.classList.add("mac-pwa-launch-active");
     let removeTimeout = 0;
     let frame = 0;
     let leaving = false;
@@ -31,7 +32,10 @@ export function PwaLaunchScreen() {
       if (leaving) return;
       leaving = true;
       setPhase("leaving");
-      removeTimeout = window.setTimeout(() => setPhase("hidden"), FADE_MS);
+      removeTimeout = window.setTimeout(() => {
+        document.body.classList.remove("mac-pwa-launch-active");
+        setPhase("hidden");
+      }, FADE_MS);
     }
 
     function leaveWhenPainted() {
@@ -40,19 +44,16 @@ export function PwaLaunchScreen() {
       });
     }
 
-    if (document.readyState === "complete") {
-      leaveWhenPainted();
-    } else {
-      window.addEventListener("load", leaveWhenPainted, { once: true });
-    }
+    window.addEventListener("mac-app-ready", leaveWhenPainted, { once: true });
 
     const maximumTimeout = window.setTimeout(leave, MAX_VISIBLE_MS);
 
     return () => {
-      window.removeEventListener("load", leaveWhenPainted);
+      window.removeEventListener("mac-app-ready", leaveWhenPainted);
       window.cancelAnimationFrame(frame);
       window.clearTimeout(maximumTimeout);
       window.clearTimeout(removeTimeout);
+      document.body.classList.remove("mac-pwa-launch-active");
     };
   }, []);
 

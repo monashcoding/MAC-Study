@@ -198,38 +198,47 @@ export function DateField({
       <p className="text-sm font-medium text-[var(--color-text-muted)]">
         {label}
       </p>
-      <button
-        aria-expanded={isOpen}
-        className={cn(
-          "mac-focus inline-flex h-12 w-full min-w-0 items-center gap-2.5 rounded-md border bg-[var(--color-surface)] px-3 text-left text-sm font-medium transition lg:h-10",
-          isOpen
-            ? "border-[var(--color-mac-yellow)] text-[var(--color-text)]"
-            : "border-[var(--color-border)] text-[var(--color-text)] hover:border-[rgb(255_255_255/0.18)]",
-        )}
-        onClick={() => {
-          setVisibleMonth(
-            new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
-          );
-          onOpenChange(!isOpen);
-        }}
-        type="button"
-      >
-        <Calendar
-          aria-hidden
-          className="shrink-0 text-[var(--color-text-muted)]"
-          size={16}
-        />
-        <span className="truncate">{formatDate(selectedDate)}</span>
-      </button>
+      <div className="relative">
+        <button
+          aria-expanded={isOpen}
+          className={cn(
+            "mac-focus inline-flex h-12 w-full min-w-0 items-center gap-2.5 rounded-md border bg-[var(--color-surface)] px-3 text-left text-sm font-medium transition lg:h-10",
+            isOpen
+              ? "border-[var(--color-mac-yellow)] text-[var(--color-text)]"
+              : "border-[var(--color-border)] text-[var(--color-text)] hover:border-[rgb(255_255_255/0.18)]",
+          )}
+          onClick={() => {
+            setVisibleMonth(
+              new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
+            );
+            onOpenChange(!isOpen);
+          }}
+          type="button"
+        >
+          <Calendar
+            aria-hidden
+            className="shrink-0 text-[var(--color-text-muted)]"
+            size={16}
+          />
+          <span className="truncate">{formatDate(selectedDate)}</span>
+        </button>
 
-      {isOpen ? (
-        <CalendarPanel
-          onChange={changeDate}
-          onMonthChange={setVisibleMonth}
-          selectedDate={selectedDate}
-          visibleMonth={visibleMonth}
-        />
-      ) : null}
+        <div
+          aria-hidden={!isOpen}
+          className={cn(
+            "absolute inset-x-0 top-full z-20 mt-2 transition-opacity duration-150 ease-out",
+            isOpen ? "opacity-100" : "pointer-events-none opacity-0",
+          )}
+          inert={!isOpen}
+        >
+          <CalendarPanel
+            onChange={changeDate}
+            onMonthChange={setVisibleMonth}
+            selectedDate={selectedDate}
+            visibleMonth={visibleMonth}
+          />
+        </div>
+      </div>
     </div>
   );
 }

@@ -203,7 +203,7 @@ export function PushNotificationSettings() {
               checked={preferences.otherNotifications}
               disabled={savingKey !== null}
               icon={<MessagesSquare aria-hidden size={18} />}
-              label="Group messages & invites"
+              label="Messages & group invites"
               onChange={() => void togglePreference("otherNotifications")}
             />
           </div>

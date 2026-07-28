@@ -28,7 +28,10 @@ export function LoginForm({
 
   useEffect(() => {
     if (!showSigningInState) {
-      return;
+      const frame = window.requestAnimationFrame(() => {
+        window.dispatchEvent(new Event("mac-app-ready"));
+      });
+      return () => window.cancelAnimationFrame(frame);
     }
 
     const previousHtmlOverflow = document.documentElement.style.overflow;
@@ -148,7 +151,7 @@ function SigningInState({ checkingSession }: { checkingSession: boolean }) {
   return (
     <div
       aria-live="polite"
-      className="fixed inset-0 z-50 flex h-[var(--app-viewport-height)] min-h-0 items-center justify-center overflow-hidden overscroll-none bg-[var(--color-background)] px-6 pb-[var(--safe-area-bottom)] pt-[var(--safe-area-top)]"
+      className="mac-auth-loading fixed inset-0 z-50 flex h-[var(--app-viewport-height)] min-h-0 items-center justify-center overflow-hidden overscroll-none bg-[var(--color-background)] px-6 pb-[var(--safe-area-bottom)] pt-[var(--safe-area-top)]"
       role="status"
     >
       <div className="mac-auth-pulse flex flex-col items-center text-center">

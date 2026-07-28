@@ -12,8 +12,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   BookOpen,
   CalendarClock,
-  CircleStop,
   LoaderCircle,
+  Pause,
   Pencil,
   Play,
   Plus,
@@ -241,10 +241,7 @@ export function TimerDashboard() {
     }
 
     return subscribeToRemoteAppChanges(remoteClient, () => {
-      if (
-        isSavingSubjectsRef.current ||
-        isSessionMutationInFlightRef.current
-      ) {
+      if (isSavingSubjectsRef.current || isSessionMutationInFlightRef.current) {
         return;
       }
       void refreshRemoteTimer(remoteClient);
@@ -603,11 +600,11 @@ export function TimerDashboard() {
           type="button"
         >
           {activeSession ? (
-            <CircleStop aria-hidden size={18} />
+            <Pause aria-hidden fill="currentColor" size={18} />
           ) : (
             <Play aria-hidden size={18} />
           )}
-          {activeSession ? "Stop session" : "Start session"}
+          {activeSession ? "Pause session" : "Start session"}
         </button>
       </section>
 
@@ -648,58 +645,60 @@ export function TimerDashboard() {
             items={subjects}
             pageSize={12}
             renderItem={(subject) => {
-            const isActive = activeSession?.subjectId === subject.id;
-            const subjectSeconds =
-              (subjectTotals[subject.id] ?? 0) +
-              (isActive ? elapsedSeconds : 0);
+              const isActive = activeSession?.subjectId === subject.id;
+              const subjectSeconds =
+                (subjectTotals[subject.id] ?? 0) +
+                (isActive ? elapsedSeconds : 0);
 
-            return (
-              <div
-                className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 py-2.5 lg:min-h-16"
-                key={subject.id}
-              >
-                <button
-                  className={cn(
-                    "mac-focus inline-flex h-10 w-10 items-center justify-center rounded-full font-semibold text-[#141414] shadow-[0_10px_24px_rgb(0_0_0/0.22)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-35",
-                    isActive ? "bg-[var(--color-danger)] text-white" : "",
-                  )}
-                  disabled={Boolean(activeSession) && !isActive}
-                  onClick={() =>
-                    void (isActive ? stopStudy() : startStudy(subject.id))
-                  }
-                  style={
-                    !isActive ? { backgroundColor: subject.color } : undefined
-                  }
-                  type="button"
+              return (
+                <div
+                  className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 py-2.5 lg:min-h-16"
+                  key={subject.id}
                 >
-                  {isActive ? (
-                    <CircleStop aria-hidden size={19} />
-                  ) : (
-                    <Play aria-hidden size={19} />
-                  )}
-                  <span className="sr-only">
-                    {isActive ? "Stop study session" : `Start ${subject.name}`}
-                  </span>
-                </button>
+                  <button
+                    className={cn(
+                      "mac-focus inline-flex h-10 w-10 items-center justify-center rounded-full font-semibold text-[#141414] shadow-[0_10px_24px_rgb(0_0_0/0.22)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-35",
+                      isActive ? "bg-[var(--color-danger)] text-white" : "",
+                    )}
+                    disabled={Boolean(activeSession) && !isActive}
+                    onClick={() =>
+                      void (isActive ? stopStudy() : startStudy(subject.id))
+                    }
+                    style={
+                      !isActive ? { backgroundColor: subject.color } : undefined
+                    }
+                    type="button"
+                  >
+                    {isActive ? (
+                      <Pause aria-hidden fill="currentColor" size={19} />
+                    ) : (
+                      <Play aria-hidden size={19} />
+                    )}
+                    <span className="sr-only">
+                      {isActive
+                        ? "Pause study session"
+                        : `Start ${subject.name}`}
+                    </span>
+                  </button>
 
-                <h3 className="min-w-0 truncate text-sm font-semibold sm:text-base">
-                  {subject.name}
-                </h3>
+                  <h3 className="min-w-0 truncate text-sm font-semibold sm:text-base">
+                    {subject.name}
+                  </h3>
 
-                <p className="shrink-0 pl-1 text-right font-mono text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">
-                  {formatDuration(subjectSeconds)}
-                </p>
+                  <p className="shrink-0 pl-1 text-right font-mono text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">
+                    {formatDuration(subjectSeconds)}
+                  </p>
 
-                <button
-                  className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)]"
-                  onClick={() => openSubjectEditor(subject.id)}
-                  type="button"
-                >
-                  <Pencil aria-hidden size={17} />
-                  <span className="sr-only">Edit {subject.name}</span>
-                </button>
-              </div>
-            );
+                  <button
+                    className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)]"
+                    onClick={() => openSubjectEditor(subject.id)}
+                    type="button"
+                  >
+                    <Pencil aria-hidden size={17} />
+                    <span className="sr-only">Edit {subject.name}</span>
+                  </button>
+                </div>
+              );
             }}
             resetKey="timer-subjects"
           />
@@ -910,9 +909,7 @@ function SessionEditor({
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const startedDate = applySessionDate(session.startedAt, sessionDate);
-  const endedDate = new Date(
-    startedDate.getTime() + durationSeconds * 1000,
-  );
+  const endedDate = new Date(startedDate.getTime() + durationSeconds * 1000);
   const durationMaxSeconds = Math.max(
     8 * 60 * 60,
     Math.ceil(initialDurationSeconds / 3600) * 3600,
@@ -930,10 +927,7 @@ function SessionEditor({
 
   function adjustDuration(changeSeconds: number) {
     setDurationSeconds((current) =>
-      Math.min(
-        durationMaxSeconds,
-        Math.max(1, current + changeSeconds),
-      ),
+      Math.min(durationMaxSeconds, Math.max(1, current + changeSeconds)),
     );
   }
 

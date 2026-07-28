@@ -1,4 +1,4 @@
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerStudySession } from "@/lib/auth/server-session";
 import { sendWebPush } from "@/lib/push/send-web-push";
@@ -14,6 +14,7 @@ const messageSchema = z
     body: z.string().trim().max(2000).default(""),
     groupId: z.string().uuid(),
     imagePath: z.string().trim().max(240).nullable().optional(),
+    replyToId: z.string().uuid().nullable().optional(),
   })
   .refine((value) => Boolean(value.body || value.imagePath), {
     message: "A message or photo is required.",
@@ -24,6 +25,16 @@ type GroupMemberRow = {
 };
 
 type GroupMuteRow = {
+  user_id: string;
+};
+
+type NotificationPreferenceRow = {
+  other_notifications: boolean;
+  user_id: string;
+};
+
+type CreatedNotificationRow = {
+  id: string;
   user_id: string;
 };
 
@@ -49,7 +60,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { body, groupId, imagePath = null } = parsed.data;
+  const { body, groupId, imagePath = null, replyToId = null } = parsed.data;
   const expectedImagePrefix = `${groupId}/${session.sub}/`;
 
   if (
@@ -65,12 +76,30 @@ export async function POST(request: Request) {
     );
   }
 
+  if (replyToId) {
+    const { data: replyTarget, error: replyError } = await supabase
+      .from("group_chat_messages")
+      .select("id")
+      .eq("id", replyToId)
+      .eq("group_id", groupId)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (replyError || !replyTarget) {
+      return NextResponse.json(
+        { message: "That message is no longer available to reply to." },
+        { status: 400 },
+      );
+    }
+  }
+
   const { data, error } = await supabase
     .from("group_chat_messages")
     .insert({
       body: body || null,
       group_id: groupId,
       image_path: imagePath,
+      reply_to_id: replyToId,
       user_id: session.sub,
     })
     .select("id")
@@ -83,20 +112,18 @@ export async function POST(request: Request) {
     );
   }
 
-  after(() =>
-    sendGroupMessagePush({
-      body,
-      groupId,
-      hasImage: Boolean(imagePath),
-      messageId: data.id,
-      senderId: session.sub,
-    }),
-  );
+  const notifications = await sendGroupMessageNotifications({
+    body,
+    groupId,
+    hasImage: Boolean(imagePath),
+    messageId: data.id,
+    senderId: session.sub,
+  });
 
-  return NextResponse.json({ messageId: data.id, ok: true });
+  return NextResponse.json({ messageId: data.id, notifications, ok: true });
 }
 
-async function sendGroupMessagePush({
+async function sendGroupMessageNotifications({
   body,
   groupId,
   hasImage,
@@ -110,7 +137,7 @@ async function sendGroupMessagePush({
   senderId: string;
 }) {
   const admin = createSupabaseAdminClient();
-  if (!admin) return;
+  if (!admin) return { recipients: 0, sent: 0 };
 
   const [groupResult, membersResult, mutesResult, senderResult] =
     await Promise.all([
@@ -135,11 +162,26 @@ async function sendGroupMessagePush({
   const mutedIds = new Set(
     ((mutesResult.data ?? []) as GroupMuteRow[]).map((row) => row.user_id),
   );
-  const memberIds = ((membersResult.data ?? []) as GroupMemberRow[])
+  const candidateMemberIds = ((membersResult.data ?? []) as GroupMemberRow[])
     .map((row) => row.user_id)
     .filter((userId) => !mutedIds.has(userId));
 
-  if (!memberIds.length) return;
+  if (!candidateMemberIds.length) return { recipients: 0, sent: 0 };
+
+  const { data: preferenceData } = await admin
+    .from("user_notification_preferences")
+    .select("user_id, other_notifications")
+    .in("user_id", candidateMemberIds);
+  const disabledIds = new Set(
+    ((preferenceData ?? []) as NotificationPreferenceRow[])
+      .filter((row) => !row.other_notifications)
+      .map((row) => row.user_id),
+  );
+  const memberIds = candidateMemberIds.filter(
+    (userId) => !disabledIds.has(userId),
+  );
+
+  if (!memberIds.length) return { recipients: 0, sent: 0 };
 
   const sender =
     (senderResult.data as { username?: string | null } | null)?.username ??
@@ -153,17 +195,55 @@ async function sendGroupMessagePush({
     : hasImage
       ? "Sent a photo"
       : "Sent a message";
-
-  await Promise.allSettled(
-    memberIds.map((userId) =>
-      sendWebPush({
-        body: `@${sender}: ${preview}`,
-        category: "other",
-        tag: `mac-study-group-message-${messageId}`,
-        title: groupName,
-        url: `/app/groups?group=${groupId}`,
-        userId,
-      }),
+  const notificationBody = `@${sender}: ${preview}`;
+  const { data: createdNotificationData } = await admin
+    .from("app_notifications")
+    .insert(
+      memberIds.map((userId) => ({
+        actor_id: senderId,
+        body: notificationBody,
+        entity_id: groupId,
+        title: `New message in ${groupName}`,
+        type: "other",
+        user_id: userId,
+      })),
+    )
+    .select("id, user_id");
+  const notificationIdsByUser = new Map(
+    ((createdNotificationData ?? []) as CreatedNotificationRow[]).map(
+      (notification) => [notification.user_id, notification.id],
     ),
   );
+
+  const deliveries = await Promise.allSettled(
+    memberIds.map(async (userId) => {
+      const notificationId = notificationIdsByUser.get(userId);
+      const delivery = await sendWebPush({
+        body: notificationBody,
+        category: "other",
+        tag: notificationId
+          ? `mac-study-${notificationId}`
+          : `mac-study-group-message-${messageId}`,
+        title: groupName,
+        url: `/app/groups?group=${groupId}&view=chat`,
+        userId,
+      });
+
+      if (delivery.sent > 0 && notificationId) {
+        await admin
+          .from("app_notifications")
+          .update({ delivered_at: new Date().toISOString() })
+          .eq("id", notificationId);
+      }
+
+      return delivery;
+    }),
+  );
+
+  return {
+    recipients: memberIds.length,
+    sent: deliveries.filter(
+      (delivery) => delivery.status === "fulfilled" && delivery.value.sent > 0,
+    ).length,
+  };
 }

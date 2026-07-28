@@ -12,14 +12,13 @@ import {
   ArrowLeft,
   BellOff,
   Check,
-  CircleStop,
   Clock3,
   Crown,
   LoaderCircle,
-  Lock,
   LogOut,
   MoreHorizontal,
   MessagesSquare,
+  Pause,
   Play,
   Plus,
   Settings,
@@ -259,15 +258,35 @@ export function GroupsDashboard() {
     (group) => group.id === selectedGroupId,
   );
   useEffect(() => {
-    const groupId = new URLSearchParams(window.location.search).get("group");
+    const searchParams = new URLSearchParams(window.location.search);
+    const groupId = searchParams.get("group");
     if (!groupId || !socialState.groups.some((group) => group.id === groupId)) {
       return;
     }
 
     setSelectedGroupId(groupId);
+    if (searchParams.get("view") === "chat") {
+      setGroupView("chat");
+    }
     const url = new URL(window.location.href);
     url.searchParams.delete("group");
+    url.searchParams.delete("view");
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }, [socialState.groups]);
+
+  useEffect(() => {
+    function openGroupChat(event: Event) {
+      const groupId = (event as CustomEvent<string>).detail;
+      if (!socialState.groups.some((group) => group.id === groupId)) return;
+
+      setSelectedGroupId(groupId);
+      setGroupView("chat");
+    }
+
+    window.addEventListener("mac-open-group-chat", openGroupChat);
+    return () => {
+      window.removeEventListener("mac-open-group-chat", openGroupChat);
+    };
   }, [socialState.groups]);
 
   useEffect(() => {
@@ -625,11 +644,16 @@ export function GroupsDashboard() {
       return;
     }
 
+    const stoppingSession = activeStudySession;
+    setActiveStudySession(null);
+
     if (remoteClient) {
       try {
         await stopRemoteStudySession(remoteClient);
+      } catch {
+        setActiveStudySession((current) => current ?? stoppingSession);
       } finally {
-        await Promise.all([
+        await Promise.allSettled([
           refreshRemoteTimer(remoteClient),
           refreshRemoteSocial(remoteClient),
         ]);
@@ -647,11 +671,11 @@ export function GroupsDashboard() {
       sessions: [
         {
           id: crypto.randomUUID(),
-          groupId: activeStudySession.groupId ?? null,
-          subjectId: activeStudySession.subjectId,
-          startedAt: activeStudySession.startedAt,
+          groupId: stoppingSession.groupId ?? null,
+          subjectId: stoppingSession.subjectId,
+          startedAt: stoppingSession.startedAt,
           endedAt: endedAt.toISOString(),
-          status: isLongSession(activeStudySession.startedAt, endedAt)
+          status: isLongSession(stoppingSession.startedAt, endedAt)
             ? "needs_confirmation"
             : "completed",
           source: "timer",
@@ -660,7 +684,6 @@ export function GroupsDashboard() {
       ],
       subjects: timerSubjects,
     });
-    setActiveStudySession(null);
   }
 
   function nudgeMember(memberId: string, groupId: string) {
@@ -705,10 +728,6 @@ export function GroupsDashboard() {
     if (groupView === "chat") {
       return (
         <GroupChat
-          canModerate={
-            selectedGroup.currentUserRole === "owner" ||
-            selectedGroup.currentUserRole === "admin"
-          }
           currentUserId={currentUserId}
           groupId={selectedGroup.id}
           groupName={selectedGroup.name}
@@ -743,20 +762,17 @@ export function GroupsDashboard() {
               </span>
               <span aria-hidden>·</span>
               <span className="shrink-0">{members.length} members</span>
-              <VisibilityBadge />
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {canInviteFriends ? (
                 <button
-                  className="mac-focus inline-flex h-11 items-center justify-center gap-1.5 rounded-md bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] transition active:scale-[0.98]"
+                  aria-label="Invite friends"
+                  className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414] transition active:scale-[0.98]"
                   onClick={() => setIsInvitingFriends(true)}
+                  title="Invite friends"
                   type="button"
                 >
-                  <UserPlus aria-hidden size={16} />
-                  <span className="hidden min-[390px]:inline">Invite</span>
-                  <span className="sr-only min-[390px]:hidden">
-                    Invite friends
-                  </span>
+                  <UserPlus aria-hidden size={18} />
                 </button>
               ) : null}
               <button
@@ -921,15 +937,36 @@ export function GroupsDashboard() {
               pageSize={12}
               renderItem={(member, _index, absoluteIndex) => (
                 <button
-                  className="mac-focus grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2.5 text-left transition active:scale-[0.99]"
+                  className={cn(
+                    "mac-focus grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md border px-3 py-2.5 text-left transition active:scale-[0.99]",
+                    absoluteIndex === 0
+                      ? "border-[rgb(255_227_48/0.42)] bg-[rgb(255_227_48/0.14)]"
+                      : absoluteIndex < 3
+                        ? "border-[rgb(255_227_48/0.24)] bg-[rgb(255_227_48/0.08)]"
+                        : "border-transparent bg-[rgb(255_255_255/0.035)]",
+                  )}
                   key={member.id}
                   onClick={() => {
                     setSelectedMemberId(member.id);
                   }}
                   type="button"
                 >
-                  <span className="font-mono text-sm font-semibold text-[var(--color-text-muted)]">
-                    #{absoluteIndex + 1}
+                  <span
+                    className={cn(
+                      "inline-flex items-center justify-center font-mono text-sm font-semibold",
+                      absoluteIndex < 3
+                        ? "text-[var(--color-mac-yellow)]"
+                        : "text-[var(--color-text-muted)]",
+                    )}
+                  >
+                    {absoluteIndex === 0 ? (
+                      <>
+                        <Crown aria-hidden fill="currentColor" size={17} />
+                        <span className="sr-only">Rank 1</span>
+                      </>
+                    ) : (
+                      `#${absoluteIndex + 1}`
+                    )}
                   </span>
                   <div className="min-w-0">
                     <p className="truncate font-semibold">{member.name}</p>
@@ -966,12 +1003,12 @@ export function GroupsDashboard() {
             type="button"
           >
             {activeInSelectedGroup ? (
-              <CircleStop aria-hidden size={18} />
+              <Pause aria-hidden fill="currentColor" size={18} />
             ) : (
               <Play aria-hidden size={18} />
             )}
             {activeInSelectedGroup
-              ? "Stop study"
+              ? "Pause study"
               : isStudyingElsewhere
                 ? "Studying in another session"
                 : "Start study"}
@@ -1077,10 +1114,8 @@ export function GroupsDashboard() {
                     <h3 className="truncate text-lg font-semibold">
                       {group.name}
                     </h3>
-                    <div className="mt-1 flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
+                    <div className="mt-1 text-sm text-[var(--color-text-muted)]">
                       <span>{activeNow} active</span>
-                      <span aria-hidden>·</span>
-                      <span>Private</span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -1139,9 +1174,7 @@ export function GroupsDashboard() {
           ) : null}
 
           {outgoingGroupInvites.length ? (
-            <GroupInviteSection
-              title={`Sent (${outgoingGroupInvites.length})`}
-            >
+            <GroupInviteSection title={`Sent (${outgoingGroupInvites.length})`}>
               <PaginatedList
                 className="grid gap-2"
                 items={outgoingGroupInvites}
@@ -1395,18 +1428,6 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function VisibilityBadge() {
-  return (
-    <span
-      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[rgb(255_255_255/0.06)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]"
-      title="Private group"
-    >
-      <Lock aria-hidden size={11} />
-      Private
-    </span>
-  );
-}
-
 function ProfileBadge({ friend }: { friend: SocialFriend }) {
   return (
     <span
@@ -1470,9 +1491,7 @@ function GroupFriendInviteDialog({
         next.delete(friend.id);
         return next;
       });
-      setFeedback(
-        getErrorMessage(error, `Could not invite ${friend.handle}.`),
-      );
+      setFeedback(getErrorMessage(error, `Could not invite ${friend.handle}.`));
     } finally {
       setBusyFriendIds((current) => {
         const next = new Set(current);
@@ -1743,8 +1762,9 @@ function GroupSettingsDialog({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [openMemberMenuId, setOpenMemberMenuId] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] =
-    useState<PendingGroupAction | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingGroupAction | null>(
+    null,
+  );
   const currentRole =
     selectedGroup.currentUserRole ??
     selectedGroup.memberRoles?.[currentUserId] ??
@@ -1815,261 +1835,265 @@ function GroupSettingsDialog({
   return (
     <>
       <AppDialog
-      bodyClassName="grid gap-5"
-      closeLabel="Close group settings"
-      isDirty={detailsChanged}
-      onClose={onClose}
-      title="Group settings"
+        bodyClassName="grid gap-5"
+        closeLabel="Close group settings"
+        isDirty={detailsChanged}
+        onClose={onClose}
+        title="Group settings"
       >
-      {feedback ? (
-        <p
-          className="rounded-md bg-[rgb(255_255_255/0.045)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
-          role="status"
-        >
-          {feedback}
-        </p>
-      ) : null}
-
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold">Group details</h3>
-        {isLeader ? (
-          <label className="block text-sm font-medium">
-            Name
-            <input
-              data-dialog-autofocus
-              className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
-              maxLength={80}
-              onChange={(event) => setName(event.target.value)}
-              value={name}
-            />
-          </label>
-        ) : (
-          <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-3">
-            <SettingValue label="Name" value={selectedGroup.name} />
-          </div>
-        )}
-        {isLeader ? (
-          <button
-            className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] disabled:opacity-45"
-            disabled={!name.trim() || !detailsChanged || busyKey !== null}
-            onClick={() =>
-              void runAction(
-                "details",
-                () => onGroupDetailsUpdate(name.trim()),
-                "Group details updated.",
-              )
-            }
-            type="button"
+        {feedback ? (
+          <p
+            className="rounded-md bg-[rgb(255_255_255/0.045)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
+            role="status"
           >
-            {busyKey === "details" ? (
-              <>
-                <LoaderCircle aria-hidden className="animate-spin" size={16} />
-                Saving…
-              </>
-            ) : (
-              "Save details"
-            )}
-          </button>
+            {feedback}
+          </p>
         ) : null}
-      </section>
 
-      <GroupNotificationControls
-        groupId={selectedGroup.id}
-        remoteClient={remoteClient}
-      />
-
-      <section className="space-y-3 border-t border-[var(--color-border)] pt-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold">Members</h3>
-            <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-              {members.length} {members.length === 1 ? "person" : "people"}
-            </p>
-          </div>
-          {canManageMembers && inviteableFriends.length ? (
+        <section className="space-y-3">
+          <h3 className="text-sm font-semibold">Group details</h3>
+          {isLeader ? (
+            <label className="block text-sm font-medium">
+              Name
+              <input
+                data-dialog-autofocus
+                className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3"
+                maxLength={80}
+                onChange={(event) => setName(event.target.value)}
+                value={name}
+              />
+            </label>
+          ) : (
+            <div className="rounded-md bg-[rgb(255_255_255/0.035)] px-3">
+              <SettingValue label="Name" value={selectedGroup.name} />
+            </div>
+          )}
+          {isLeader ? (
             <button
-              aria-expanded={inviteOpen}
-              className="mac-focus inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold"
-              onClick={() => {
-                setInviteOpen((current) => !current);
-                setOpenMemberMenuId(null);
-              }}
+              className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] disabled:opacity-45"
+              disabled={!name.trim() || !detailsChanged || busyKey !== null}
+              onClick={() =>
+                void runAction(
+                  "details",
+                  () => onGroupDetailsUpdate(name.trim()),
+                  "Group details updated.",
+                )
+              }
               type="button"
             >
-              <UserPlus aria-hidden size={14} />
-              Invite
+              {busyKey === "details" ? (
+                <>
+                  <LoaderCircle
+                    aria-hidden
+                    className="animate-spin"
+                    size={16}
+                  />
+                  Saving…
+                </>
+              ) : (
+                "Save details"
+              )}
             </button>
           ) : null}
-        </div>
+        </section>
 
-        {inviteOpen ? (
-          <div className="space-y-1.5 rounded-md border border-[var(--color-border)] bg-[rgb(255_255_255/0.02)] p-2">
-            {inviteableFriends.map((friend) => (
-              <div
-                className="flex items-center gap-3 rounded-md px-2 py-2"
-                key={friend.id}
-              >
-                <ProfileBadge friend={friend} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">
-                    {friend.name}
-                  </p>
-                  <p className="truncate text-xs text-[var(--color-text-muted)]">
-                    {friend.handle}
-                  </p>
-                </div>
-                <button
-                  className="mac-focus h-10 rounded-md bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] disabled:opacity-45"
-                  disabled={busyKey !== null}
-                  onClick={() =>
-                    void runAction(
-                      `invite:${friend.id}`,
-                      () => onInvite(friend.id),
-                      `Invite sent to ${friend.name}.`,
-                    )
-                  }
-                  type="button"
-                >
-                  {busyKey === `invite:${friend.id}` ? "Inviting…" : "Invite"}
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <GroupNotificationControls
+          groupId={selectedGroup.id}
+          remoteClient={remoteClient}
+        />
 
-        <div className="grid gap-2">
-          {members.map((member) => {
-            const role = selectedGroup.memberRoles?.[member.id] ?? "member";
-            const canRemove =
-              member.id !== currentUserId &&
-              role !== "owner" &&
-              (isLeader || (currentRole === "admin" && role === "member"));
-            const canChangeRole = isLeader && role !== "owner";
-            const canTransferLeadership =
-              isLeader && role !== "owner" && member.id !== currentUserId;
-            const hasActions =
-              canChangeRole || canRemove || canTransferLeadership;
-
-            return (
-              <div
-                className="relative rounded-md bg-[rgb(255_255_255/0.035)] p-3"
-                key={member.id}
-              >
-                <div className="flex items-center gap-3">
-                  <ProfileBadge friend={member} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold">
-                      {member.name}
-                      {member.id === currentUserId ? " (You)" : ""}
-                    </p>
-                    <p className="truncate text-sm text-[var(--color-text-muted)]">
-                      {member.handle}
-                    </p>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-[rgb(255_255_255/0.055)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-                    {role === "owner"
-                      ? "Leader"
-                      : role === "admin"
-                        ? "Moderator"
-                        : "Member"}
-                  </span>
-                  {hasActions ? (
-                    <button
-                      aria-expanded={openMemberMenuId === member.id}
-                      aria-label={`Manage ${member.name}`}
-                      className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.06)] hover:text-[var(--color-text)]"
-                      onClick={() => {
-                        setInviteOpen(false);
-                        setOpenMemberMenuId((current) =>
-                          current === member.id ? null : member.id,
-                        );
-                      }}
-                      type="button"
-                    >
-                      <MoreHorizontal aria-hidden size={18} />
-                    </button>
-                  ) : null}
-                </div>
-
-                {openMemberMenuId === member.id ? (
-                  <div className="mt-2 grid gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-1.5 shadow-[0_14px_34px_rgb(0_0_0/0.32)]">
-                    {canChangeRole ? (
-                      <button
-                        className="mac-focus h-10 rounded px-2.5 text-left text-xs font-semibold transition hover:bg-[rgb(255_255_255/0.055)]"
-                        disabled={busyKey !== null}
-                        onClick={() => {
-                          setOpenMemberMenuId(null);
-                          setPendingAction({
-                            kind: "role",
-                            member,
-                            nextRole: role === "admin" ? "member" : "admin",
-                          });
-                        }}
-                        type="button"
-                      >
-                        {role === "admin" ? "Make member" : "Make moderator"}
-                      </button>
-                    ) : null}
-                    {canTransferLeadership ? (
-                      <button
-                        className="mac-focus flex h-10 items-center gap-2 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
-                        disabled={busyKey !== null}
-                        onClick={() => {
-                          setOpenMemberMenuId(null);
-                          setPendingAction({ kind: "leadership", member });
-                        }}
-                        type="button"
-                      >
-                        <Crown aria-hidden size={14} />
-                        Transfer leadership
-                      </button>
-                    ) : null}
-                    {canRemove ? (
-                      <button
-                        className="mac-focus h-10 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.07)]"
-                        disabled={busyKey !== null}
-                        onClick={() => {
-                          setOpenMemberMenuId(null);
-                          setPendingAction({ kind: "remove", member });
-                        }}
-                        type="button"
-                      >
-                        Remove from group
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="space-y-3 border-t border-[var(--color-border)] pt-5">
-        <h3 className="text-sm font-semibold">Your membership</h3>
-        {isLeader ? (
-          <div className="flex items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3">
-            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
-              <Crown aria-hidden size={17} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold">Group leader</p>
-              <p className="text-xs text-[var(--color-text-muted)]">
-                Transfer leadership before leaving.
+        <section className="space-y-3 border-t border-[var(--color-border)] pt-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">Members</h3>
+              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                {members.length} {members.length === 1 ? "person" : "people"}
               </p>
             </div>
+            {canManageMembers && inviteableFriends.length ? (
+              <button
+                aria-expanded={inviteOpen}
+                className="mac-focus inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold"
+                onClick={() => {
+                  setInviteOpen((current) => !current);
+                  setOpenMemberMenuId(null);
+                }}
+                type="button"
+              >
+                <UserPlus aria-hidden size={14} />
+                Invite
+              </button>
+            ) : null}
           </div>
-        ) : (
-          <button
-            className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--color-danger)] px-4 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
-            disabled={busyKey !== null}
-            onClick={() => setPendingAction({ kind: "leave" })}
-            type="button"
-          >
-            <LogOut aria-hidden size={16} /> Leave group
-          </button>
-        )}
-      </section>
+
+          {inviteOpen ? (
+            <div className="space-y-1.5 rounded-md border border-[var(--color-border)] bg-[rgb(255_255_255/0.02)] p-2">
+              {inviteableFriends.map((friend) => (
+                <div
+                  className="flex items-center gap-3 rounded-md px-2 py-2"
+                  key={friend.id}
+                >
+                  <ProfileBadge friend={friend} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">
+                      {friend.name}
+                    </p>
+                    <p className="truncate text-xs text-[var(--color-text-muted)]">
+                      {friend.handle}
+                    </p>
+                  </div>
+                  <button
+                    className="mac-focus h-10 rounded-md bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] disabled:opacity-45"
+                    disabled={busyKey !== null}
+                    onClick={() =>
+                      void runAction(
+                        `invite:${friend.id}`,
+                        () => onInvite(friend.id),
+                        `Invite sent to ${friend.name}.`,
+                      )
+                    }
+                    type="button"
+                  >
+                    {busyKey === `invite:${friend.id}` ? "Inviting…" : "Invite"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="grid gap-2">
+            {members.map((member) => {
+              const role = selectedGroup.memberRoles?.[member.id] ?? "member";
+              const canRemove =
+                member.id !== currentUserId &&
+                role !== "owner" &&
+                (isLeader || (currentRole === "admin" && role === "member"));
+              const canChangeRole = isLeader && role !== "owner";
+              const canTransferLeadership =
+                isLeader && role !== "owner" && member.id !== currentUserId;
+              const hasActions =
+                canChangeRole || canRemove || canTransferLeadership;
+
+              return (
+                <div
+                  className="relative rounded-md bg-[rgb(255_255_255/0.035)] p-3"
+                  key={member.id}
+                >
+                  <div className="flex items-center gap-3">
+                    <ProfileBadge friend={member} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">
+                        {member.name}
+                        {member.id === currentUserId ? " (You)" : ""}
+                      </p>
+                      <p className="truncate text-sm text-[var(--color-text-muted)]">
+                        {member.handle}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-[rgb(255_255_255/0.055)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                      {role === "owner"
+                        ? "Leader"
+                        : role === "admin"
+                          ? "Moderator"
+                          : "Member"}
+                    </span>
+                    {hasActions ? (
+                      <button
+                        aria-expanded={openMemberMenuId === member.id}
+                        aria-label={`Manage ${member.name}`}
+                        className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.06)] hover:text-[var(--color-text)]"
+                        onClick={() => {
+                          setInviteOpen(false);
+                          setOpenMemberMenuId((current) =>
+                            current === member.id ? null : member.id,
+                          );
+                        }}
+                        type="button"
+                      >
+                        <MoreHorizontal aria-hidden size={18} />
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {openMemberMenuId === member.id ? (
+                    <div className="mt-2 grid gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-1.5 shadow-[0_14px_34px_rgb(0_0_0/0.32)]">
+                      {canChangeRole ? (
+                        <button
+                          className="mac-focus h-10 rounded px-2.5 text-left text-xs font-semibold transition hover:bg-[rgb(255_255_255/0.055)]"
+                          disabled={busyKey !== null}
+                          onClick={() => {
+                            setOpenMemberMenuId(null);
+                            setPendingAction({
+                              kind: "role",
+                              member,
+                              nextRole: role === "admin" ? "member" : "admin",
+                            });
+                          }}
+                          type="button"
+                        >
+                          {role === "admin" ? "Make member" : "Make moderator"}
+                        </button>
+                      ) : null}
+                      {canTransferLeadership ? (
+                        <button
+                          className="mac-focus flex h-10 items-center gap-2 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
+                          disabled={busyKey !== null}
+                          onClick={() => {
+                            setOpenMemberMenuId(null);
+                            setPendingAction({ kind: "leadership", member });
+                          }}
+                          type="button"
+                        >
+                          <Crown aria-hidden size={14} />
+                          Transfer leadership
+                        </button>
+                      ) : null}
+                      {canRemove ? (
+                        <button
+                          className="mac-focus h-10 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.07)]"
+                          disabled={busyKey !== null}
+                          onClick={() => {
+                            setOpenMemberMenuId(null);
+                            setPendingAction({ kind: "remove", member });
+                          }}
+                          type="button"
+                        >
+                          Remove from group
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="space-y-3 border-t border-[var(--color-border)] pt-5">
+          <h3 className="text-sm font-semibold">Your membership</h3>
+          {isLeader ? (
+            <div className="flex items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+                <Crown aria-hidden size={17} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Group leader</p>
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  Transfer leadership before leaving.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <button
+              className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--color-danger)] px-4 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
+              disabled={busyKey !== null}
+              onClick={() => setPendingAction({ kind: "leave" })}
+              type="button"
+            >
+              <LogOut aria-hidden size={16} /> Leave group
+            </button>
+          )}
+        </section>
       </AppDialog>
 
       {pendingAction ? (
@@ -2186,9 +2210,9 @@ function GroupNotificationControls({
     chatMuted: false,
     nudgesMuted: false,
   });
-  const [savingKey, setSavingKey] = useState<keyof RemoteGroupNotificationSettings | null>(
-    null,
-  );
+  const [savingKey, setSavingKey] = useState<
+    keyof RemoteGroupNotificationSettings | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
