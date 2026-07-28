@@ -179,15 +179,7 @@ export function StatisticsDashboard() {
 
     return isLoaded && useDemoData
       ? buildDemoPeriodStats(selectedPeriod, now)
-      : {
-          ...periodStats,
-          previousTotalSeconds: getPreviousPeriodTotal({
-            activeSession,
-            now,
-            period: selectedPeriod,
-            sessions,
-          }),
-        };
+      : periodStats;
   }, [activeSession, isLoaded, now, selectedPeriod, sessions, useDemoData]);
   const subjectTotals = stats.subjectTotals;
   const totalSeconds = stats.totalSeconds;
@@ -220,12 +212,7 @@ export function StatisticsDashboard() {
   const topSubject = subjectRows[0];
   const pieGradient = makePieGradient(subjectRows, subjectTotal);
   const average = getAverageStat(selectedPeriod, totalSeconds, stats.buckets);
-  const comparison = getComparisonStat(
-    totalSeconds,
-    stats.previousTotalSeconds,
-  );
   const showAverage = average.seconds >= 60;
-  const showSummaryDetails = Boolean(comparison.label) || showAverage;
   const dailyStudySeconds = useMemo(
     () =>
       isLoaded && useDemoData
@@ -267,24 +254,10 @@ export function StatisticsDashboard() {
           <h2 className="text-4xl font-semibold leading-none tracking-[-0.025em] lg:text-5xl">
             {formatRoundedStudyTime(totalSeconds)}
           </h2>
-          {showSummaryDetails ? (
-            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm">
-              {comparison.label ? (
-                <p className={`font-semibold ${comparison.className}`}>
-                  {comparison.label}
-                </p>
-              ) : null}
-              {comparison.label && showAverage ? (
-                <span aria-hidden className="text-[var(--color-text-muted)]">
-                  ·
-                </span>
-              ) : null}
-              {showAverage ? (
-                <p className="font-medium text-[var(--color-text-muted)]">
-                  Avg {average.label}: {formatRoundedStudyTime(average.seconds)}
-                </p>
-              ) : null}
-            </div>
+          {showAverage ? (
+            <p className="mt-2 text-xs font-medium text-[var(--color-text-muted)] sm:text-sm">
+              Avg {average.label}: {formatRoundedStudyTime(average.seconds)}
+            </p>
           ) : null}
         </div>
 
@@ -708,28 +681,9 @@ function buildDemoPeriodStats(period: StatsPeriod, now: Date) {
 
   return {
     buckets,
-    previousTotalSeconds: Math.round(totalSeconds / 1.18),
     subjectTotals: { ...fallbackSubjectTotals },
     totalSeconds,
   };
-}
-
-function getPreviousPeriodTotal({
-  activeSession,
-  now,
-  period,
-  sessions,
-}: {
-  activeSession: ActiveSession | null;
-  now: Date;
-  period: StatsPeriod;
-  sessions: StoredSession[];
-}) {
-  const { end, start } = getPreviousPeriodRange(period, now);
-
-  return getStudyEntries({ activeSession, now, sessions })
-    .filter((entry) => entry.date >= start && entry.date < end)
-    .reduce((total, entry) => total + entry.seconds, 0);
 }
 
 function getStudyEntries({
@@ -828,38 +782,6 @@ function getPeriodRange(period: StatsPeriod, now: Date) {
   return {
     start: new Date(now.getFullYear(), 0, 1),
     end: new Date(now.getFullYear() + 1, 0, 1),
-  };
-}
-
-function getPreviousPeriodRange(period: StatsPeriod, now: Date) {
-  if (period === "day") {
-    const currentStart = startOfDay(now);
-
-    return {
-      start: addDays(currentStart, -1),
-      end: currentStart,
-    };
-  }
-
-  if (period === "week") {
-    const currentStart = getPeriodRange(period, now).start;
-
-    return {
-      start: addDays(currentStart, -7),
-      end: currentStart,
-    };
-  }
-
-  if (period === "month") {
-    return {
-      start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
-      end: new Date(now.getFullYear(), now.getMonth(), 1),
-    };
-  }
-
-  return {
-    start: new Date(now.getFullYear() - 1, 0, 1),
-    end: new Date(now.getFullYear(), 0, 1),
   };
 }
 
@@ -970,48 +892,6 @@ function getAverageStat(
   }
 
   return { label: "per day", seconds: Math.floor(totalSeconds / 7) };
-}
-
-function getComparisonStat(
-  totalSeconds: number,
-  previousTotalSeconds: number,
-) {
-  if (totalSeconds <= 0 && previousTotalSeconds <= 0) {
-    return {
-      className: "text-[var(--color-text-muted)]",
-      label: "Even",
-    };
-  }
-
-  if (previousTotalSeconds <= 0) {
-    return {
-      className: "text-[var(--color-success)]",
-      label: "Up",
-    };
-  }
-
-  const rawPercent =
-    ((totalSeconds - previousTotalSeconds) / previousTotalSeconds) * 100;
-  const percent = Math.round(rawPercent / 5) * 5;
-
-  if (percent === 0) {
-    return {
-      className: "text-[var(--color-text-muted)]",
-      label: "Even",
-    };
-  }
-
-  const direction = percent > 0 ? "Up" : "Down";
-  const percentage =
-    Math.abs(percent) > 300 ? "" : ` ${Math.abs(percent)}%`;
-
-  return {
-    className:
-      percent > 0
-        ? "text-[var(--color-success)]"
-        : "text-[var(--color-danger)]",
-    label: `${direction}${percentage}`,
-  };
 }
 
 function getChartTitle(period: StatsPeriod) {

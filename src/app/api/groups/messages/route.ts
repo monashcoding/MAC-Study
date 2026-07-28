@@ -1,4 +1,4 @@
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerStudySession } from "@/lib/auth/server-session";
 import { sendWebPush } from "@/lib/push/send-web-push";
@@ -93,17 +93,15 @@ export async function POST(request: Request) {
     );
   }
 
-  after(() =>
-    sendGroupMessageNotifications({
-      body,
-      groupId,
-      hasImage: Boolean(imagePath),
-      messageId: data.id,
-      senderId: session.sub,
-    }),
-  );
+  const notifications = await sendGroupMessageNotifications({
+    body,
+    groupId,
+    hasImage: Boolean(imagePath),
+    messageId: data.id,
+    senderId: session.sub,
+  });
 
-  return NextResponse.json({ messageId: data.id, ok: true });
+  return NextResponse.json({ messageId: data.id, notifications, ok: true });
 }
 
 async function sendGroupMessageNotifications({
@@ -120,7 +118,7 @@ async function sendGroupMessageNotifications({
   senderId: string;
 }) {
   const admin = createSupabaseAdminClient();
-  if (!admin) return;
+  if (!admin) return { recipients: 0, sent: 0 };
 
   const [groupResult, membersResult, mutesResult, senderResult] =
     await Promise.all([
@@ -149,7 +147,7 @@ async function sendGroupMessageNotifications({
     .map((row) => row.user_id)
     .filter((userId) => !mutedIds.has(userId));
 
-  if (!candidateMemberIds.length) return;
+  if (!candidateMemberIds.length) return { recipients: 0, sent: 0 };
 
   const { data: preferenceData } = await admin
     .from("user_notification_preferences")
@@ -164,7 +162,7 @@ async function sendGroupMessageNotifications({
     (userId) => !disabledIds.has(userId),
   );
 
-  if (!memberIds.length) return;
+  if (!memberIds.length) return { recipients: 0, sent: 0 };
 
   const sender =
     (senderResult.data as { username?: string | null } | null)?.username ??
@@ -198,7 +196,7 @@ async function sendGroupMessageNotifications({
     ),
   );
 
-  await Promise.allSettled(
+  const deliveries = await Promise.allSettled(
     memberIds.map(async (userId) => {
       const notificationId = notificationIdsByUser.get(userId);
       const delivery = await sendWebPush({
@@ -218,6 +216,16 @@ async function sendGroupMessageNotifications({
           .update({ delivered_at: new Date().toISOString() })
           .eq("id", notificationId);
       }
+
+      return delivery;
     }),
   );
+
+  return {
+    recipients: memberIds.length,
+    sent: deliveries.filter(
+      (delivery) =>
+        delivery.status === "fulfilled" && delivery.value.sent > 0,
+    ).length,
+  };
 }

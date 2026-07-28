@@ -36,6 +36,7 @@ export function AppNotifications({ userId }: { userId: string }) {
   function openNotification(notification: RemoteAppNotification) {
     const isSuperNudge = notification.body.includes("Super Nudge");
     const isGroupMessage = notification.title.startsWith("New message in ");
+    const isDirectMessage = notification.title.startsWith("New message from ");
     setNotifications((current) =>
       current.filter((item) => item.id !== notification.id),
     );
@@ -55,6 +56,15 @@ export function AppNotifications({ userId }: { userId: string }) {
       (notification.type === "friend_request" || isSuperNudge)
     ) {
       window.dispatchEvent(new Event("mac-open-friend-requests"));
+      return;
+    }
+
+    if (pathname === "/app/friends" && isDirectMessage) {
+      window.dispatchEvent(
+        new CustomEvent("mac-open-direct-message", {
+          detail: notification.entityId,
+        }),
+      );
       return;
     }
 
@@ -80,6 +90,8 @@ export function AppNotifications({ userId }: { userId: string }) {
         ? "/app/groups?tab=requests"
         : isGroupMessage && notification.entityId
           ? `/app/groups?group=${encodeURIComponent(notification.entityId)}&view=chat`
+          : isDirectMessage && notification.entityId
+            ? `/app/friends?tab=messages&message=${encodeURIComponent(notification.entityId)}`
           : notification.type === "friend_request" || isSuperNudge
             ? "/app/friends?tab=requests"
             : "/app/friends",
@@ -128,6 +140,8 @@ function NotificationToast({
         ) : notification.title === "Group invitation" ? (
           <Users aria-hidden size={18} />
         ) : notification.title.startsWith("New message in ") ? (
+          <MessageCircle aria-hidden size={18} />
+        ) : notification.title.startsWith("New message from ") ? (
           <MessageCircle aria-hidden size={18} />
         ) : (
           <UserRoundPlus aria-hidden size={18} />

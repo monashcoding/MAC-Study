@@ -21,7 +21,9 @@ import {
   Zap,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import { CustomSelect } from "@/components/custom-select";
 import { EmptyStateCta } from "@/components/empty-state-cta";
+import { DirectMessages } from "@/components/friends/direct-messages";
 import { PaginatedList } from "@/components/paginated-list";
 import { StudyHeatmap } from "@/components/study-heatmap";
 import {
@@ -56,10 +58,19 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { NudgePill } from "@/components/social/nudge-pill";
 import { useNudgeQueue } from "@/components/social/use-nudge-queue";
 import { TransientToast } from "@/components/transient-toast";
-import { formatDuration } from "@/lib/timer";
+import { formatDuration, getLocalDateKey } from "@/lib/timer";
 import { cn } from "@/lib/utils";
 
 const emptySocialState: SocialState = { friends: [], groups: [] };
+const friendTimeOptions = [
+  { label: "Today", value: "today" },
+  { label: "Last week", value: "lastWeek" },
+  { label: "Last month", value: "lastMonth" },
+  { label: "Last year", value: "lastYear" },
+  { label: "All time", value: "allTime" },
+] as const;
+
+type FriendTimeRange = (typeof friendTimeOptions)[number]["value"];
 
 export function FriendsDashboard() {
   const [socialState, setSocialState] = useState<SocialState>(emptySocialState);
@@ -86,7 +97,10 @@ export function FriendsDashboard() {
   const [friendRequests, setFriendRequests] = useState<RemoteFriendRequest[]>(
     [],
   );
-  const [activeTab, setActiveTab] = useState<"friends" | "requests">("friends");
+  const [activeTab, setActiveTab] = useState<
+    "friends" | "messages" | "requests"
+  >("friends");
+  const [messageFriendId, setMessageFriendId] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -101,6 +115,8 @@ export function FriendsDashboard() {
     () => new Set(),
   );
   const [isSuperNudgeInfoOpen, setIsSuperNudgeInfoOpen] = useState(false);
+  const [friendTimeRange, setFriendTimeRange] =
+    useState<FriendTimeRange>("today");
   const [now, setNow] = useState(() => new Date());
   const pendingFriendRequestIdsRef = useRef(new Set<string>());
   const pendingCancelledRequestsRef = useRef(new Map<string, string>());
@@ -268,15 +284,31 @@ export function FriendsDashboard() {
   }, [refreshRemoteSocial, remoteClient]);
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("tab") === "requests") {
-      setActiveTab("requests");
-    }
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get("tab");
+    const requestedMessageFriendId = params.get("message");
+
+    window.queueMicrotask(() => {
+      if (requestedTab === "requests") {
+        setActiveTab("requests");
+      } else if (requestedTab === "messages") {
+        setActiveTab("messages");
+        setMessageFriendId(requestedMessageFriendId);
+      }
+    });
 
     const openRequests = () => setActiveTab("requests");
+    const openDirectMessage = (event: Event) => {
+      setMessageFriendId((event as CustomEvent<string>).detail ?? null);
+      setActiveTab("messages");
+    };
     window.addEventListener("mac-open-friend-requests", openRequests);
+    window.addEventListener("mac-open-direct-message", openDirectMessage);
 
-    return () =>
+    return () => {
       window.removeEventListener("mac-open-friend-requests", openRequests);
+      window.removeEventListener("mac-open-direct-message", openDirectMessage);
+    };
   }, []);
 
   const selfId = currentUserId ?? "you";
@@ -291,10 +323,12 @@ export function FriendsDashboard() {
       return;
     }
 
-    setSelectedFriendId(friendId);
-    const url = new URL(window.location.href);
-    url.searchParams.delete("friend");
-    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+    window.queueMicrotask(() => {
+      setSelectedFriendId(friendId);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("friend");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+    });
   }, [friendList]);
 
   const studyingCount = friendList.filter((friend) => friend.studying).length;
@@ -711,24 +745,11 @@ export function FriendsDashboard() {
     const superNudgeIsBusy = superNudgeBusyIds.has(selectedFriend.id);
     const superNudgeMode = superNudge?.status === "active";
     const studyBlockActive = selectedFriend.studying && !superNudgeMode;
-    const timeStats = [
-      {
-        label: "Today",
-        value: getLiveRankingSeconds(selectedFriend, "day", now),
-      },
-      {
-        label: "Week",
-        value: getLiveRankingSeconds(selectedFriend, "week", now),
-      },
-      {
-        label: "Month",
-        value: getLiveRankingSeconds(selectedFriend, "month", now),
-      },
-      {
-        label: "All time",
-        value: getLiveRankingSeconds(selectedFriend, "allTime", now),
-      },
-    ];
+    const selectedTimeSeconds = getFriendTimeSeconds(
+      selectedFriend,
+      friendTimeRange,
+      now,
+    );
 
     return (
       <div className="space-y-3 sm:space-y-5 sm:pt-1">
@@ -770,7 +791,7 @@ export function FriendsDashboard() {
               }
               aria-pressed={mutedFriendIds.has(selectedFriend.id)}
               className={cn(
-                "mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition disabled:opacity-55 sm:h-11 sm:w-auto sm:px-3",
+                "mac-focus inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2 text-xs font-semibold transition disabled:opacity-55 sm:h-11 sm:px-3",
                 mutedFriendIds.has(selectedFriend.id)
                   ? "border-[rgb(255_227_48/0.4)] bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]"
                   : "border-[var(--color-border)] text-[var(--color-text-muted)]",
@@ -786,23 +807,30 @@ export function FriendsDashboard() {
               ) : (
                 <Bell aria-hidden size={15} />
               )}
-              <span className="hidden sm:inline">
-                {mutedFriendIds.has(selectedFriend.id)
-                  ? "Nudges muted"
-                  : "Mute nudges"}
+              <span>
+                {mutedFriendIds.has(selectedFriend.id) ? "Muted" : "Mute"}
               </span>
             </button>
             <div
               className={cn(
-                "inline-flex h-10 min-w-0 flex-1 items-stretch overflow-hidden rounded-md border sm:h-11 sm:flex-none",
+                "inline-flex h-10 w-[6.75rem] shrink-0 items-stretch overflow-hidden rounded-md border sm:h-11 sm:w-auto",
                 superNudgeMode
                   ? "border-[rgb(255_227_48/0.4)] bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]"
                   : "border-[var(--color-border)] text-[var(--color-text-muted)]",
               )}
             >
               <button
+                aria-label={
+                  superNudgeMode
+                    ? "Super Nudge on"
+                    : superNudge?.direction === "outgoing"
+                      ? "Super Nudge request sent"
+                      : superNudge?.direction === "incoming"
+                        ? "Accept Super Nudge"
+                        : "Super Nudge"
+                }
                 aria-pressed={superNudgeMode}
-                className="mac-focus inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-55 sm:px-3"
+                className="mac-focus inline-flex min-w-0 flex-1 items-center justify-center gap-1 px-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-55 sm:gap-1.5 sm:px-3"
                 disabled={
                   !remoteClient ||
                   superNudgeIsBusy ||
@@ -826,7 +854,16 @@ export function FriendsDashboard() {
                   fill={superNudgeMode ? "currentColor" : "none"}
                   size={15}
                 />
-                <span className="truncate">
+                <span className="truncate sm:hidden">
+                  {superNudgeMode
+                    ? "On"
+                    : superNudge?.direction === "outgoing"
+                      ? "Sent"
+                      : superNudge?.direction === "incoming"
+                        ? "Accept"
+                        : "Super"}
+                </span>
+                <span className="hidden truncate sm:inline">
                   {superNudgeMode
                     ? "Super Nudge on"
                     : superNudge?.direction === "outgoing"
@@ -838,7 +875,7 @@ export function FriendsDashboard() {
               </button>
               <button
                 aria-label="What is Super Nudge?"
-                className="mac-focus inline-flex w-9 shrink-0 items-center justify-center border-l border-[var(--color-border)] sm:w-10"
+                className="mac-focus inline-flex w-8 shrink-0 items-center justify-center border-l border-[var(--color-border)] sm:w-10"
                 onClick={() => setIsSuperNudgeInfoOpen(true)}
                 type="button"
               >
@@ -854,23 +891,24 @@ export function FriendsDashboard() {
         </section>
 
         <section>
-          <h3 className="mb-2 text-sm font-semibold text-[var(--color-text-muted)] sm:mb-3">
-            Time studied
-          </h3>
-          <div className="grid grid-cols-4 divide-x divide-[rgb(255_255_255/0.08)] rounded-lg border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.02)]">
-            {timeStats.map((stat) => (
-              <div
-                className="min-w-0 px-2 py-2 text-center sm:py-3"
-                key={stat.label}
-              >
-                <p className="truncate text-sm font-semibold tabular-nums">
-                  {formatCompactStudyTime(stat.value)}
-                </p>
-                <p className="mt-1 truncate text-[10px] font-medium text-[var(--color-text-muted)] sm:text-xs">
-                  {stat.label}
-                </p>
-              </div>
-            ))}
+          <div className="flex items-end justify-between gap-3 rounded-lg border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.02)] px-3 py-2.5">
+            <div className="min-w-0">
+              <h3 className="text-xs font-semibold text-[var(--color-text-muted)]">
+                Time studied
+              </h3>
+              <p className="mt-1 truncate text-lg font-semibold tabular-nums">
+                {formatCompactStudyTime(selectedTimeSeconds)}
+              </p>
+            </div>
+            <CustomSelect
+              ariaLabel="Time studied period"
+              className="w-32 shrink-0 sm:w-36"
+              onChange={setFriendTimeRange}
+              options={friendTimeOptions}
+              placement="bottom"
+              size="compact"
+              value={friendTimeRange}
+            />
           </div>
         </section>
 
@@ -1010,30 +1048,49 @@ export function FriendsDashboard() {
 
       <div
         aria-label="Friends view"
-        className="grid grid-cols-2 rounded-xl bg-[rgb(255_255_255/0.04)] p-1"
+        className="flex items-center gap-2"
         role="tablist"
       >
-        <button
-          aria-selected={activeTab === "friends"}
-          className={cn(
-            "mac-focus h-11 rounded-lg text-sm font-semibold transition",
-            activeTab === "friends"
-              ? "bg-[var(--color-surface-raised)] text-[var(--color-text)]"
-              : "text-[var(--color-text-muted)]",
-          )}
-          onClick={() => setActiveTab("friends")}
-          role="tab"
-          type="button"
-        >
-          Friends
-        </button>
+        <div className="grid min-w-0 flex-1 grid-cols-2 rounded-lg bg-[rgb(255_255_255/0.04)] p-1">
+          <button
+            aria-selected={activeTab === "friends"}
+            className={cn(
+              "mac-focus h-11 rounded-md text-sm font-semibold transition",
+              activeTab === "friends"
+                ? "bg-[var(--color-surface-raised)] text-[var(--color-text)]"
+                : "text-[var(--color-text-muted)]",
+            )}
+            onClick={() => setActiveTab("friends")}
+            role="tab"
+            type="button"
+          >
+            Friends
+          </button>
+          <button
+            aria-selected={activeTab === "messages"}
+            className={cn(
+              "mac-focus h-11 rounded-md text-sm font-semibold transition",
+              activeTab === "messages"
+                ? "bg-[var(--color-surface-raised)] text-[var(--color-text)]"
+                : "text-[var(--color-text-muted)]",
+            )}
+            onClick={() => {
+              setMessageFriendId(null);
+              setActiveTab("messages");
+            }}
+            role="tab"
+            type="button"
+          >
+            Messages
+          </button>
+        </div>
         <button
           aria-selected={activeTab === "requests"}
           className={cn(
-            "mac-focus flex h-11 items-center justify-center gap-2 rounded-lg text-sm font-semibold transition",
+            "mac-focus flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition",
             activeTab === "requests"
-              ? "bg-[var(--color-surface-raised)] text-[var(--color-text)]"
-              : "text-[var(--color-text-muted)]",
+              ? "border-[rgb(255_227_48/0.45)] bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]"
+              : "border-[var(--color-border)] text-[var(--color-text-muted)]",
           )}
           onClick={() => setActiveTab("requests")}
           role="tab"
@@ -1143,6 +1200,15 @@ export function FriendsDashboard() {
             />
           )}
         </section>
+      ) : activeTab === "messages" ? (
+        <DirectMessages
+          currentUserId={currentUserId}
+          friends={friendList}
+          initialFriendId={messageFriendId}
+          key={`messages-${messageFriendId ?? "list"}`}
+          onConversationClosed={() => setMessageFriendId(null)}
+          remoteClient={remoteClient}
+        />
       ) : (
         <section className="space-y-6" role="tabpanel">
           {incomingSuperNudges.length ? (
@@ -1717,6 +1783,58 @@ function formatCompactStudyTime(totalSeconds: number) {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
   return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+}
+
+function getFriendTimeSeconds(
+  friend: SocialFriend,
+  range: FriendTimeRange,
+  now: Date,
+) {
+  if (range === "allTime") {
+    return getLiveRankingSeconds(friend, "allTime", now);
+  }
+
+  const dailySeconds = friend.dailyStudySeconds ?? {};
+  if (!Object.keys(dailySeconds).length) {
+    if (range === "today") {
+      return getLiveRankingSeconds(friend, "day", now);
+    }
+
+    if (range === "lastWeek") {
+      return getLiveRankingSeconds(friend, "week", now);
+    }
+
+    if (range === "lastMonth") {
+      return getLiveRankingSeconds(friend, "month", now);
+    }
+
+    return getLiveRankingSeconds(friend, "allTime", now);
+  }
+
+  const days =
+    range === "today"
+      ? 1
+      : range === "lastWeek"
+        ? 7
+        : range === "lastMonth"
+          ? 30
+          : 365;
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (days - 1));
+  const startKey = getLocalDateKey(start);
+  const todayKey = getLocalDateKey(now);
+  const storedSeconds = Object.entries(dailySeconds).reduce(
+    (total, [dateKey, seconds]) =>
+      dateKey >= startKey && dateKey <= todayKey ? total + seconds : total,
+    0,
+  );
+  const liveDelta = Math.max(
+    0,
+    getLiveRankingSeconds(friend, "allTime", now) - friend.allTimeSeconds,
+  );
+
+  return storedSeconds + liveDelta;
 }
 
 function ProfileBadge({

@@ -14,6 +14,7 @@ import {
   AlertCircle,
   ArrowDown,
   ArrowLeft,
+  Eye,
   Flag,
   ImagePlus,
   MessageCircle,
@@ -36,6 +37,12 @@ import {
   type RemoteGroupChatMessage,
   type RemoteGroupChatPage,
 } from "@/lib/supabase/app-data";
+import {
+  fetchGroupChatReadReceipts,
+  markGroupChatRead,
+  subscribeToGroupChatReadReceipts,
+  type GroupChatReadReceipt,
+} from "@/lib/supabase/group-chat-read-receipts";
 import { cn } from "@/lib/utils";
 
 const LOCAL_CHAT_KEY = "mac-study-group-chat";
@@ -102,6 +109,10 @@ export function GroupChat({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [readReceipts, setReadReceipts] = useState<GroupChatReadReceipt[]>([]);
+  const [expandedSeenByMessageId, setExpandedSeenByMessageId] = useState<
+    string | null
+  >(null);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [messageToDelete, setMessageToDelete] =
     useState<RemoteGroupChatMessage | null>(null);
@@ -120,7 +131,29 @@ export function GroupChat({
   const selfId = currentUserId ?? "you";
   const memberById = new Map(members.map((member) => [member.id, member]));
   const displayedMessages = mergeMessages(messages, pendingMessages);
-  onBackRef.current = onBack;
+  const latestMessage = messages[messages.length - 1] ?? null;
+  const latestMessageId = latestMessage?.id ?? null;
+  const latestOwnMessage =
+    [...messages].reverse().find((message) => message.userId === selfId) ?? null;
+  const receiptByUserId = new Map(
+    readReceipts.map((receipt) => [receipt.userId, receipt]),
+  );
+  const latestOwnMessageReaders = latestOwnMessage
+    ? members
+        .filter((member) => {
+          if (member.id === selfId) return false;
+
+          const receipt = receiptByUserId.get(member.id);
+          return (
+            receipt !== undefined &&
+            new Date(receipt.lastReadAt).getTime() >=
+              new Date(latestOwnMessage.createdAt).getTime()
+          );
+        })
+        .sort((first, second) => first.name.localeCompare(second.name))
+    : [];
+  const isSeenByExpanded =
+    expandedSeenByMessageId === latestOwnMessage?.id;
 
   const refresh = useCallback(async () => {
     if (!remoteClient) return;
@@ -147,9 +180,99 @@ export function GroupChat({
     }
   }, [groupId, remoteClient]);
 
+  const markLatestRead = useCallback(async () => {
+    if (
+      !remoteClient ||
+      !currentUserId ||
+      document.visibilityState !== "visible" ||
+      !isNearBottomRef.current
+    ) {
+      return;
+    }
+
+    const workspace =
+      chatRef.current?.closest<HTMLElement>("[data-workspace-view]");
+    if (workspace?.getAttribute("aria-hidden") === "true") return;
+
+    try {
+      const receipt = await markGroupChatRead({
+        groupId,
+        supabase: remoteClient,
+        userId: currentUserId,
+      });
+
+      if (receipt) {
+        setReadReceipts((current) =>
+          mergeReadReceipts(current, [receipt]),
+        );
+      }
+    } catch {
+      // Read receipts are best-effort and should never interrupt chat.
+    }
+  }, [currentUserId, groupId, remoteClient]);
+
+  useEffect(() => {
+    onBackRef.current = onBack;
+  }, [onBack]);
+
   useEffect(() => {
     messageIdsRef.current = new Set(messages.map((message) => message.id));
   }, [messages]);
+
+  useEffect(() => {
+    if (!remoteClient) return;
+
+    let cancelled = false;
+    void fetchGroupChatReadReceipts(remoteClient, groupId)
+      .then((receipts) => {
+        if (!cancelled) {
+          setReadReceipts((current) =>
+            mergeReadReceipts(current, receipts),
+          );
+        }
+      })
+      .catch(() => undefined);
+
+    const unsubscribe = subscribeToGroupChatReadReceipts(
+      remoteClient,
+      groupId,
+      (receipt) => {
+        if (!cancelled) {
+          setReadReceipts((current) =>
+            mergeReadReceipts(current, [receipt]),
+          );
+        }
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [groupId, remoteClient]);
+
+  useEffect(() => {
+    if (!remoteClient || !latestMessageId) return;
+
+    const workspace =
+      chatRef.current?.closest<HTMLElement>("[data-workspace-view]");
+    const observer = workspace
+      ? new MutationObserver(() => void markLatestRead())
+      : null;
+
+    observer?.observe(workspace as HTMLElement, {
+      attributeFilter: ["aria-hidden"],
+      attributes: true,
+    });
+    document.addEventListener("visibilitychange", markLatestRead);
+    const markTimer = window.setTimeout(() => void markLatestRead(), 0);
+
+    return () => {
+      window.clearTimeout(markTimer);
+      observer?.disconnect();
+      document.removeEventListener("visibilitychange", markLatestRead);
+    };
+  }, [latestMessageId, markLatestRead, remoteClient]);
 
   useEffect(() => {
     if (!remoteClient) return;
@@ -568,6 +691,7 @@ export function GroupChat({
     isNearBottomRef.current = true;
     setUnreadCount(0);
     messageList.scrollTo({ behavior: "smooth", top: messageList.scrollHeight });
+    void markLatestRead();
   }
 
   function chooseImage(file: File | null) {
@@ -653,13 +777,17 @@ export function GroupChat({
             )}
             onScroll={(event) => {
               const element = event.currentTarget;
+              const wasNearBottom = isNearBottomRef.current;
               const nearBottom =
                 element.scrollHeight -
                   element.scrollTop -
                   element.clientHeight <
                 96;
               isNearBottomRef.current = nearBottom;
-              if (nearBottom) setUnreadCount(0);
+              if (nearBottom) {
+                setUnreadCount(0);
+                if (!wasNearBottom) void markLatestRead();
+              }
             }}
             ref={messageListRef}
           >
@@ -696,6 +824,11 @@ export function GroupChat({
                       ? (message as PendingChatMessage)
                       : null;
                   const canDelete = !pending && (isOwn || canModerate);
+                  const showsSeenBy =
+                    isOwn &&
+                    !pending &&
+                    latestOwnMessage?.id === message.id &&
+                    latestOwnMessageReaders.length > 0;
 
                   return (
                     <Fragment key={message.id}>
@@ -717,15 +850,21 @@ export function GroupChat({
                       >
                         <div
                           className={cn(
-                            "group relative w-fit max-w-[92%] rounded-lg px-3 py-1.5 sm:max-w-[82%]",
-                            isOwn
-                              ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-                              : "border border-[rgb(255_255_255/0.055)] bg-[var(--color-surface-raised)] text-[var(--color-text)]",
-                            pending?.delivery === "sending" && "opacity-70",
-                            pending?.delivery === "failed" &&
-                              "border border-[rgb(255_107_107/0.55)]",
+                            "flex w-fit max-w-[92%] flex-col sm:max-w-[82%]",
+                            isOwn ? "items-end" : "items-start",
                           )}
                         >
+                          <div
+                            className={cn(
+                              "group relative w-fit max-w-full rounded-lg px-3 py-1.5",
+                              isOwn
+                                ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                                : "border border-[rgb(255_255_255/0.055)] bg-[var(--color-surface-raised)] text-[var(--color-text)]",
+                              pending?.delivery === "sending" && "opacity-70",
+                              pending?.delivery === "failed" &&
+                                "border border-[rgb(255_107_107/0.55)]",
+                            )}
+                          >
                           {!isOwn && startsSenderGroup ? (
                             <p className="mb-0.5 text-[10px] font-semibold text-[var(--color-text-muted)]">
                               {sender?.handle ?? "@member"}
@@ -767,7 +906,7 @@ export function GroupChat({
                                 aria-expanded={openActionId === message.id}
                                 aria-label="Message actions"
                                 className={cn(
-                                  "mac-focus -mr-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md opacity-65 transition hover:opacity-100",
+                                  "mac-focus -mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md opacity-65 transition hover:opacity-100",
                                   isOwn
                                     ? "text-black/55 hover:bg-black/10"
                                     : "text-[var(--color-text-muted)] hover:bg-white/5",
@@ -783,19 +922,6 @@ export function GroupChat({
                               </button>
                             ) : null}
                           </div>
-                          <p
-                            className={cn(
-                              "mt-0.5 text-right text-[9px]",
-                              isOwn
-                                ? "text-black/60"
-                                : "text-[var(--color-text-muted)]",
-                            )}
-                          >
-                            {pending?.delivery === "sending"
-                              ? "Sending…"
-                              : formatMessageTime(message.createdAt)}
-                          </p>
-
                           {openActionId === message.id ? (
                             <div
                               className={cn(
@@ -825,7 +951,42 @@ export function GroupChat({
                             </div>
                           ) : null}
                         </div>
+                        <div
+                          className={cn(
+                            "mt-0.5 flex max-w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[9px] text-[var(--color-text-muted)]",
+                            isOwn ? "justify-end" : "justify-start",
+                          )}
+                        >
+                          <span className="whitespace-nowrap">
+                            {pending?.delivery === "sending"
+                              ? "Sending…"
+                              : formatMessageTime(message.createdAt)}
+                          </span>
+                          {showsSeenBy ? (
+                            <button
+                              aria-expanded={isSeenByExpanded}
+                              aria-label={`Seen by ${formatSeenBy(latestOwnMessageReaders, true)}`}
+                              className="mac-focus inline-flex min-w-0 items-center gap-1 rounded-sm text-right transition hover:text-[var(--color-text)] disabled:pointer-events-none"
+                              disabled={latestOwnMessageReaders.length <= 2}
+                              onClick={() =>
+                                setExpandedSeenByMessageId((current) =>
+                                  current === message.id ? null : message.id,
+                                )
+                              }
+                              type="button"
+                            >
+                              <Eye aria-hidden size={11} />
+                              <span className="min-w-0 break-words">
+                                {formatSeenBy(
+                                  latestOwnMessageReaders,
+                                  isSeenByExpanded,
+                                )}
+                              </span>
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
+                    </div>
                       {pending?.delivery === "failed" ? (
                         <div className="flex justify-end">
                           <button
@@ -930,6 +1091,18 @@ export function GroupChat({
                 onBlur={() => setComposerFocused(false)}
                 onChange={(event) => setDraft(event.target.value)}
                 onFocus={() => setComposerFocused(true)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key !== "Enter" ||
+                    event.shiftKey ||
+                    event.nativeEvent.isComposing
+                  ) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  sendMessage();
+                }}
                 placeholder="Message the group…"
                 ref={composerRef}
                 rows={1}
@@ -1004,6 +1177,39 @@ function mergeMessages(
   );
 }
 
+function mergeReadReceipts(
+  current: GroupChatReadReceipt[],
+  incoming: GroupChatReadReceipt[],
+) {
+  const byUserId = new Map(
+    current.map((receipt) => [receipt.userId, receipt]),
+  );
+
+  incoming.forEach((receipt) => {
+    const existing = byUserId.get(receipt.userId);
+
+    if (
+      !existing ||
+      new Date(receipt.lastReadAt).getTime() >=
+        new Date(existing.lastReadAt).getTime()
+    ) {
+      byUserId.set(receipt.userId, receipt);
+    }
+  });
+
+  return [...byUserId.values()];
+}
+
+function formatSeenBy(members: SocialFriend[], expanded: boolean) {
+  const visibleMembers = expanded ? members : members.slice(0, 2);
+  const remaining = members.length - visibleMembers.length;
+  const names = visibleMembers
+    .map((member) => member.name || member.handle)
+    .join(", ");
+
+  return remaining > 0 ? `${names} + ${remaining} more` : names;
+}
+
 async function fetchAndCacheRemoteMessages(
   remoteClient: SupabaseClient,
   groupId: string,
@@ -1042,8 +1248,9 @@ function formatMessageTime(value: string) {
 
   return Number.isNaN(date.getTime())
     ? ""
-    : new Intl.DateTimeFormat(undefined, {
+    : new Intl.DateTimeFormat("en-US", {
         hour: "numeric",
+        hour12: true,
         minute: "2-digit",
       }).format(date);
 }
