@@ -320,7 +320,13 @@ export function FriendsDashboard() {
 
   const selfId = currentUserId ?? "you";
   const friendList = useMemo(
-    () => socialState.friends.filter((friend) => friend.id !== selfId),
+    () =>
+      socialState.friends
+        .filter((friend) => friend.id !== selfId)
+        .sort(
+          (first, second) =>
+            Number(second.studying) - Number(first.studying),
+        ),
     [selfId, socialState.friends],
   );
   const selectedFriend =
@@ -782,7 +788,7 @@ export function FriendsDashboard() {
             <ArrowLeft aria-hidden size={19} />
           </button>
 
-          <ProfileBadge friend={selectedFriend} />
+          <ProfileBadge friend={selectedFriend} size="lg" />
           <div className="min-w-0">
             <h2 className="truncate text-xl font-semibold sm:text-2xl">
               {selectedFriend.name}
@@ -800,7 +806,7 @@ export function FriendsDashboard() {
             pendingCount={nudgeState.pending}
           />
 
-          <div className="col-start-3 col-end-5 flex min-w-0 items-center gap-2">
+          <div className="col-span-4 mt-4 flex min-w-0 items-center justify-between gap-3">
             <button
               aria-label={
                 mutedFriendIds.has(selectedFriend.id)
