@@ -65,6 +65,7 @@ export type RemoteSocialSnapshot = {
   availableFriends: RemoteFriendCandidate[];
   friendRequests: RemoteFriendRequest[];
   groupInvites: RemoteGroupInvite[];
+  superNudges: RemoteSuperNudge[];
   currentUserId: string;
 };
 
@@ -91,6 +92,14 @@ export type RemoteGroupInvite = {
   user: SocialFriend;
 };
 
+export type RemoteSuperNudge = {
+  createdAt: string;
+  direction: "incoming" | "outgoing";
+  friendId: string;
+  id: string;
+  status: "active" | "pending";
+};
+
 export type RemoteNotificationPreferences = {
   friendNotifications: boolean;
   nudgeNotifications: boolean;
@@ -105,6 +114,7 @@ export type RemoteGroupNotificationSettings = {
 export type RemoteAppNotification = {
   body: string;
   createdAt: string;
+  entityId: string | null;
   id: string;
   title: string;
   type: "friend_accepted" | "friend_request" | "other";
@@ -267,6 +277,14 @@ type GroupInviteRow = {
   username: string | null;
 };
 
+type SuperNudgeRow = {
+  created_at: string;
+  id: string;
+  recipient_id: string;
+  sender_id: string;
+  status: "active" | "pending";
+};
+
 type NotificationPreferencesRow = {
   friend_notifications: boolean;
   nudge_notifications: boolean;
@@ -276,6 +294,7 @@ type NotificationPreferencesRow = {
 type AppNotificationRow = {
   body: string;
   created_at: string;
+  entity_id: string | null;
   id: string;
   title: string;
   type: "friend_accepted" | "friend_request" | "other";
@@ -658,32 +677,32 @@ export async function fetchRemoteUnitState(
     specialUnitsResult,
     specialUnitAliasesResult,
   ] = await Promise.all([
-      supabase
-        .from("unit_enrolments")
-        .select(
-          "offering_id, nickname, joined_at, unit_offerings!inner(id, unit_id, study_year, teaching_period, units!inner(id, code))",
-        )
-        .eq("user_id", userId)
-        .is("left_at", null)
-        .order("joined_at", { ascending: false }),
-      supabase.from("units").select("id, code").order("code").limit(500),
-      supabase
-        .from("subjects")
-        .select("id, code, name, color, unit_offering_id")
-        .eq("user_id", userId)
-        .is("archived_at", null)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("special_units")
-        .select("code, name, description")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true })
-        .order("name", { ascending: true }),
-      supabase
-        .from("special_unit_aliases")
-        .select("alias_code, special_unit_code")
-        .order("alias_code", { ascending: true }),
-    ]);
+    supabase
+      .from("unit_enrolments")
+      .select(
+        "offering_id, nickname, joined_at, unit_offerings!inner(id, unit_id, study_year, teaching_period, units!inner(id, code))",
+      )
+      .eq("user_id", userId)
+      .is("left_at", null)
+      .order("joined_at", { ascending: false }),
+    supabase.from("units").select("id, code").order("code").limit(500),
+    supabase
+      .from("subjects")
+      .select("id, code, name, color, unit_offering_id")
+      .eq("user_id", userId)
+      .is("archived_at", null)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("special_units")
+      .select("code, name, description")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true }),
+    supabase
+      .from("special_unit_aliases")
+      .select("alias_code, special_unit_code")
+      .order("alias_code", { ascending: true }),
+  ]);
 
   if (enrolmentsResult.error) throw enrolmentsResult.error;
   if (unitsResult.error) throw unitsResult.error;
@@ -713,10 +732,9 @@ export async function fetchRemoteUnitState(
       }[]);
   const specialUnits = specialUnitsResult.error
     ? []
-    : ((specialUnitsResult.data ?? []) as Omit<
-        SpecialUnit,
-        "aliasCodes"
-      >[]).map((unit) => ({
+    : (
+        (specialUnitsResult.data ?? []) as Omit<SpecialUnit, "aliasCodes">[]
+      ).map((unit) => ({
         ...unit,
         aliasCodes: specialUnitAliases
           .filter((alias) => alias.special_unit_code === unit.code)
@@ -888,6 +906,7 @@ export async function fetchRemoteSocialSnapshot(
     friendCandidatesResult,
     friendRequestsResult,
     groupInvitesResult,
+    superNudgesResult,
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -917,6 +936,11 @@ export async function fetchRemoteSocialSnapshot(
     supabase.rpc("list_friend_candidates"),
     supabase.rpc("list_friend_requests"),
     supabase.rpc("list_group_invites"),
+    supabase
+      .from("super_nudge_requests")
+      .select("id, sender_id, recipient_id, status, created_at")
+      .in("status", ["pending", "active"])
+      .order("created_at", { ascending: false }),
   ]);
 
   if (profilesResult.error) throw profilesResult.error;
@@ -992,12 +1016,28 @@ export async function fetchRemoteSocialSnapshot(
     : ((groupInvitesResult.data ?? []) as GroupInviteRow[]).map(
         groupInviteFromRow,
       );
+  const superNudges = superNudgesResult.error
+    ? []
+    : ((superNudgesResult.data ?? []) as SuperNudgeRow[]).map((request) => ({
+        createdAt: request.created_at,
+        direction:
+          request.sender_id === userId
+            ? ("outgoing" as const)
+            : ("incoming" as const),
+        friendId:
+          request.sender_id === userId
+            ? request.recipient_id
+            : request.sender_id,
+        id: request.id,
+        status: request.status,
+      }));
 
   return {
     currentUserId: userId,
     availableFriends,
     friendRequests,
     groupInvites,
+    superNudges,
     socialState: {
       friends: remoteFriends,
       groups: socialGroups.filter((group) => group.currentUserRole),
@@ -1334,9 +1374,7 @@ export async function fetchRemoteUserNudgeMute({
     .select("muted_user_id")
     .eq("user_id", currentUserId)
     .eq("muted_user_id", userId);
-  query = groupId
-    ? query.eq("group_id", groupId)
-    : query.is("group_id", null);
+  query = groupId ? query.eq("group_id", groupId) : query.is("group_id", null);
 
   const { data, error } = await query.maybeSingle();
 
@@ -1395,9 +1433,7 @@ export async function setRemoteUserNudgeMute({
     .delete()
     .eq("user_id", currentUserId)
     .eq("muted_user_id", userId);
-  query = groupId
-    ? query.eq("group_id", groupId)
-    : query.is("group_id", null);
+  query = groupId ? query.eq("group_id", groupId) : query.is("group_id", null);
 
   const { error } = await query;
 
@@ -1495,6 +1531,38 @@ export async function updateRemoteFriendRequest({
   if (!response.ok) {
     throw new Error(await getResponseError(response));
   }
+}
+
+export async function requestRemoteSuperNudge({
+  friendId,
+  supabase,
+}: {
+  friendId: string;
+  supabase: SupabaseClient;
+}) {
+  const { data, error } = await supabase.rpc("request_super_nudge", {
+    target_user_id: friendId,
+  });
+
+  if (error) throw error;
+  return data as string;
+}
+
+export async function updateRemoteSuperNudge({
+  action,
+  requestId,
+  supabase,
+}: {
+  action: "accept" | "cancel" | "decline" | "disable";
+  requestId: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("respond_super_nudge", {
+    request_id: requestId,
+    response_action: action,
+  });
+
+  if (error) throw error;
 }
 
 export async function fetchRemoteNotificationPreferences(
@@ -1714,6 +1782,11 @@ export function subscribeToRemoteAppChanges(
     )
     .on(
       "postgres_changes",
+      { event: "*", schema: "public", table: "super_nudge_requests" },
+      () => onChange("super_nudge_requests"),
+    )
+    .on(
+      "postgres_changes",
       { event: "*", schema: "public", table: "group_invites" },
       () => onChange("group_invites"),
     )
@@ -1907,6 +1980,7 @@ function appNotificationFromRow(
   return {
     body: row.body,
     createdAt: row.created_at,
+    entityId: row.entity_id,
     id: row.id,
     title: row.title,
     type: row.type,

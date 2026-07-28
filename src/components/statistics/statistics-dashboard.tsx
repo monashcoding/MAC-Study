@@ -223,7 +223,6 @@ export function StatisticsDashboard() {
   const comparison = getComparisonStat(
     totalSeconds,
     stats.previousTotalSeconds,
-    selectedPeriod,
   );
   const showAverage = average.seconds >= 60;
   const showSummaryDetails = Boolean(comparison.label) || showAverage;
@@ -976,35 +975,18 @@ function getAverageStat(
 function getComparisonStat(
   totalSeconds: number,
   previousTotalSeconds: number,
-  period: StatsPeriod,
 ) {
-  const periodName =
-    period === "day"
-      ? "day"
-      : period === "week"
-        ? "week"
-        : period === "month"
-          ? "month"
-          : "year";
-
-  if (totalSeconds < 5 * 60) {
+  if (totalSeconds <= 0 && previousTotalSeconds <= 0) {
     return {
       className: "text-[var(--color-text-muted)]",
-      label: totalSeconds <= 0 ? `No sessions this ${periodName}` : null,
+      label: "Even",
     };
   }
 
   if (previousTotalSeconds <= 0) {
     return {
       className: "text-[var(--color-success)]",
-      label: `New activity this ${periodName}`,
-    };
-  }
-
-  if (previousTotalSeconds < 5 * 60) {
-    return {
-      className: "text-[var(--color-success)]",
-      label: `More than previous ${periodName}`,
+      label: "Up",
     };
   }
 
@@ -1012,29 +994,23 @@ function getComparisonStat(
     ((totalSeconds - previousTotalSeconds) / previousTotalSeconds) * 100;
   const percent = Math.round(rawPercent / 5) * 5;
 
-  if (Math.abs(percent) > 300) {
+  if (percent === 0) {
     return {
-      className:
-        percent > 0
-          ? "text-[var(--color-success)]"
-          : "text-[var(--color-danger)]",
-      label:
-        percent > 0
-          ? `More than previous ${periodName}`
-          : `Less than previous ${periodName}`,
+      className: "text-[var(--color-text-muted)]",
+      label: "Even",
     };
   }
 
-  const prefix = percent > 0 ? "+" : "";
+  const direction = percent > 0 ? "Up" : "Down";
+  const percentage =
+    Math.abs(percent) > 300 ? "" : ` ${Math.abs(percent)}%`;
 
   return {
     className:
       percent > 0
         ? "text-[var(--color-success)]"
-        : percent < 0
-          ? "text-[var(--color-danger)]"
-          : "text-[var(--color-text-muted)]",
-    label: `${prefix}${percent}% vs previous ${periodName}`,
+        : "text-[var(--color-danger)]",
+    label: `${direction}${percentage}`,
   };
 }
 

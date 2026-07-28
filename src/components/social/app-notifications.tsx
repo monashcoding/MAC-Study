@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { UserRoundPlus, Users, X } from "lucide-react";
+import { MessageCircle, UserRoundPlus, Users, X, Zap } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   markRemoteAppNotificationRead,
@@ -25,7 +25,7 @@ export function AppNotifications({ userId }: { userId: string }) {
         supabase,
         userId,
         (notification) => {
-          setNotifications((current) => [notification, ...current].slice(0, 3));
+          setNotifications([notification]);
         },
       );
     } catch {
@@ -34,6 +34,8 @@ export function AppNotifications({ userId }: { userId: string }) {
   }, [userId]);
 
   function openNotification(notification: RemoteAppNotification) {
+    const isSuperNudge = notification.body.includes("Super Nudge");
+    const isGroupMessage = notification.title.startsWith("New message in ");
     setNotifications((current) =>
       current.filter((item) => item.id !== notification.id),
     );
@@ -48,7 +50,10 @@ export function AppNotifications({ userId }: { userId: string }) {
       // The destination should still open if marking as read fails.
     }
 
-    if (pathname === "/app/friends" && notification.type === "friend_request") {
+    if (
+      pathname === "/app/friends" &&
+      (notification.type === "friend_request" || isSuperNudge)
+    ) {
       window.dispatchEvent(new Event("mac-open-friend-requests"));
       return;
     }
@@ -61,12 +66,23 @@ export function AppNotifications({ userId }: { userId: string }) {
       return;
     }
 
+    if (pathname === "/app/groups" && isGroupMessage) {
+      window.dispatchEvent(
+        new CustomEvent("mac-open-group-chat", {
+          detail: notification.entityId,
+        }),
+      );
+      return;
+    }
+
     router.push(
       notification.title === "Group invitation"
         ? "/app/groups?tab=requests"
-        : notification.type === "friend_request"
-          ? "/app/friends?tab=requests"
-          : "/app/friends",
+        : isGroupMessage && notification.entityId
+          ? `/app/groups?group=${encodeURIComponent(notification.entityId)}&view=chat`
+          : notification.type === "friend_request" || isSuperNudge
+            ? "/app/friends?tab=requests"
+            : "/app/friends",
     );
   }
 
@@ -107,8 +123,12 @@ function NotificationToast({
   return (
     <div className="pointer-events-auto grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-[rgb(255_227_48/0.28)] bg-[rgb(23_23_23/0.97)] p-3 shadow-[0_18px_42px_rgb(0_0_0/0.38)] backdrop-blur">
       <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414]">
-        {notification.title === "Group invitation" ? (
+        {notification.body.includes("Super Nudge") ? (
+          <Zap aria-hidden size={18} />
+        ) : notification.title === "Group invitation" ? (
           <Users aria-hidden size={18} />
+        ) : notification.title.startsWith("New message in ") ? (
+          <MessageCircle aria-hidden size={18} />
         ) : (
           <UserRoundPlus aria-hidden size={18} />
         )}

@@ -161,8 +161,19 @@ export function AppShell({
   }, [router]);
 
   useEffect(() => {
+    let readyFrame = 0;
+
+    function revealApp() {
+      readyFrame = window.requestAnimationFrame(() => {
+        readyFrame = window.requestAnimationFrame(() => {
+          window.dispatchEvent(new Event("mac-app-ready"));
+        });
+      });
+    }
+
     if (authState.mode !== "authenticated") {
-      return;
+      revealApp();
+      return () => window.cancelAnimationFrame(readyFrame);
     }
 
     let cancelled = false;
@@ -188,6 +199,8 @@ export function AppShell({
         }
       } catch {
         // Route navigation should stay instant even if a background warm fails.
+      } finally {
+        if (!cancelled) revealApp();
       }
     }
 
@@ -195,6 +208,7 @@ export function AppShell({
 
     return () => {
       cancelled = true;
+      window.cancelAnimationFrame(readyFrame);
     };
   }, [authState.mode]);
 

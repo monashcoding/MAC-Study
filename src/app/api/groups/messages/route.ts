@@ -27,6 +27,16 @@ type GroupMuteRow = {
   user_id: string;
 };
 
+type NotificationPreferenceRow = {
+  other_notifications: boolean;
+  user_id: string;
+};
+
+type CreatedNotificationRow = {
+  id: string;
+  user_id: string;
+};
+
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
   const session = await getServerStudySession();
@@ -84,7 +94,7 @@ export async function POST(request: Request) {
   }
 
   after(() =>
-    sendGroupMessagePush({
+    sendGroupMessageNotifications({
       body,
       groupId,
       hasImage: Boolean(imagePath),
@@ -96,7 +106,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ messageId: data.id, ok: true });
 }
 
-async function sendGroupMessagePush({
+async function sendGroupMessageNotifications({
   body,
   groupId,
   hasImage,
@@ -135,9 +145,24 @@ async function sendGroupMessagePush({
   const mutedIds = new Set(
     ((mutesResult.data ?? []) as GroupMuteRow[]).map((row) => row.user_id),
   );
-  const memberIds = ((membersResult.data ?? []) as GroupMemberRow[])
+  const candidateMemberIds = ((membersResult.data ?? []) as GroupMemberRow[])
     .map((row) => row.user_id)
     .filter((userId) => !mutedIds.has(userId));
+
+  if (!candidateMemberIds.length) return;
+
+  const { data: preferenceData } = await admin
+    .from("user_notification_preferences")
+    .select("user_id, other_notifications")
+    .in("user_id", candidateMemberIds);
+  const disabledIds = new Set(
+    ((preferenceData ?? []) as NotificationPreferenceRow[])
+      .filter((row) => !row.other_notifications)
+      .map((row) => row.user_id),
+  );
+  const memberIds = candidateMemberIds.filter(
+    (userId) => !disabledIds.has(userId),
+  );
 
   if (!memberIds.length) return;
 
@@ -153,17 +178,46 @@ async function sendGroupMessagePush({
     : hasImage
       ? "Sent a photo"
       : "Sent a message";
+  const notificationBody = `@${sender}: ${preview}`;
+  const { data: createdNotificationData } = await admin
+    .from("app_notifications")
+    .insert(
+      memberIds.map((userId) => ({
+        actor_id: senderId,
+        body: notificationBody,
+        entity_id: groupId,
+        title: `New message in ${groupName}`,
+        type: "other",
+        user_id: userId,
+      })),
+    )
+    .select("id, user_id");
+  const notificationIdsByUser = new Map(
+    ((createdNotificationData ?? []) as CreatedNotificationRow[]).map(
+      (notification) => [notification.user_id, notification.id],
+    ),
+  );
 
   await Promise.allSettled(
-    memberIds.map((userId) =>
-      sendWebPush({
-        body: `@${sender}: ${preview}`,
+    memberIds.map(async (userId) => {
+      const notificationId = notificationIdsByUser.get(userId);
+      const delivery = await sendWebPush({
+        body: notificationBody,
         category: "other",
-        tag: `mac-study-group-message-${messageId}`,
+        tag: notificationId
+          ? `mac-study-${notificationId}`
+          : `mac-study-group-message-${messageId}`,
         title: groupName,
-        url: `/app/groups?group=${groupId}`,
+        url: `/app/groups?group=${groupId}&view=chat`,
         userId,
-      }),
-    ),
+      });
+
+      if (delivery.sent > 0 && notificationId) {
+        await admin
+          .from("app_notifications")
+          .update({ delivered_at: new Date().toISOString() })
+          .eq("id", notificationId);
+      }
+    }),
   );
 }

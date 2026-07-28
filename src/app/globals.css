@@ -122,12 +122,14 @@ body {
   }
 }
 
-@supports (height: -webkit-fill-available) {
-  @media (max-width: 63.999rem) {
-    body.mac-app-shell-body,
-    .mac-desktop-shell {
-      height: -webkit-fill-available;
-      max-height: -webkit-fill-available;
+@supports not (height: 100dvh) {
+  @supports (height: -webkit-fill-available) {
+    @media (max-width: 63.999rem) {
+      body.mac-app-shell-body,
+      .mac-desktop-shell {
+        height: -webkit-fill-available;
+        max-height: -webkit-fill-available;
+      }
     }
   }
 }
@@ -171,6 +173,10 @@ body {
   to {
     transform: scale(1);
   }
+}
+
+.mac-pwa-launch-active .mac-auth-loading {
+  visibility: hidden;
 }
 
 .mac-toast-enter {
