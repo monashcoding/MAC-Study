@@ -14,6 +14,7 @@ const messageSchema = z
     body: z.string().trim().max(2000).default(""),
     groupId: z.string().uuid(),
     imagePath: z.string().trim().max(240).nullable().optional(),
+    replyToId: z.string().uuid().nullable().optional(),
   })
   .refine((value) => Boolean(value.body || value.imagePath), {
     message: "A message or photo is required.",
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { body, groupId, imagePath = null } = parsed.data;
+  const { body, groupId, imagePath = null, replyToId = null } = parsed.data;
   const expectedImagePrefix = `${groupId}/${session.sub}/`;
 
   if (
@@ -75,12 +76,30 @@ export async function POST(request: Request) {
     );
   }
 
+  if (replyToId) {
+    const { data: replyTarget, error: replyError } = await supabase
+      .from("group_chat_messages")
+      .select("id")
+      .eq("id", replyToId)
+      .eq("group_id", groupId)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (replyError || !replyTarget) {
+      return NextResponse.json(
+        { message: "That message is no longer available to reply to." },
+        { status: 400 },
+      );
+    }
+  }
+
   const { data, error } = await supabase
     .from("group_chat_messages")
     .insert({
       body: body || null,
       group_id: groupId,
       image_path: imagePath,
+      reply_to_id: replyToId,
       user_id: session.sub,
     })
     .select("id")
@@ -224,8 +243,7 @@ async function sendGroupMessageNotifications({
   return {
     recipients: memberIds.length,
     sent: deliveries.filter(
-      (delivery) =>
-        delivery.status === "fulfilled" && delivery.value.sent > 0,
+      (delivery) => delivery.status === "fulfilled" && delivery.value.sent > 0,
     ).length,
   };
 }

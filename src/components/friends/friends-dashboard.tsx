@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -13,6 +14,8 @@ import {
   Bell,
   BellOff,
   Check,
+  ChevronLeft,
+  ChevronRight,
   CircleHelp,
   Clock3,
   Plus,
@@ -21,7 +24,6 @@ import {
   Zap,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
-import { CustomSelect } from "@/components/custom-select";
 import { EmptyStateCta } from "@/components/empty-state-cta";
 import { DirectMessages } from "@/components/friends/direct-messages";
 import { PaginatedList } from "@/components/paginated-list";
@@ -117,6 +119,9 @@ export function FriendsDashboard() {
   const [isSuperNudgeInfoOpen, setIsSuperNudgeInfoOpen] = useState(false);
   const [friendTimeRange, setFriendTimeRange] =
     useState<FriendTimeRange>("today");
+  const [friendTimeDirection, setFriendTimeDirection] = useState<
+    "back" | "forward"
+  >("forward");
   const [now, setNow] = useState(() => new Date());
   const pendingFriendRequestIdsRef = useRef(new Set<string>());
   const pendingCancelledRequestsRef = useRef(new Map<string, string>());
@@ -166,10 +171,12 @@ export function FriendsDashboard() {
   }, []);
 
   useEffect(() => {
+    if (activeTab !== "friends") return;
+
     const interval = window.setInterval(() => setNow(new Date()), 1000);
 
     return () => window.clearInterval(interval);
-  }, []);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!remoteClient) return;
@@ -312,8 +319,9 @@ export function FriendsDashboard() {
   }, []);
 
   const selfId = currentUserId ?? "you";
-  const friendList = socialState.friends.filter(
-    (friend) => friend.id !== selfId,
+  const friendList = useMemo(
+    () => socialState.friends.filter((friend) => friend.id !== selfId),
+    [selfId, socialState.friends],
   );
   const selectedFriend =
     friendList.find((friend) => friend.id === selectedFriendId) ?? null;
@@ -750,10 +758,21 @@ export function FriendsDashboard() {
       friendTimeRange,
       now,
     );
+    const selectedTimeIndex = friendTimeOptions.findIndex(
+      (option) => option.value === friendTimeRange,
+    );
+
+    function moveFriendTimeRange(direction: -1 | 1) {
+      const nextOption = friendTimeOptions[selectedTimeIndex + direction];
+      if (!nextOption) return;
+
+      setFriendTimeDirection(direction > 0 ? "forward" : "back");
+      setFriendTimeRange(nextOption.value);
+    }
 
     return (
       <div className="space-y-3 sm:space-y-5 sm:pt-1">
-        <section className="grid grid-cols-[2.25rem_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 sm:gap-x-4 sm:gap-y-3">
+        <section className="grid grid-cols-[2.25rem_auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-2 sm:gap-x-3 sm:gap-y-3">
           <button
             aria-label="Back to friends"
             className="mac-focus inline-flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)] sm:h-11 sm:w-11 sm:rounded-xl"
@@ -763,7 +782,7 @@ export function FriendsDashboard() {
             <ArrowLeft aria-hidden size={19} />
           </button>
 
-          <ProfileBadge friend={selectedFriend} size="lg" />
+          <ProfileBadge friend={selectedFriend} />
           <div className="min-w-0">
             <h2 className="truncate text-xl font-semibold sm:text-2xl">
               {selectedFriend.name}
@@ -773,16 +792,15 @@ export function FriendsDashboard() {
             </p>
           </div>
 
-          <div className="col-span-3 flex min-w-0 items-center gap-2">
-            <NudgePill
-              disabled={!remoteClient || studyBlockActive}
-              disabledLabel={
-                studyBlockActive ? "Studying now" : undefined
-              }
-              mode={superNudgeMode ? "super" : "standard"}
-              onClick={() => nudgeFriend(selectedFriend.id)}
-              pendingCount={nudgeState.pending}
-            />
+          <NudgePill
+            disabled={!remoteClient || studyBlockActive}
+            disabledLabel={studyBlockActive ? "Studying…" : undefined}
+            mode={superNudgeMode ? "super" : "standard"}
+            onClick={() => nudgeFriend(selectedFriend.id)}
+            pendingCount={nudgeState.pending}
+          />
+
+          <div className="col-start-3 col-end-5 flex min-w-0 items-center gap-2">
             <button
               aria-label={
                 mutedFriendIds.has(selectedFriend.id)
@@ -813,7 +831,7 @@ export function FriendsDashboard() {
             </button>
             <div
               className={cn(
-                "inline-flex h-10 w-[6.75rem] shrink-0 items-stretch overflow-hidden rounded-md border sm:h-11 sm:w-auto",
+                "inline-flex h-10 w-fit shrink-0 items-stretch overflow-hidden rounded-md border sm:h-11",
                 superNudgeMode
                   ? "border-[rgb(255_227_48/0.4)] bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]"
                   : "border-[var(--color-border)] text-[var(--color-text-muted)]",
@@ -830,7 +848,7 @@ export function FriendsDashboard() {
                         : "Super Nudge"
                 }
                 aria-pressed={superNudgeMode}
-                className="mac-focus inline-flex min-w-0 flex-1 items-center justify-center gap-1 px-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-55 sm:gap-1.5 sm:px-3"
+                className="mac-focus inline-flex items-center justify-center gap-1 px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-55 sm:gap-1.5 sm:px-3"
                 disabled={
                   !remoteClient ||
                   superNudgeIsBusy ||
@@ -854,16 +872,16 @@ export function FriendsDashboard() {
                   fill={superNudgeMode ? "currentColor" : "none"}
                   size={15}
                 />
-                <span className="truncate sm:hidden">
+                <span className="whitespace-nowrap sm:hidden">
                   {superNudgeMode
-                    ? "On"
+                    ? "Super Nudge on"
                     : superNudge?.direction === "outgoing"
-                      ? "Sent"
+                      ? "Request sent"
                       : superNudge?.direction === "incoming"
                         ? "Accept"
-                        : "Super"}
+                        : "Super Nudge"}
                 </span>
-                <span className="hidden truncate sm:inline">
+                <span className="hidden whitespace-nowrap sm:inline">
                   {superNudgeMode
                     ? "Super Nudge on"
                     : superNudge?.direction === "outgoing"
@@ -884,31 +902,48 @@ export function FriendsDashboard() {
             </div>
           </div>
           {nudgeState.feedback ? (
-            <p className="col-span-3 text-xs font-medium text-[var(--color-text-muted)]">
+            <p className="col-span-4 text-xs font-medium text-[var(--color-text-muted)]">
               {nudgeState.feedback}
             </p>
           ) : null}
         </section>
 
         <section>
-          <div className="flex items-end justify-between gap-3 rounded-lg border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.02)] px-3 py-2.5">
-            <div className="min-w-0">
-              <h3 className="text-xs font-semibold text-[var(--color-text-muted)]">
-                Time studied
+          <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center rounded-lg border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.02)] px-1.5 py-2">
+            <button
+              aria-label="Previous study period"
+              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.05)] hover:text-[var(--color-text)] disabled:opacity-25"
+              disabled={selectedTimeIndex === 0}
+              onClick={() => moveFriendTimeRange(-1)}
+              type="button"
+            >
+              <ChevronLeft aria-hidden size={18} />
+            </button>
+            <div
+              className={cn(
+                "min-w-0 overflow-hidden text-center",
+                friendTimeDirection === "forward"
+                  ? "mac-study-period-forward"
+                  : "mac-study-period-back",
+              )}
+              key={friendTimeRange}
+            >
+              <h3 className="truncate text-xs font-semibold text-[var(--color-text-muted)]">
+                {friendTimeOptions[selectedTimeIndex]?.label}
               </h3>
-              <p className="mt-1 truncate text-lg font-semibold tabular-nums">
+              <p className="mt-0.5 truncate text-lg font-semibold tabular-nums">
                 {formatCompactStudyTime(selectedTimeSeconds)}
               </p>
             </div>
-            <CustomSelect
-              ariaLabel="Time studied period"
-              className="w-32 shrink-0 sm:w-36"
-              onChange={setFriendTimeRange}
-              options={friendTimeOptions}
-              placement="bottom"
-              size="compact"
-              value={friendTimeRange}
-            />
+            <button
+              aria-label="Next study period"
+              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.05)] hover:text-[var(--color-text)] disabled:opacity-25"
+              disabled={selectedTimeIndex === friendTimeOptions.length - 1}
+              onClick={() => moveFriendTimeRange(1)}
+              type="button"
+            >
+              <ChevronRight aria-hidden size={18} />
+            </button>
           </div>
         </section>
 
@@ -1003,8 +1038,7 @@ export function FriendsDashboard() {
           >
             <p className="text-sm leading-6 text-[var(--color-text-muted)]">
               Send a request to a friend. If they accept, you can nudge each
-              other up to 10 times a minute and while either person is
-              studying.
+              other up to 10 times a minute and while either person is studying.
             </p>
             <p className="text-sm leading-6 text-[var(--color-text-muted)]">
               Either person can turn it off at any time.
@@ -1087,7 +1121,7 @@ export function FriendsDashboard() {
         <button
           aria-selected={activeTab === "requests"}
           className={cn(
-            "mac-focus flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition",
+            "mac-focus inline-grid h-11 shrink-0 grid-flow-col place-items-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold leading-none transition",
             activeTab === "requests"
               ? "border-[rgb(255_227_48/0.45)] bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]"
               : "border-[var(--color-border)] text-[var(--color-text-muted)]",
@@ -1096,9 +1130,11 @@ export function FriendsDashboard() {
           role="tab"
           type="button"
         >
-          Requests
+          <span className="inline-flex items-center leading-none">
+            Requests
+          </span>
           {incomingRequests.length + incomingSuperNudges.length ? (
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-danger)] px-1 text-[10px] font-bold text-white">
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-danger)] px-1 text-[10px] font-bold leading-none text-white">
               {incomingRequests.length + incomingSuperNudges.length}
             </span>
           ) : null}

@@ -15,7 +15,6 @@ import {
   Clock3,
   Crown,
   LoaderCircle,
-  Lock,
   LogOut,
   MoreHorizontal,
   MessagesSquare,
@@ -729,10 +728,6 @@ export function GroupsDashboard() {
     if (groupView === "chat") {
       return (
         <GroupChat
-          canModerate={
-            selectedGroup.currentUserRole === "owner" ||
-            selectedGroup.currentUserRole === "admin"
-          }
           currentUserId={currentUserId}
           groupId={selectedGroup.id}
           groupName={selectedGroup.name}
@@ -767,20 +762,17 @@ export function GroupsDashboard() {
               </span>
               <span aria-hidden>·</span>
               <span className="shrink-0">{members.length} members</span>
-              <VisibilityBadge />
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {canInviteFriends ? (
                 <button
-                  className="mac-focus inline-flex h-11 items-center justify-center gap-1.5 rounded-md bg-[var(--color-mac-yellow)] px-3 text-xs font-semibold text-[#141414] transition active:scale-[0.98]"
+                  aria-label="Invite friends"
+                  className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414] transition active:scale-[0.98]"
                   onClick={() => setIsInvitingFriends(true)}
+                  title="Invite friends"
                   type="button"
                 >
-                  <UserPlus aria-hidden size={16} />
-                  <span className="hidden min-[390px]:inline">Invite</span>
-                  <span className="sr-only min-[390px]:hidden">
-                    Invite friends
-                  </span>
+                  <UserPlus aria-hidden size={18} />
                 </button>
               ) : null}
               <button
@@ -1122,10 +1114,8 @@ export function GroupsDashboard() {
                     <h3 className="truncate text-lg font-semibold">
                       {group.name}
                     </h3>
-                    <div className="mt-1 flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
+                    <div className="mt-1 text-sm text-[var(--color-text-muted)]">
                       <span>{activeNow} active</span>
-                      <span aria-hidden>·</span>
-                      <span>Private</span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -1435,18 +1425,6 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
         {label}
       </p>
     </div>
-  );
-}
-
-function VisibilityBadge() {
-  return (
-    <span
-      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[rgb(255_255_255/0.06)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]"
-      title="Private group"
-    >
-      <Lock aria-hidden size={11} />
-      Private
-    </span>
   );
 }
 

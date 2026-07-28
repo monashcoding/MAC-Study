@@ -339,6 +339,36 @@ body {
   pointer-events: none;
 }
 
+@keyframes mac-study-period-forward {
+  from {
+    opacity: 0;
+    transform: translateX(0.55rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes mac-study-period-back {
+  from {
+    opacity: 0;
+    transform: translateX(-0.55rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.mac-study-period-forward {
+  animation: mac-study-period-forward 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mac-study-period-back {
+  animation: mac-study-period-back 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 @keyframes mac-auth-pulse {
   0%,
   100% {
@@ -373,6 +403,8 @@ body {
   .mac-auth-pulse,
   .mac-chat-screen-enter,
   .mac-chat-screen-exit,
+  .mac-study-period-back,
+  .mac-study-period-forward,
   .mac-view-enter {
     animation: none;
   }

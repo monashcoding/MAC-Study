@@ -4,16 +4,12 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  AlertCircle,
-  ArrowLeft,
-  MessageCircle,
-  Send,
-} from "lucide-react";
+import { AlertCircle, ArrowLeft, MessageCircle, Send } from "lucide-react";
 import { PaginatedList } from "@/components/paginated-list";
 import type { SocialFriend } from "@/lib/social-state";
 import { cn } from "@/lib/utils";
@@ -97,19 +93,29 @@ export function DirectMessages({
   const listRef = useRef<HTMLDivElement>(null);
   const loadSequenceRef = useRef(0);
   const shouldScrollToBottomRef = useRef(false);
+  const friendsRef = useRef(friends);
+  const hasLoadedConversationsRef = useRef(false);
   const selectedFriend =
     friends.find((friend) => friend.id === selectedFriendId) ?? null;
-  const displayedConversations =
-    remoteClient && currentUserId
-      ? conversations
-      : friends.slice(0, CONVERSATION_LIMIT).map((friend) => ({
-          friend,
-          latestBody: null,
-          latestCreatedAt: null,
-          latestMessageId: null,
-          latestSenderId: null,
-          unreadCount: 0,
-        }));
+  const displayedConversations = useMemo(
+    () =>
+      remoteClient && currentUserId
+        ? conversations.map((conversation) => ({
+            ...conversation,
+            friend:
+              friends.find((friend) => friend.id === conversation.friend.id) ??
+              conversation.friend,
+          }))
+        : friends.slice(0, CONVERSATION_LIMIT).map((friend) => ({
+            friend,
+            latestBody: null,
+            latestCreatedAt: null,
+            latestMessageId: null,
+            latestSenderId: null,
+            unreadCount: 0,
+          })),
+    [conversations, currentUserId, friends, remoteClient],
+  );
 
   const refreshConversations = useCallback(async () => {
     if (!remoteClient || !currentUserId) return;
@@ -122,8 +128,9 @@ export function DirectMessages({
     if (error) throw error;
 
     const rows = (data ?? []) as ConversationRow[];
+    const latestFriends = friendsRef.current;
     const friendById = new Map(
-      friends.map((friend) => [friend.id, friend]),
+      latestFriends.map((friend) => [friend.id, friend]),
     );
     const seenFriendIds = new Set<string>();
     const next: Conversation[] = [];
@@ -143,7 +150,7 @@ export function DirectMessages({
       });
     });
 
-    friends
+    latestFriends
       .filter((friend) => !seenFriendIds.has(friend.id))
       .sort((first, second) => first.name.localeCompare(second.name))
       .forEach((friend) => {
@@ -160,7 +167,11 @@ export function DirectMessages({
       });
 
     setConversations(next);
-  }, [currentUserId, friends, remoteClient]);
+  }, [currentUserId, remoteClient]);
+
+  useEffect(() => {
+    friendsRef.current = friends;
+  }, [friends]);
 
   const markConversationRead = useCallback(
     async (friendId: string) => {
@@ -214,7 +225,10 @@ export function DirectMessages({
       setMessages((current) =>
         before
           ? mergeMessages(page, current)
-          : mergeMessages(page, current.filter((message) => message.delivery)),
+          : mergeMessages(
+              page,
+              current.filter((message) => message.delivery),
+            ),
       );
     },
     [remoteClient],
@@ -230,20 +244,25 @@ export function DirectMessages({
     window.queueMicrotask(() => {
       if (cancelled) return;
 
-      setIsLoadingConversations(true);
+      if (!hasLoadedConversationsRef.current) {
+        setIsLoadingConversations(true);
+      }
       void refreshConversations()
         .catch(() => {
           if (!cancelled) setFeedback("Messages could not be loaded.");
         })
         .finally(() => {
-          if (!cancelled) setIsLoadingConversations(false);
+          if (!cancelled) {
+            hasLoadedConversationsRef.current = true;
+            setIsLoadingConversations(false);
+          }
         });
     });
 
     return () => {
       cancelled = true;
     };
-  }, [currentUserId, friends, refreshConversations, remoteClient]);
+  }, [currentUserId, refreshConversations, remoteClient]);
 
   useEffect(() => {
     if (!selectedFriend || !remoteClient) return;
@@ -425,9 +444,7 @@ export function DirectMessages({
   }
 
   function retryMessage(message: DirectMessage) {
-    setMessages((current) =>
-      current.filter((item) => item.id !== message.id),
-    );
+    setMessages((current) => current.filter((item) => item.id !== message.id));
     void sendMessage(message.body);
   }
 
@@ -495,7 +512,10 @@ export function DirectMessages({
 
                 return (
                   <div
-                    className={cn("flex", isOwn ? "justify-end" : "justify-start")}
+                    className={cn(
+                      "flex",
+                      isOwn ? "justify-end" : "justify-start",
+                    )}
                     key={message.id}
                   >
                     <div
@@ -559,7 +579,10 @@ export function DirectMessages({
           }}
         >
           {feedback ? (
-            <p className="mb-2 text-xs text-[var(--color-danger)]" role="status">
+            <p
+              className="mb-2 text-xs text-[var(--color-danger)]"
+              role="status"
+            >
               {feedback}
             </p>
           ) : null}
@@ -608,7 +631,7 @@ export function DirectMessages({
         </p>
       ) : null}
 
-      {isLoadingConversations ? (
+      {isLoadingConversations && !displayedConversations.length ? (
         <p className="py-10 text-center text-sm text-[var(--color-text-muted)]">
           Loading messages…
         </p>
@@ -693,7 +716,9 @@ function directMessageFromRpcRow(row: DirectMessageRow): DirectMessage {
   };
 }
 
-function directMessageFromInsertRow(row: DirectMessageInsertRow): DirectMessage {
+function directMessageFromInsertRow(
+  row: DirectMessageInsertRow,
+): DirectMessage {
   return {
     body: row.body,
     createdAt: row.created_at,
@@ -704,10 +729,7 @@ function directMessageFromInsertRow(row: DirectMessageInsertRow): DirectMessage 
   };
 }
 
-function mergeMessages(
-  current: DirectMessage[],
-  incoming: DirectMessage[],
-) {
+function mergeMessages(current: DirectMessage[], incoming: DirectMessage[]) {
   const byId = new Map(current.map((message) => [message.id, message]));
   incoming.forEach((message) => byId.set(message.id, message));
 

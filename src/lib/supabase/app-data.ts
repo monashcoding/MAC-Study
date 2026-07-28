@@ -128,6 +128,7 @@ export type RemoteGroupChatMessage = {
   createdAt: string;
   imagePath?: string | null;
   imageUrl?: string | null;
+  replyToId?: string | null;
 };
 
 export type RemoteGroupChatPage = {
@@ -328,6 +329,7 @@ type GroupChatRow = {
   body: string | null;
   created_at: string;
   image_path: string | null;
+  reply_to_id: string | null;
 };
 
 const GROUP_CHAT_IMAGE_BUCKET = "group-chat-images";
@@ -1163,7 +1165,7 @@ export async function fetchRemoteGroupChatMessages(
   const pageSize = Math.min(Math.max(options.limit ?? 50, 1), 100);
   let query = supabase
     .from("group_chat_messages")
-    .select("id, group_id, user_id, body, image_path, created_at")
+    .select("id, group_id, user_id, body, image_path, reply_to_id, created_at")
     .eq("group_id", groupId)
     .is("deleted_at", null);
 
@@ -1194,17 +1196,24 @@ export async function sendRemoteGroupChatMessage({
   body,
   groupId,
   imagePath = null,
+  replyToId = null,
 }: {
   body?: string;
   groupId: string;
   imagePath?: string | null;
+  replyToId?: string | null;
 }) {
   const trimmedBody = body?.trim() ?? "";
 
   if (!trimmedBody && !imagePath) return;
 
   const response = await fetch("/api/groups/messages", {
-    body: JSON.stringify({ body: trimmedBody, groupId, imagePath }),
+    body: JSON.stringify({
+      body: trimmedBody,
+      groupId,
+      imagePath,
+      replyToId,
+    }),
     headers: { "Content-Type": "application/json" },
     method: "POST",
   });
@@ -2109,6 +2118,7 @@ function groupChatMessageFromRow(row: GroupChatRow): RemoteGroupChatMessage {
     createdAt: row.created_at,
     imagePath: row.image_path,
     imageUrl: null,
+    replyToId: row.reply_to_id,
   };
 }
 
