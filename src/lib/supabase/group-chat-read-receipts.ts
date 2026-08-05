@@ -12,6 +12,24 @@ type GroupChatReadReceiptRow = {
   user_id: string;
 };
 
+type GroupChatUnreadCountRow = {
+  group_id: string;
+  unread_count: number | string;
+};
+
+export async function fetchGroupChatUnreadCounts(supabase: SupabaseClient) {
+  const { data, error } = await supabase.rpc("list_group_chat_unread_counts");
+
+  if (error) throw error;
+
+  return Object.fromEntries(
+    ((data ?? []) as GroupChatUnreadCountRow[]).map((row) => [
+      row.group_id,
+      Number(row.unread_count) || 0,
+    ]),
+  ) as Record<string, number>;
+}
+
 export async function fetchGroupChatReadReceipts(
   supabase: SupabaseClient,
   groupId: string,

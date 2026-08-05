@@ -40,12 +40,12 @@ import {
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import {
+  addDateKeyDays,
   formatDuration,
-  getElapsedSeconds,
+  getAustralianDateStart,
+  getIntervalOverlapSeconds,
   getLocalDateKey,
-  groupSessionsBySubject,
   isLongSession,
-  sumCompletedSeconds,
 } from "@/lib/timer";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
 import { TransientToast } from "@/components/transient-toast";
@@ -256,21 +256,56 @@ export function TimerDashboard() {
     return () => window.clearInterval(interval);
   }, []);
 
-  const elapsedSeconds = activeSession
-    ? getElapsedSeconds(activeSession.startedAt, now)
-    : 0;
   const todayKey = getLocalDateKey(now);
-
-  const todaySessions = useMemo(
-    () =>
-      sessions.filter(
-        (session) => getLocalDateKey(new Date(session.endedAt)) === todayKey,
-      ),
-    [sessions, todayKey],
+  const todayStart = useMemo(
+    () => getAustralianDateStart(todayKey),
+    [todayKey],
   );
-  const subjectTotals = groupSessionsBySubject(todaySessions);
-  const completedToday = sumCompletedSeconds(todaySessions);
-  const totalToday = completedToday + elapsedSeconds;
+  const todayEnd = useMemo(
+    () => getAustralianDateStart(addDateKeyDays(todayKey, 1)),
+    [todayKey],
+  );
+  const completedToday = useMemo(
+    () =>
+      sessions.reduce(
+        (total, session) =>
+          total +
+          getIntervalOverlapSeconds(
+            session.startedAt,
+            session.endedAt,
+            todayStart,
+            todayEnd,
+          ),
+        0,
+      ),
+    [sessions, todayEnd, todayStart],
+  );
+  const subjectTotals = useMemo(
+    () =>
+      sessions.reduce<Record<string, number>>((totals, session) => {
+        if (!session.subjectId) return totals;
+
+        totals[session.subjectId] =
+          (totals[session.subjectId] ?? 0) +
+          getIntervalOverlapSeconds(
+            session.startedAt,
+            session.endedAt,
+            todayStart,
+            todayEnd,
+          );
+        return totals;
+      }, {}),
+    [sessions, todayEnd, todayStart],
+  );
+  const activeToday = activeSession
+    ? getIntervalOverlapSeconds(
+        activeSession.startedAt,
+        now,
+        todayStart,
+        todayEnd,
+      )
+    : 0;
+  const totalToday = completedToday + activeToday;
   const sortedSessions = useMemo(
     () =>
       [...sessions].sort(
@@ -648,7 +683,7 @@ export function TimerDashboard() {
               const isActive = activeSession?.subjectId === subject.id;
               const subjectSeconds =
                 (subjectTotals[subject.id] ?? 0) +
-                (isActive ? elapsedSeconds : 0);
+                (isActive ? activeToday : 0);
 
               return (
                 <div

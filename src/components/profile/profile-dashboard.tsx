@@ -1,11 +1,16 @@
 import { LogOut, PencilLine, UserRound } from "lucide-react";
+import { DiscoverabilitySetting } from "@/components/profile/discoverability-setting";
 import { PushNotificationSettings } from "@/components/pwa/push-notification-settings";
 
 export function ProfileDashboard({
   displayName,
+  initialDiscoverable,
+  userId,
   username,
 }: {
   displayName: string;
+  initialDiscoverable: boolean;
+  userId: string | null;
   username: string | null;
 }) {
   const handle = username ? `@${username}` : "@set_username";
@@ -41,6 +46,12 @@ export function ProfileDashboard({
           <h2 className="text-lg font-semibold">Settings</h2>
         </div>
         <div className="divide-y divide-[rgb(255_255_255/0.07)] px-2 pb-2">
+          {userId ? (
+            <DiscoverabilitySetting
+              initialDiscoverable={initialDiscoverable}
+              userId={userId}
+            />
+          ) : null}
           <PushNotificationSettings />
           <a
             className="mac-focus flex items-center justify-between gap-4 rounded-md px-3 py-4 transition hover:bg-[rgb(255_255_255/0.04)]"

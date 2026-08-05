@@ -10,6 +10,7 @@ export type Profile = {
   course: string | null;
   study_icon: string;
   profile_color: string;
+  is_discoverable: boolean;
   access_status: AccessStatus;
   access_granted_at: string | null;
   created_at: string;
@@ -27,7 +28,7 @@ export async function getProfileById(
   const { data, error } = await supabase
     .from("profiles")
     .select(
-      "id, display_name, username, avatar_url, course, study_icon, profile_color, access_status, access_granted_at, created_at, updated_at",
+      "id, display_name, username, avatar_url, course, study_icon, profile_color, is_discoverable, access_status, access_granted_at, created_at, updated_at",
     )
     .eq("id", userId)
     .maybeSingle<Profile>();
