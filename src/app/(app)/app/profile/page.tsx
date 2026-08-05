@@ -8,6 +8,8 @@ export default async function ProfilePage() {
   return (
     <ProfileDashboard
       displayName={displayName}
+      initialDiscoverable={profile?.is_discoverable ?? true}
+      userId={profile?.id ?? null}
       username={profile?.username ?? null}
     />
   );

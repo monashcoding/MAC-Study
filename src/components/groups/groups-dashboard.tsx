@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -69,10 +70,11 @@ import {
   updateRemoteGroupDetails,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { fetchGroupChatUnreadCounts } from "@/lib/supabase/group-chat-read-receipts";
 import { NudgePill } from "@/components/social/nudge-pill";
 import { useNudgeQueue } from "@/components/social/use-nudge-queue";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
-import { formatDuration, isLongSession } from "@/lib/timer";
+import { formatDuration, getLocalDateKey, isLongSession } from "@/lib/timer";
 import { cn } from "@/lib/utils";
 import {
   GroupChat,
@@ -115,9 +117,14 @@ export function GroupsDashboard() {
   const [groupInvites, setGroupInvites] = useState<RemoteGroupInvite[]>([]);
   const [requestBusyKey, setRequestBusyKey] = useState<string | null>(null);
   const [requestFeedback, setRequestFeedback] = useState<string | null>(null);
+  const [groupUnreadCounts, setGroupUnreadCounts] = useState<
+    Record<string, number>
+  >({});
   const [remoteClient, setRemoteClient] = useState<SupabaseClient | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const studyDateKey = getLocalDateKey(now);
+  const previousStudyDateKeyRef = useRef(studyDateKey);
   const nudgeQueue = useNudgeQueue(Boolean(remoteClient));
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
@@ -141,11 +148,37 @@ export function GroupsDashboard() {
     }
   }, []);
 
+  const refreshGroupUnreadCounts = useCallback(
+    async (supabase: SupabaseClient) => {
+      const counts = await fetchGroupChatUnreadCounts(supabase);
+      setGroupUnreadCounts(counts);
+    },
+    [],
+  );
+  const clearGroupUnreadCount = useCallback((groupId: string) => {
+    setGroupUnreadCounts((current) => ({
+      ...current,
+      [groupId]: 0,
+    }));
+  }, []);
+
   useEffect(() => {
     const interval = window.setInterval(() => setNow(new Date()), 1000);
 
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (previousStudyDateKeyRef.current === studyDateKey) return;
+
+    previousStudyDateKeyRef.current = studyDateKey;
+    if (remoteClient) {
+      window.queueMicrotask(() => {
+        void refreshRemoteSocial(remoteClient);
+        void refreshRemoteTimer(remoteClient);
+      });
+    }
+  }, [refreshRemoteSocial, refreshRemoteTimer, remoteClient, studyDateKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,9 +205,10 @@ export function GroupsDashboard() {
         if (!cancelled) {
           setRemoteClient(supabase);
         }
-        const [snapshot, timerState] = await Promise.all([
+        const [snapshot, timerState, unreadCounts] = await Promise.all([
           fetchRemoteSocialSnapshot(supabase),
           fetchRemoteTimerState(supabase),
+          fetchGroupChatUnreadCounts(supabase).catch(() => ({})),
         ]);
 
         if (!cancelled && snapshot) {
@@ -182,6 +216,7 @@ export function GroupsDashboard() {
           setCurrentUserId(snapshot.currentUserId);
           setSocialState(snapshot.socialState);
           setGroupInvites(snapshot.groupInvites ?? []);
+          setGroupUnreadCounts(unreadCounts);
           if (timerState) {
             cacheRemoteTimerState(timerState);
             setTimerSubjects(timerState.subjects);
@@ -248,11 +283,24 @@ export function GroupsDashboard() {
       return;
     }
 
-    return subscribeToRemoteAppChanges(remoteClient, () => {
+    return subscribeToRemoteAppChanges(remoteClient, (table) => {
+      if (
+        table === "group_chat_messages" ||
+        table === "group_chat_read_receipts"
+      ) {
+        void refreshGroupUnreadCounts(remoteClient);
+        return;
+      }
+
       void refreshRemoteSocial(remoteClient);
       void refreshRemoteTimer(remoteClient);
     });
-  }, [refreshRemoteSocial, refreshRemoteTimer, remoteClient]);
+  }, [
+    refreshGroupUnreadCounts,
+    refreshRemoteSocial,
+    refreshRemoteTimer,
+    remoteClient,
+  ]);
 
   const selectedGroup = socialState.groups.find(
     (group) => group.id === selectedGroupId,
@@ -264,10 +312,12 @@ export function GroupsDashboard() {
       return;
     }
 
-    setSelectedGroupId(groupId);
-    if (searchParams.get("view") === "chat") {
-      setGroupView("chat");
-    }
+    window.queueMicrotask(() => {
+      setSelectedGroupId(groupId);
+      if (searchParams.get("view") === "chat") {
+        setGroupView("chat");
+      }
+    });
     const url = new URL(window.location.href);
     url.searchParams.delete("group");
     url.searchParams.delete("view");
@@ -299,8 +349,10 @@ export function GroupsDashboard() {
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("tab") === "requests") {
-      setSelectedGroupId(null);
-      setActiveTab("requests");
+      window.queueMicrotask(() => {
+        setSelectedGroupId(null);
+        setActiveTab("requests");
+      });
     }
 
     const openRequests = () => {
@@ -724,6 +776,7 @@ export function GroupsDashboard() {
         .filter((invite) => invite.group.id === selectedGroup.id)
         .map((invite) => invite.user.id),
     );
+    const selectedGroupUnreadCount = groupUnreadCounts[selectedGroup.id] ?? 0;
 
     if (groupView === "chat") {
       return (
@@ -734,6 +787,7 @@ export function GroupsDashboard() {
           key={selectedGroup.id}
           members={members}
           onBack={() => setGroupView("class")}
+          onRead={clearGroupUnreadCount}
           remoteClient={remoteClient}
         />
       );
@@ -805,7 +859,15 @@ export function GroupsDashboard() {
                 }
                 type="button"
               >
-                {view.label}
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  {view.id === "chat" ? (
+                    <MessagesSquare aria-hidden size={15} />
+                  ) : null}
+                  {view.label}
+                  {view.id === "chat" && selectedGroupUnreadCount ? (
+                    <UnreadBadge count={selectedGroupUnreadCount} />
+                  ) : null}
+                </span>
               </button>
             ))}
           </div>
@@ -817,8 +879,8 @@ export function GroupsDashboard() {
                   className={cn(
                     "mac-focus h-11 rounded px-3 text-xs font-semibold transition",
                     rankingWindow === window.id
-                      ? "bg-[var(--color-surface-raised)] text-[var(--color-text)]"
-                      : "text-[var(--color-text-muted)]",
+                      ? "border border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
+                      : "border border-transparent text-[var(--color-text-muted)]",
                   )}
                   key={window.id}
                   onClick={() => setRankingWindow(window.id)}
@@ -1027,61 +1089,50 @@ export function GroupsDashboard() {
       </section>
 
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-[var(--color-text-muted)]">
-          {socialState.groups.length
-            ? `${socialState.groups.length} ${socialState.groups.length === 1 ? "group" : "groups"}`
-            : "No groups yet"}
-        </p>
-        {socialState.groups.length ? (
+        {activeTab === "requests" ? (
           <button
-            className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
-            onClick={() => setIsCreating(true)}
+            className="mac-focus inline-flex h-10 items-center gap-1.5 rounded-md text-sm font-semibold text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+            onClick={() => setActiveTab("groups")}
             type="button"
           >
-            <Plus aria-hidden size={17} />
-            Create
+            <ArrowLeft aria-hidden size={16} />
+            Groups
           </button>
-        ) : null}
-      </div>
-
-      <div
-        aria-label="Groups view"
-        className="grid grid-cols-2 rounded-xl bg-[rgb(255_255_255/0.04)] p-1"
-        role="tablist"
-      >
-        <button
-          aria-selected={activeTab === "groups"}
-          className={cn(
-            "mac-focus h-11 rounded-lg text-sm font-semibold transition",
-            activeTab === "groups"
-              ? "bg-[var(--color-surface-raised)] text-[var(--color-text)]"
-              : "text-[var(--color-text-muted)]",
-          )}
-          onClick={() => setActiveTab("groups")}
-          role="tab"
-          type="button"
-        >
-          Groups
-        </button>
-        <button
-          aria-selected={activeTab === "requests"}
-          className={cn(
-            "mac-focus flex h-11 items-center justify-center gap-2 rounded-lg text-sm font-semibold transition",
-            activeTab === "requests"
-              ? "bg-[var(--color-surface-raised)] text-[var(--color-text)]"
-              : "text-[var(--color-text-muted)]",
-          )}
-          onClick={() => setActiveTab("requests")}
-          role="tab"
-          type="button"
-        >
-          Requests
-          {incomingGroupInvites.length ? (
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-danger)] px-1 text-[10px] font-bold text-white">
-              {incomingGroupInvites.length}
-            </span>
+        ) : (
+          <p className="text-sm font-medium text-[var(--color-text-muted)]">
+            {socialState.groups.length
+              ? `${socialState.groups.length} ${socialState.groups.length === 1 ? "group" : "groups"}`
+              : "No groups yet"}
+          </p>
+        )}
+        <div className="flex items-center gap-2">
+          <button
+            aria-pressed={activeTab === "requests"}
+            className={cn(
+              "mac-focus inline-flex h-10 items-center justify-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition",
+              activeTab === "requests"
+                ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
+                : "border-[var(--color-border)] text-[var(--color-text-muted)]",
+            )}
+            onClick={() => setActiveTab("requests")}
+            type="button"
+          >
+            Requests
+            {incomingGroupInvites.length ? (
+              <UnreadBadge count={incomingGroupInvites.length} />
+            ) : null}
+          </button>
+          {socialState.groups.length ? (
+            <button
+              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+              onClick={() => setIsCreating(true)}
+              type="button"
+            >
+              <Plus aria-hidden size={17} />
+              Create
+            </button>
           ) : null}
-        </button>
+        </div>
       </div>
 
       {requestFeedback ? (
@@ -1111,9 +1162,20 @@ export function GroupsDashboard() {
                   type="button"
                 >
                   <div className="min-w-0">
-                    <h3 className="truncate text-lg font-semibold">
-                      {group.name}
-                    </h3>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <h3 className="truncate text-lg font-semibold">
+                        {group.name}
+                      </h3>
+                      {groupUnreadCounts[group.id] ? (
+                        <span
+                          aria-label={`${groupUnreadCounts[group.id]} unread chat messages`}
+                          className="inline-flex shrink-0 items-center gap-1 text-[var(--color-text-muted)]"
+                        >
+                          <MessagesSquare aria-hidden size={15} />
+                          <UnreadBadge count={groupUnreadCounts[group.id]} />
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="mt-1 text-sm text-[var(--color-text-muted)]">
                       <span>{activeNow} active</span>
                     </div>
@@ -1425,6 +1487,14 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
         {label}
       </p>
     </div>
+  );
+}
+
+function UnreadBadge({ count }: { count: number }) {
+  return (
+    <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-danger)] px-1 text-[10px] font-bold leading-none text-white">
+      {count > 9 ? "9+" : count}
+    </span>
   );
 }
 

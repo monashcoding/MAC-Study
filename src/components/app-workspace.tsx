@@ -38,6 +38,12 @@ export function AppWorkspace({
       : "Student";
   const username =
     authState.mode === "authenticated" ? authState.profile.username : null;
+  const userId =
+    authState.mode === "authenticated" ? authState.profile.id : null;
+  const isDiscoverable =
+    authState.mode === "authenticated"
+      ? authState.profile.is_discoverable
+      : true;
 
   if (!activeView) {
     return fallback;
@@ -85,7 +91,12 @@ export function AppWorkspace({
         id="profile"
         key={`profile:${resetKeys["/app/profile"] ?? 0}`}
       >
-        <ProfileDashboard displayName={displayName} username={username} />
+        <ProfileDashboard
+          displayName={displayName}
+          initialDiscoverable={isDiscoverable}
+          userId={userId}
+          username={username}
+        />
       </WorkspacePanel>
     </div>
   );

@@ -84,6 +84,7 @@ export function GroupChat({
   groupName,
   members,
   onBack,
+  onRead,
   remoteClient,
 }: {
   currentUserId: string | null;
@@ -91,6 +92,7 @@ export function GroupChat({
   groupName: string;
   members: SocialFriend[];
   onBack: () => void;
+  onRead?: (groupId: string) => void;
   remoteClient: SupabaseClient | null;
 }) {
   const [messages, setMessages] = useState<RemoteGroupChatMessage[]>(() =>
@@ -226,11 +228,12 @@ export function GroupChat({
 
       if (receipt) {
         setReadReceipts((current) => mergeReadReceipts(current, [receipt]));
+        onRead?.(groupId);
       }
     } catch {
       // Read receipts are best-effort and should never interrupt chat.
     }
-  }, [currentUserId, groupId, remoteClient]);
+  }, [currentUserId, groupId, onRead, remoteClient]);
 
   useEffect(() => {
     onBackRef.current = onBack;
@@ -377,13 +380,34 @@ export function GroupChat({
 
     if (!isInitialPosition && !shouldScrollToBottomRef.current) return;
 
-    messageList.scrollTo({
-      behavior: isInitialPosition ? "auto" : "smooth",
-      top: messageList.scrollHeight,
-    });
-    shouldScrollToBottomRef.current = false;
+    const positionAtBottom = (behavior: ScrollBehavior = "auto") => {
+      messageList.scrollTo({
+        behavior,
+        top: messageList.scrollHeight,
+      });
+    };
+
+    positionAtBottom(isInitialPosition ? "auto" : "smooth");
     isNearBottomRef.current = true;
     setUnreadCount(0);
+
+    if (isInitialPosition) {
+      let secondFrame = 0;
+      const firstFrame = window.requestAnimationFrame(() => {
+        positionAtBottom();
+        secondFrame = window.requestAnimationFrame(() => {
+          positionAtBottom();
+          shouldScrollToBottomRef.current = false;
+        });
+      });
+
+      return () => {
+        window.cancelAnimationFrame(firstFrame);
+        if (secondFrame) window.cancelAnimationFrame(secondFrame);
+      };
+    }
+
+    shouldScrollToBottomRef.current = false;
   }, [isReady, messages, pendingMessages]);
 
   useEffect(() => {
@@ -944,136 +968,140 @@ export function GroupChat({
                             isOwn ? "items-end" : "items-start",
                           )}
                         >
-                          <div
-                            className={cn(
-                              "relative w-fit max-w-full touch-pan-y select-none rounded-lg px-3 py-1.5 sm:select-text",
-                              isOwn
-                                ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-                                : "border border-[rgb(255_255_255/0.055)] bg-[var(--color-surface-raised)] text-[var(--color-text)]",
-                              pending?.delivery === "sending" && "opacity-70",
-                              pending?.delivery === "failed" &&
-                                "border border-[rgb(255_107_107/0.55)]",
-                            )}
-                            onContextMenu={(event) => event.preventDefault()}
-                            onPointerCancel={cancelMessageHold}
-                            onPointerDown={(event) =>
-                              beginMessageHold(event, message)
-                            }
-                            onPointerMove={moveMessageHold}
-                            onPointerUp={cancelMessageHold}
-                          >
-                            {!isOwn && startsSenderGroup ? (
-                              <p className="mb-0.5 text-[10px] font-semibold text-[var(--color-text-muted)]">
-                                {sender?.handle ?? "@member"}
-                              </p>
-                            ) : null}
-                            {message.replyToId ? (
-                              <div
-                                className={cn(
-                                  "mb-1.5 max-w-[17rem] rounded-md border-l-2 px-2 py-1 text-[10px]",
-                                  isOwn
-                                    ? "border-black/35 bg-black/10 text-black/65"
-                                    : "border-[var(--color-mac-yellow)] bg-white/5 text-[var(--color-text-muted)]",
-                                )}
-                              >
-                                <p className="truncate font-semibold">
-                                  {replySender?.handle ?? "Message"}
-                                </p>
-                                <p className="truncate">
-                                  {replyTarget
-                                    ? replyTarget.body || "Photo"
-                                    : "Message unavailable"}
-                                </p>
-                              </div>
-                            ) : null}
-                            {message.imageUrl ? (
-                              <a
-                                className="mb-1 block overflow-hidden rounded-md bg-black/20"
-                                href={message.imageUrl}
-                                rel="noreferrer"
-                                target="_blank"
-                              >
-                                {/* Private signed URLs cannot use the static Next image loader. */}
-                                <img
-                                  alt={`Photo from ${sender?.handle ?? "group member"}`}
-                                  className="max-h-80 w-full max-w-[18rem] object-contain"
-                                  loading="lazy"
-                                  src={message.imageUrl}
-                                />
-                              </a>
-                            ) : message.imagePath ? (
-                              <div className="mb-1 flex h-32 w-52 items-center justify-center rounded-md bg-black/15 text-xs text-current opacity-60">
-                                Photo unavailable
-                              </div>
-                            ) : null}
-                            <div>
-                              {message.body ? (
-                                <p className="whitespace-pre-wrap break-words text-sm leading-snug">
-                                  {message.body}
-                                </p>
-                              ) : null}
-                            </div>
-                          </div>
-                          {!pending ? (
+                          <div className="relative w-fit max-w-full">
                             <div
                               className={cn(
-                                "absolute top-1/2 hidden -translate-y-1/2 sm:block",
-                                isOwn ? "-left-8" : "-right-8",
+                                "relative w-fit max-w-full touch-pan-y select-none rounded-lg px-3 py-1.5 sm:select-text",
+                                isOwn
+                                  ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                                  : "border border-[rgb(255_255_255/0.055)] bg-[var(--color-surface-raised)] text-[var(--color-text)]",
+                                pending?.delivery === "sending" && "opacity-70",
+                                pending?.delivery === "failed" &&
+                                  "border border-[rgb(255_107_107/0.55)]",
                               )}
+                              onContextMenu={(event) => event.preventDefault()}
+                              onPointerCancel={cancelMessageHold}
+                              onPointerDown={(event) =>
+                                beginMessageHold(event, message)
+                              }
+                              onPointerMove={moveMessageHold}
+                              onPointerUp={cancelMessageHold}
                             >
-                              <button
-                                aria-expanded={openActionId === message.id}
-                                aria-label="Message actions"
-                                className="mac-focus inline-flex h-8 w-7 items-center justify-center rounded-md text-[var(--color-text-muted)] opacity-55 transition hover:bg-[rgb(255_255_255/0.05)] hover:opacity-100 group-hover/message:opacity-100"
-                                onClick={() =>
-                                  setOpenActionId((current) =>
-                                    current === message.id ? null : message.id,
-                                  )
-                                }
-                                type="button"
-                              >
-                                <MoreVertical aria-hidden size={16} />
-                              </button>
-                              {openActionId === message.id ? (
+                              {!isOwn && startsSenderGroup ? (
+                                <p className="mb-0.5 text-[10px] font-semibold text-[var(--color-text-muted)]">
+                                  {sender?.handle ?? "@member"}
+                                </p>
+                              ) : null}
+                              {message.replyToId ? (
                                 <div
                                   className={cn(
-                                    "absolute top-8 z-20 grid min-w-28 gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-1.5 text-[var(--color-text)] shadow-[0_14px_34px_rgb(0_0_0/0.4)]",
-                                    isOwn ? "right-0" : "left-0",
+                                    "mb-1.5 max-w-[17rem] rounded-md border-l-2 px-2 py-1 text-[10px]",
+                                    isOwn
+                                      ? "border-black/35 bg-black/10 text-black/65"
+                                      : "border-[var(--color-mac-yellow)] bg-white/5 text-[var(--color-text-muted)]",
                                   )}
                                 >
-                                  <button
-                                    className="mac-focus flex h-10 items-center gap-2 rounded px-2.5 text-left text-xs font-semibold hover:bg-[rgb(255_255_255/0.055)] disabled:opacity-35"
-                                    disabled={!message.body}
-                                    onClick={() => void copyMessage(message)}
-                                    type="button"
-                                  >
-                                    <Copy aria-hidden size={13} />
-                                    Copy
-                                  </button>
-                                  <button
-                                    className="mac-focus flex h-10 items-center gap-2 rounded px-2.5 text-left text-xs font-semibold hover:bg-[rgb(255_255_255/0.055)]"
-                                    onClick={() => startReply(message)}
-                                    type="button"
-                                  >
-                                    <Reply aria-hidden size={13} />
-                                    Reply
-                                  </button>
-                                  {canDelete ? (
-                                    <button
-                                      className="mac-focus flex h-10 items-center gap-2 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-danger)] hover:bg-[rgb(255_107_107/0.07)]"
-                                      onClick={() =>
-                                        setMessageToDelete(message)
-                                      }
-                                      type="button"
-                                    >
-                                      <Trash2 aria-hidden size={13} />
-                                      Delete
-                                    </button>
-                                  ) : null}
+                                  <p className="truncate font-semibold">
+                                    {replySender?.handle ?? "Message"}
+                                  </p>
+                                  <p className="truncate">
+                                    {replyTarget
+                                      ? replyTarget.body || "Photo"
+                                      : "Message unavailable"}
+                                  </p>
                                 </div>
                               ) : null}
+                              {message.imageUrl ? (
+                                <a
+                                  className="mb-1 block overflow-hidden rounded-md bg-black/20"
+                                  href={message.imageUrl}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                >
+                                  {/* Private signed URLs cannot use the static Next image loader. */}
+                                  <img
+                                    alt={`Photo from ${sender?.handle ?? "group member"}`}
+                                    className="max-h-80 w-full max-w-[18rem] object-contain"
+                                    loading="lazy"
+                                    src={message.imageUrl}
+                                  />
+                                </a>
+                              ) : message.imagePath ? (
+                                <div className="mb-1 flex h-32 w-52 items-center justify-center rounded-md bg-black/15 text-xs text-current opacity-60">
+                                  Photo unavailable
+                                </div>
+                              ) : null}
+                              <div>
+                                {message.body ? (
+                                  <p className="whitespace-pre-wrap break-words text-sm leading-snug">
+                                    {message.body}
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
-                          ) : null}
+                            {!pending ? (
+                              <div
+                                className={cn(
+                                  "absolute top-1/2 hidden -translate-y-1/2 sm:block",
+                                  isOwn ? "-left-7" : "-right-7",
+                                )}
+                              >
+                                <button
+                                  aria-expanded={openActionId === message.id}
+                                  aria-label="Message actions"
+                                  className="mac-focus inline-flex h-8 w-7 items-center justify-center rounded-md text-[var(--color-text-muted)] opacity-55 transition hover:bg-[rgb(255_255_255/0.05)] hover:opacity-100 group-hover/message:opacity-100"
+                                  onClick={() =>
+                                    setOpenActionId((current) =>
+                                      current === message.id
+                                        ? null
+                                        : message.id,
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  <MoreVertical aria-hidden size={16} />
+                                </button>
+                                {openActionId === message.id ? (
+                                  <div
+                                    className={cn(
+                                      "absolute top-8 z-20 grid min-w-28 gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-1.5 text-[var(--color-text)] shadow-[0_14px_34px_rgb(0_0_0/0.4)]",
+                                      isOwn ? "right-0" : "left-0",
+                                    )}
+                                  >
+                                    <button
+                                      className="mac-focus flex h-10 items-center gap-2 rounded px-2.5 text-left text-xs font-semibold hover:bg-[rgb(255_255_255/0.055)] disabled:opacity-35"
+                                      disabled={!message.body}
+                                      onClick={() => void copyMessage(message)}
+                                      type="button"
+                                    >
+                                      <Copy aria-hidden size={13} />
+                                      Copy
+                                    </button>
+                                    <button
+                                      className="mac-focus flex h-10 items-center gap-2 rounded px-2.5 text-left text-xs font-semibold hover:bg-[rgb(255_255_255/0.055)]"
+                                      onClick={() => startReply(message)}
+                                      type="button"
+                                    >
+                                      <Reply aria-hidden size={13} />
+                                      Reply
+                                    </button>
+                                    {canDelete ? (
+                                      <button
+                                        className="mac-focus flex h-10 items-center gap-2 rounded px-2.5 text-left text-xs font-semibold text-[var(--color-danger)] hover:bg-[rgb(255_107_107/0.07)]"
+                                        onClick={() =>
+                                          setMessageToDelete(message)
+                                        }
+                                        type="button"
+                                      >
+                                        <Trash2 aria-hidden size={13} />
+                                        Delete
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
                           <div
                             className={cn(
                               "mt-0.5 flex max-w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[9px] text-[var(--color-text-muted)]",

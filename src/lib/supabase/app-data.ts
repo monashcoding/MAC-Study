@@ -12,7 +12,12 @@ import {
   type SocialGroup,
   type SocialState,
 } from "@/lib/social-state";
-import { getElapsedSeconds, getLocalDateKey } from "@/lib/timer";
+import {
+  addDateKeyDays,
+  getAustralianDateStart,
+  getElapsedSeconds,
+  getLocalDateKey,
+} from "@/lib/timer";
 import {
   type SpecialUnit,
   type TeachingPeriod,
@@ -1633,6 +1638,8 @@ export async function inviteRemoteFriendToGroup({
   groupId: string;
   supabase: SupabaseClient;
 }) {
+  void _supabase;
+
   const response = await fetch("/api/groups/invites", {
     body: JSON.stringify({ friendId, groupId }),
     headers: { "Content-Type": "application/json" },
@@ -1791,6 +1798,11 @@ export function subscribeToRemoteAppChanges(
     )
     .on(
       "postgres_changes",
+      { event: "*", schema: "public", table: "direct_messages" },
+      () => onChange("direct_messages"),
+    )
+    .on(
+      "postgres_changes",
       { event: "*", schema: "public", table: "super_nudge_requests" },
       () => onChange("super_nudge_requests"),
     )
@@ -1803,6 +1815,16 @@ export function subscribeToRemoteAppChanges(
       "postgres_changes",
       { event: "*", schema: "public", table: "app_notifications" },
       () => onChange("app_notifications"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "group_chat_messages" },
+      () => onChange("group_chat_messages"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "group_chat_read_receipts" },
+      () => onChange("group_chat_read_receipts"),
     )
     .on(
       "postgres_changes",
@@ -1844,6 +1866,24 @@ export function subscribeToRemoteAppChanges(
   return () => {
     void supabase.removeChannel(channel);
   };
+}
+
+export async function fetchRemoteDirectMessageUnreadCount({
+  supabase,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const { count, error } = await supabase
+    .from("direct_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("recipient_id", userId)
+    .is("read_at", null);
+
+  if (error) throw error;
+
+  return count ?? 0;
 }
 
 async function fetchRemoteSubjects(supabase: SupabaseClient, userId: string) {
@@ -2006,7 +2046,8 @@ function friendFromProfile(
   );
   const activeSession =
     userSessions.find((session) => session.status === "active") ?? null;
-  const totals = getSessionTotals(userSessions, now);
+  const dailyStudySeconds = getDailySessionTotals(userSessions, now);
+  const totals = getSessionTotals(userSessions, dailyStudySeconds, now);
 
   return {
     id: profile.id,
@@ -2023,50 +2064,51 @@ function friendFromProfile(
     weekSeconds: totals.week,
     monthSeconds: totals.month,
     allTimeSeconds: totals.allTime,
-    dailyStudySeconds: getDailySessionTotals(userSessions, now),
+    dailyStudySeconds,
     activeStartedAt: activeSession?.started_at ?? null,
     activeUpdatedAt: activeSession ? now.toISOString() : null,
     subjectSeconds: {},
   };
 }
 
-function getSessionTotals(sessions: SessionRow[], now = new Date()) {
-  const todayKey = now.toISOString().slice(0, 10);
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - 6);
-  weekStart.setHours(0, 0, 0, 0);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  return sessions.reduce(
-    (totals, session) => {
-      if (session.status === "voided") {
-        return totals;
+function getSessionTotals(
+  sessions: SessionRow[],
+  dailyStudySeconds: Record<string, number>,
+  now = new Date(),
+) {
+  const todayKey = getLocalDateKey(now);
+  const calendarDay = new Date(`${todayKey}T00:00:00Z`).getUTCDay();
+  const weekStartKey = addDateKeyDays(todayKey, -((calendarDay + 6) % 7));
+  const monthStartKey = `${todayKey.slice(0, 7)}-01`;
+  const totals = Object.entries(dailyStudySeconds).reduce(
+    (result, [dateKey, seconds]) => {
+      if (dateKey >= weekStartKey && dateKey <= todayKey) {
+        result.week += seconds;
       }
 
-      const startedAt = new Date(session.started_at);
-      const seconds = session.ended_at
-        ? (session.duration_seconds ??
-          getElapsedSeconds(session.started_at, new Date(session.ended_at)))
-        : getElapsedSeconds(session.started_at, now);
-
-      totals.allTime += seconds;
-
-      if (startedAt.toISOString().slice(0, 10) === todayKey) {
-        totals.day += seconds;
+      if (dateKey >= monthStartKey && dateKey <= todayKey) {
+        result.month += seconds;
       }
 
-      if (startedAt >= weekStart) {
-        totals.week += seconds;
-      }
-
-      if (startedAt >= monthStart) {
-        totals.month += seconds;
-      }
-
-      return totals;
+      return result;
     },
-    { allTime: 0, day: 0, month: 0, week: 0 },
+    {
+      day: dailyStudySeconds[todayKey] ?? 0,
+      month: 0,
+      week: 0,
+    },
   );
+
+  return {
+    ...totals,
+    allTime: sessions.reduce(
+      (total, session) =>
+        session.status === "voided"
+          ? total
+          : total + getSessionDurationSeconds(session, now),
+      0,
+    ),
+  };
 }
 
 function getDailySessionTotals(sessions: SessionRow[], now = new Date()) {
@@ -2075,15 +2117,34 @@ function getDailySessionTotals(sessions: SessionRow[], now = new Date()) {
       return totals;
     }
 
-    const seconds = session.ended_at
-      ? (session.duration_seconds ??
-        getElapsedSeconds(session.started_at, new Date(session.ended_at)))
-      : getElapsedSeconds(session.started_at, now);
-    const key = getLocalDateKey(new Date(session.started_at));
+    const sessionEnd = session.ended_at
+      ? new Date(session.ended_at)
+      : new Date(now);
+    let cursor = new Date(session.started_at);
 
-    totals[key] = (totals[key] ?? 0) + seconds;
+    while (cursor < sessionEnd) {
+      const key = getLocalDateKey(cursor);
+      const nextDay = getAustralianDateStart(addDateKeyDays(key, 1));
+      const segmentEnd = nextDay < sessionEnd ? nextDay : new Date(sessionEnd);
+      const seconds = Math.max(
+        0,
+        Math.floor((segmentEnd.getTime() - cursor.getTime()) / 1000),
+      );
+
+      totals[key] = (totals[key] ?? 0) + seconds;
+      if (segmentEnd <= cursor) break;
+      cursor = segmentEnd;
+    }
+
     return totals;
   }, {});
+}
+
+function getSessionDurationSeconds(session: SessionRow, now: Date) {
+  return session.ended_at
+    ? (session.duration_seconds ??
+        getElapsedSeconds(session.started_at, new Date(session.ended_at)))
+    : getElapsedSeconds(session.started_at, now);
 }
 
 function normalizeGroupIcon(icon: string | null | undefined): GroupIconKey {
