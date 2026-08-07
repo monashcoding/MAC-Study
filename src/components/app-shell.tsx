@@ -27,6 +27,7 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { AppWorkspace } from "@/components/app-workspace";
 import { AppHeaderDetailProvider } from "@/components/app-header-detail";
+import { InstallOnboarding } from "@/components/pwa/install-onboarding";
 import { NotificationOnboarding } from "@/components/pwa/notification-onboarding";
 import { AppNotifications } from "@/components/social/app-notifications";
 import { NudgeNotifications } from "@/components/social/nudge-notifications";
@@ -95,6 +96,9 @@ export function AppShell({
   const [workspaceResetKeys, setWorkspaceResetKeys] = useState<
     Record<string, number>
   >({});
+  const [navUnread, setNavUnread] = useState({ friends: false, groups: false });
+  const [installOnboardingComplete, setInstallOnboardingComplete] =
+    useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const currentNav =
@@ -125,6 +129,9 @@ export function AppShell({
     },
     [],
   );
+  const handleInstallOnboardingComplete = useCallback(() => {
+    setInstallOnboardingComplete(true);
+  }, []);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -303,6 +310,11 @@ export function AppShell({
                   {navItems.map((item) => (
                     <NavLink
                       href={item.href}
+                      hasUnread={
+                        item.href === "/app/friends"
+                          ? navUnread.friends
+                          : item.href === "/app/groups" && navUnread.groups
+                      }
                       icon={item.icon}
                       isActive={isActive(displayPathname, item.href)}
                       key={item.href}
@@ -377,6 +389,20 @@ export function AppShell({
                     activePathname={displayPathname}
                     authState={authState}
                     fallback={children}
+                    onDirectMessageUnreadChange={(hasUnread) =>
+                      setNavUnread((current) =>
+                        current.friends === hasUnread
+                          ? current
+                          : { ...current, friends: hasUnread },
+                      )
+                    }
+                    onGroupChatUnreadChange={(hasUnread) =>
+                      setNavUnread((current) =>
+                        current.groups === hasUnread
+                          ? current
+                          : { ...current, groups: hasUnread },
+                      )
+                    }
                     resetKeys={workspaceResetKeys}
                   />
                 </div>
@@ -389,6 +415,10 @@ export function AppShell({
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(displayPathname, item.href);
+                const hasUnread =
+                  item.href === "/app/friends"
+                    ? navUnread.friends
+                    : item.href === "/app/groups" && navUnread.groups;
 
                 return (
                   <Link
@@ -407,7 +437,10 @@ export function AppShell({
                     onPointerEnter={() => warmRoute(item.href)}
                     prefetch
                   >
-                    <Icon aria-hidden size={22} strokeWidth={2.15} />
+                    <span className="relative inline-flex">
+                      <Icon aria-hidden size={22} strokeWidth={2.15} />
+                      {hasUnread ? <NavUnreadDot /> : null}
+                    </span>
                     <span className="max-w-full truncate px-0.5">
                       {"mobileLabel" in item ? item.mobileLabel : item.label}
                     </span>
@@ -422,7 +455,14 @@ export function AppShell({
           <>
             <AppNotifications userId={authState.user.id} />
             <NudgeNotifications userId={authState.user.id} />
-            <NotificationOnboarding userId={authState.user.id} />
+            <InstallOnboarding
+              onComplete={handleInstallOnboardingComplete}
+              userId={authState.user.id}
+            />
+            <NotificationOnboarding
+              enabled={installOnboardingComplete}
+              userId={authState.user.id}
+            />
           </>
         ) : null}
       </>
@@ -466,6 +506,7 @@ function LogoMark({ size = "md" }: { size?: "sm" | "md" }) {
 
 function NavLink({
   href,
+  hasUnread,
   icon: Icon,
   isActive,
   label,
@@ -473,6 +514,7 @@ function NavLink({
   onNavigate,
 }: {
   href: string;
+  hasUnread: boolean;
   icon: React.ComponentType<{ size?: number; "aria-hidden"?: boolean }>;
   isActive: boolean;
   label: string;
@@ -495,15 +537,18 @@ function NavLink({
       onPointerEnter={() => onIntent(href)}
       prefetch
     >
-      <span
-        className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition",
-          isActive
-            ? "bg-[rgb(20_20_20/0.1)]"
-            : "bg-[rgb(255_255_255/0.035)] group-hover:bg-[rgb(255_255_255/0.06)]",
-        )}
-      >
-        <Icon aria-hidden size={18} />
+      <span className="relative shrink-0">
+        <span
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-md transition",
+            isActive
+              ? "bg-[rgb(20_20_20/0.1)]"
+              : "bg-[rgb(255_255_255/0.035)] group-hover:bg-[rgb(255_255_255/0.06)]",
+          )}
+        >
+          <Icon aria-hidden size={18} />
+        </span>
+        {hasUnread ? <NavUnreadDot /> : null}
       </span>
       <span className="min-w-0 flex-1">{label}</span>
       <ChevronRight
@@ -517,6 +562,18 @@ function NavLink({
         size={15}
       />
     </Link>
+  );
+}
+
+function NavUnreadDot() {
+  return (
+    <>
+      <span
+        aria-hidden
+        className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[var(--color-danger)] ring-2 ring-[var(--color-background)]"
+      />
+      <span className="sr-only">Unread messages</span>
+    </>
   );
 }
 

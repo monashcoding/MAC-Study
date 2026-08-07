@@ -45,6 +45,7 @@ export type RemoteUnitState = {
 export type RemoteActiveSession = {
   subjectId: string | null;
   groupId?: string | null;
+  reminderIntervalMinutes?: number | null;
   startedAt: string;
 };
 
@@ -311,6 +312,7 @@ type SessionRow = {
   user_id: string;
   subject_id: string | null;
   group_id: string | null;
+  reminder_interval_minutes: number | null;
   started_at: string;
   ended_at: string | null;
   status: "active" | "completed" | "needs_confirmation" | "voided";
@@ -368,7 +370,7 @@ export async function fetchRemoteTimerState(
     supabase
       .from("study_sessions")
       .select(
-        "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds",
+        "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds, reminder_interval_minutes",
       )
       .eq("user_id", userId)
       .is("deleted_at", null)
@@ -405,6 +407,7 @@ export async function fetchRemoteTimerState(
       ? {
           subjectId: activeRow.subject_id,
           groupId: activeRow.group_id,
+          reminderIntervalMinutes: activeRow.reminder_interval_minutes,
           startedAt: activeRow.started_at,
         }
       : null,
@@ -452,6 +455,20 @@ export async function startRemoteStudySession({
   if (error) {
     throw error;
   }
+}
+
+export async function setRemoteActiveStudyReminder({
+  intervalMinutes,
+  supabase,
+}: {
+  intervalMinutes: number | null;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("set_active_study_reminder", {
+    next_interval_minutes: intervalMinutes,
+  });
+
+  if (error) throw error;
 }
 
 export async function stopRemoteStudySession(supabase: SupabaseClient) {

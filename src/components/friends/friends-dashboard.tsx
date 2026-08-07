@@ -76,7 +76,11 @@ const friendTimeOptions = [
 
 type FriendTimeRange = (typeof friendTimeOptions)[number]["value"];
 
-export function FriendsDashboard() {
+export function FriendsDashboard({
+  onUnreadChange,
+}: {
+  onUnreadChange?: (hasUnread: boolean) => void;
+}) {
   const [socialState, setSocialState] = useState<SocialState>(emptySocialState);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
@@ -133,6 +137,10 @@ export function FriendsDashboard() {
   const pendingFriendRequestIdsRef = useRef(new Set<string>());
   const pendingCancelledRequestsRef = useRef(new Map<string, string>());
   const nudgeQueue = useNudgeQueue(Boolean(remoteClient));
+
+  useEffect(() => {
+    onUnreadChange?.(directMessageUnreadCount > 0);
+  }, [directMessageUnreadCount, onUnreadChange]);
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
     const snapshot = await fetchRemoteSocialSnapshot(supabase);
@@ -658,9 +666,10 @@ export function FriendsDashboard() {
     }
   }
 
-  function nudgeFriend(friendId: string) {
+  function nudgeFriend(friendId: string, superNudgeMode: boolean) {
     nudgeQueue.enqueue({
       key: friendId,
+      maxPerMinute: superNudgeMode ? 10 : 1,
       recipientId: friendId,
     });
   }
@@ -844,10 +853,15 @@ export function FriendsDashboard() {
           </div>
 
           <NudgePill
-            disabled={!remoteClient || studyBlockActive}
-            disabledLabel={studyBlockActive ? "Studying…" : undefined}
+            burstCount={nudgeState.burstCount}
+            disabled={!remoteClient || studyBlockActive || nudgeState.atLimit}
+            disabledLabel={
+              studyBlockActive
+                ? "Studying…"
+                : undefined
+            }
             mode={superNudgeMode ? "super" : "standard"}
-            onClick={() => nudgeFriend(selectedFriend.id)}
+            onClick={() => nudgeFriend(selectedFriend.id, superNudgeMode)}
             pendingCount={nudgeState.pending}
           />
 

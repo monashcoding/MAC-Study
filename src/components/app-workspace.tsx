@@ -24,11 +24,15 @@ export function AppWorkspace({
   activePathname,
   authState,
   fallback,
+  onDirectMessageUnreadChange,
+  onGroupChatUnreadChange,
   resetKeys,
 }: {
   activePathname: string;
   authState: AppAuthState;
   fallback: React.ReactNode;
+  onDirectMessageUnreadChange: (hasUnread: boolean) => void;
+  onGroupChatUnreadChange: (hasUnread: boolean) => void;
   resetKeys: Record<string, number>;
 }) {
   const activeView = getWorkspaceView(activePathname);
@@ -63,14 +67,14 @@ export function AppWorkspace({
         id="groups"
         key={`groups:${resetKeys["/app/groups"] ?? 0}`}
       >
-        <GroupsDashboard />
+        <GroupsDashboard onUnreadChange={onGroupChatUnreadChange} />
       </WorkspacePanel>
       <WorkspacePanel
         active={activeView === "friends"}
         id="friends"
         key={`friends:${resetKeys["/app/friends"] ?? 0}`}
       >
-        <FriendsDashboard />
+        <FriendsDashboard onUnreadChange={onDirectMessageUnreadChange} />
       </WorkspacePanel>
       <WorkspacePanel
         active={activeView === "units"}

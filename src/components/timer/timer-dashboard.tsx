@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  BellRing,
   BookOpen,
   CalendarClock,
   LoaderCircle,
@@ -32,6 +33,7 @@ import {
   fetchRemoteTimerState,
   deleteRemoteStudySession,
   saveRemoteSubjects,
+  setRemoteActiveStudyReminder,
   startRemoteStudySession,
   stopRemoteStudySession,
   subscribeToRemoteAppChanges,
@@ -39,6 +41,11 @@ import {
   type RemoteTimerState,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import {
+  enablePushNotifications,
+  getPushStatus,
+  type PushStatus,
+} from "@/lib/push/client";
 import {
   addDateKeyDays,
   formatDuration,
@@ -66,6 +73,7 @@ const SUBJECT_COLORS: string[] = SUBJECT_COLOR_OPTIONS.map(
   (option) => option.value,
 );
 const defaultStudySubjects: StudySubject[] = [];
+const REMINDER_INTERVALS = [25, 30, 45, 60, 90, 120] as const;
 
 type StudySubject = {
   id: string;
@@ -82,6 +90,7 @@ type StoredSubject = Partial<StudySubject> & {
 type ActiveSession = {
   subjectId: string | null;
   groupId?: string | null;
+  reminderIntervalMinutes?: number | null;
   startedAt: string;
 };
 
@@ -131,6 +140,11 @@ export function TimerDashboard() {
   const [returnToSessionHistory, setReturnToSessionHistory] = useState(false);
   const [sessionBusy, setSessionBusy] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [isReminderDialogOpen, setIsReminderDialogOpen] = useState(false);
+  const [isStudyCheckInOpen, setIsStudyCheckInOpen] = useState(false);
+  const [reminderSaving, setReminderSaving] = useState(false);
+  const [reminderFeedback, setReminderFeedback] = useState<string | null>(null);
+  const [pushStatus, setPushStatus] = useState<PushStatus | null>(null);
   const isSavingSubjectsRef = useRef(false);
   const isSessionMutationInFlightRef = useRef(false);
 
@@ -223,6 +237,20 @@ export function TimerDashboard() {
       cancelled = true;
     };
   }, [applyRemoteTimerState, loadLocalTimerState]);
+
+  useEffect(() => {
+    if (
+      new URLSearchParams(window.location.search).get("study-reminder") !==
+      "check"
+    ) {
+      return;
+    }
+
+    window.queueMicrotask(() => setIsStudyCheckInOpen(true));
+    const url = new URL(window.location.href);
+    url.searchParams.delete("study-reminder");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }, []);
 
   useEffect(() => {
     if (!isLoaded || dataMode !== "local") {
@@ -422,6 +450,62 @@ export function TimerDashboard() {
     if (needsConfirmation) {
       setReturnToSessionHistory(false);
       setEditingSessionId(sessionId);
+    }
+  }
+
+  async function openReminderDialog() {
+    setReminderFeedback(null);
+    setIsReminderDialogOpen(true);
+    setPushStatus(null);
+
+    if (dataMode !== "remote") return;
+
+    try {
+      setPushStatus(await getPushStatus());
+    } catch {
+      setReminderFeedback("Reminders are unavailable on this device.");
+    }
+  }
+
+  async function updateStudyReminder(intervalMinutes: number | null) {
+    if (!activeSession || !remoteClient || dataMode !== "remote") {
+      setReminderFeedback("Reminders need a signed-in, connected session.");
+      return;
+    }
+
+    setReminderSaving(true);
+    setReminderFeedback(null);
+
+    try {
+      let status = pushStatus;
+      if (intervalMinutes && status?.state !== "enabled") {
+        status ??= await getPushStatus();
+        await enablePushNotifications(status.publicKey);
+        status = await getPushStatus();
+      }
+
+      if (intervalMinutes && status?.state !== "enabled") {
+        throw new Error("Enable device alerts before turning on reminders.");
+      }
+
+      await setRemoteActiveStudyReminder({
+        intervalMinutes,
+        supabase: remoteClient,
+      });
+      setActiveSession((current) =>
+        current ? { ...current, reminderIntervalMinutes: intervalMinutes } : current,
+      );
+      setPushStatus(status ?? (await getPushStatus()));
+      setIsReminderDialogOpen(false);
+      await refreshRemoteTimer(remoteClient).catch(() => undefined);
+    } catch (error) {
+      setReminderFeedback(
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not update the study reminder.",
+      );
+    } finally {
+      setReminderSaving(false);
     }
   }
 
@@ -641,6 +725,18 @@ export function TimerDashboard() {
           )}
           {activeSession ? "Pause session" : "Start session"}
         </button>
+        {activeSession ? (
+          <button
+            className="mac-focus mt-2 inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]"
+            onClick={() => void openReminderDialog()}
+            type="button"
+          >
+            <BellRing aria-hidden size={15} />
+            {activeSession.reminderIntervalMinutes
+              ? `Every ${formatReminderInterval(activeSession.reminderIntervalMinutes)}`
+              : "Remind me"}
+          </button>
+        ) : null}
       </section>
 
       <section className="space-y-3 lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(18_18_18/0.36)] lg:p-5">
@@ -782,6 +878,100 @@ export function TimerDashboard() {
         />
       ) : null}
 
+      {isReminderDialogOpen && activeSession ? (
+        <AppDialog
+          bodyClassName="space-y-4"
+          closeLabel="Close study reminder settings"
+          footer={
+            <button
+              className="mac-focus h-11 w-full rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text-muted)]"
+              disabled={reminderSaving}
+              onClick={() => void updateStudyReminder(null)}
+              type="button"
+            >
+              Turn reminders off
+            </button>
+          }
+          maxWidthClassName="max-w-sm"
+          onClose={() => setIsReminderDialogOpen(false)}
+          title="Study reminder"
+        >
+          <p className="text-sm leading-6 text-[var(--color-text-muted)]">
+            Get a quick check-in while this session is still running. The first
+            reminder arrives after the interval you choose.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {REMINDER_INTERVALS.map((interval) => {
+              const selected =
+                activeSession.reminderIntervalMinutes === interval;
+
+              return (
+                <button
+                  className={cn(
+                    "mac-focus h-11 rounded-md border text-sm font-semibold transition disabled:opacity-45",
+                    selected
+                      ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]"
+                      : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.04)]",
+                  )}
+                  disabled={reminderSaving}
+                  key={interval}
+                  onClick={() => void updateStudyReminder(interval)}
+                  type="button"
+                >
+                  Every {formatReminderInterval(interval)}
+                </button>
+              );
+            })}
+          </div>
+          {pushStatus && pushStatus.state !== "enabled" ? (
+            <p className="text-xs leading-5 text-[var(--color-text-muted)]">
+              Device alerts will be enabled when you choose an interval.
+            </p>
+          ) : null}
+          {reminderFeedback ? (
+            <p className="text-sm text-[var(--color-danger)]" role="status">
+              {reminderFeedback}
+            </p>
+          ) : null}
+        </AppDialog>
+      ) : null}
+
+      {isStudyCheckInOpen && activeSession ? (
+        <AppDialog
+          bodyClassName="space-y-2"
+          closeLabel="Close study check-in"
+          footer={
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="mac-focus h-11 rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text-muted)]"
+                onClick={() => setIsStudyCheckInOpen(false)}
+                type="button"
+              >
+                Keep studying
+              </button>
+              <button
+                className="mac-focus h-11 rounded-md bg-[var(--color-danger)] text-sm font-semibold text-white"
+                onClick={() => {
+                  setIsStudyCheckInOpen(false);
+                  void stopStudy();
+                }}
+                type="button"
+              >
+                Stop session
+              </button>
+            </div>
+          }
+          maxWidthClassName="max-w-sm"
+          onClose={() => setIsStudyCheckInOpen(false)}
+          title="Still studying?"
+        >
+          <p className="text-sm leading-6 text-[var(--color-text-muted)]">
+            Your study timer is still running. Keep it going or stop the
+            session now.
+          </p>
+        </AppDialog>
+      ) : null}
+
       {isSessionHistoryOpen ? (
         <SessionHistoryDialog
           onClose={() => setIsSessionHistoryOpen(false)}
@@ -825,6 +1015,10 @@ export function TimerDashboard() {
       />
     </div>
   );
+}
+
+function formatReminderInterval(minutes: number) {
+  return minutes % 60 === 0 ? `${minutes / 60} hr` : `${minutes} min`;
 }
 
 const GENERAL_SESSION_SUBJECT = "__general__";

@@ -9,13 +9,21 @@ import {
   supportsPushNotifications,
 } from "@/lib/push/client";
 
-export function NotificationOnboarding({ userId }: { userId: string }) {
+export function NotificationOnboarding({
+  enabled = true,
+  userId,
+}: {
+  enabled?: boolean;
+  userId: string;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [isEnabling, setIsEnabling] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const storageKey = `mac-notification-onboarding:${userId}`;
 
   useEffect(() => {
+    if (!enabled) return;
+
     const isMobile = window.matchMedia("(max-width: 63.999rem)").matches;
     const alreadySeen = window.localStorage.getItem(storageKey) === "seen";
 
@@ -27,7 +35,7 @@ export function NotificationOnboarding({ userId }: { userId: string }) {
     ) {
       setIsOpen(true);
     }
-  }, [storageKey]);
+  }, [enabled, storageKey]);
 
   function dismiss() {
     window.localStorage.setItem(storageKey, "seen");

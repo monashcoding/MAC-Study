@@ -93,7 +93,11 @@ const emptySocialState: SocialState = { friends: [], groups: [] };
 const TIMER_STORAGE_KEY = "mac-study-demo-state";
 const fallbackStudySubjects: RemoteSubject[] = [];
 
-export function GroupsDashboard() {
+export function GroupsDashboard({
+  onUnreadChange,
+}: {
+  onUnreadChange?: (hasUnread: boolean) => void;
+}) {
   const [socialState, setSocialState] = useState<SocialState>(emptySocialState);
   const [timerSubjects, setTimerSubjects] = useState<RemoteSubject[]>(
     fallbackStudySubjects,
@@ -126,6 +130,10 @@ export function GroupsDashboard() {
   const studyDateKey = getLocalDateKey(now);
   const previousStudyDateKeyRef = useRef(studyDateKey);
   const nudgeQueue = useNudgeQueue(Boolean(remoteClient));
+
+  useEffect(() => {
+    onUnreadChange?.(Object.values(groupUnreadCounts).some((count) => count > 0));
+  }, [groupUnreadCounts, onUnreadChange]);
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
     const snapshot = await fetchRemoteSocialSnapshot(supabase);
@@ -943,6 +951,7 @@ export function GroupsDashboard() {
             }
             group={selectedGroup}
             member={selectedMember}
+            nudgeAtLimit={selectedMemberNudgeState?.atLimit ?? false}
             nudgeFeedback={selectedMemberNudgeState?.feedback ?? null}
             now={now}
             onClose={() => {
@@ -1639,6 +1648,7 @@ function GroupMemberDialog({
   canNudge,
   group,
   member,
+  nudgeAtLimit,
   now,
   nudgeFeedback,
   onClose,
@@ -1649,6 +1659,7 @@ function GroupMemberDialog({
   canNudge: boolean;
   group: SocialGroup;
   member: SocialFriend;
+  nudgeAtLimit: boolean;
   now: Date;
   nudgeFeedback: string | null;
   onClose: () => void;
@@ -1717,8 +1728,14 @@ function GroupMemberDialog({
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <NudgePill
-          disabled={!canNudge || member.studying}
-          disabledLabel={member.studying ? "Studying now" : undefined}
+          disabled={!canNudge || member.studying || nudgeAtLimit}
+          disabledLabel={
+            member.studying
+              ? "Studying now"
+              : nudgeAtLimit
+                ? nudgeFeedback ?? "Ready soon"
+                : undefined
+          }
           onClick={onNudge}
           pendingCount={pendingNudges}
         />
