@@ -110,6 +110,9 @@ export function AppShell({
     (isActive(displayPathname, "/app/groups") ||
       isActive(displayPathname, "/app/units"));
   const currentTitle = isNestedDetail ? headerDetail : currentNav.title;
+  const isFriendsView = isActive(displayPathname, "/app/friends");
+  const isShortMobileView =
+    displayPathname === "/app/statistics" || displayPathname === "/app/profile";
   const accountName =
     authState.mode === "authenticated"
       ? authState.profile.display_name?.trim() || "Student"
@@ -297,7 +300,10 @@ export function AppShell({
       <>
         <div className="mac-desktop-shell fixed inset-0 flex flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
           <div
-            className="mac-app-scroll mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:grid lg:min-h-dvh lg:max-w-none lg:grid-cols-[17.5rem_minmax(0,1fr)] lg:overflow-visible"
+            className={cn(
+              "mac-app-scroll mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:grid lg:min-h-dvh lg:max-w-none lg:grid-cols-[17.5rem_minmax(0,1fr)] lg:overflow-visible",
+              (isFriendsView || isShortMobileView) && "overflow-y-hidden",
+            )}
             ref={scrollContainerRef}
           >
             <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:border-r lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(17_17_17/0.94)] lg:p-5 lg:backdrop-blur-xl">
@@ -333,7 +339,13 @@ export function AppShell({
               />
             </aside>
 
-            <main className="min-w-0 flex-1 lg:min-h-dvh">
+            <main
+              className={cn(
+                "min-w-0 flex-1 lg:min-h-dvh",
+                (isFriendsView || isShortMobileView) &&
+                  "flex min-h-0 flex-col overflow-hidden",
+              )}
+            >
               <header className="sticky top-0 z-20 bg-[rgb(23_23_23/0.94)] px-4 pb-3 pt-[calc(var(--safe-area-top)+0.85rem)] backdrop-blur lg:z-30 lg:border-b lg:border-[rgb(255_255_255/0.07)] lg:bg-[rgb(23_23_23/0.84)] lg:px-8 lg:py-5 xl:px-12">
                 <div className="relative mx-auto flex max-w-[80rem] items-center justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3 lg:hidden">
@@ -383,8 +395,20 @@ export function AppShell({
                 </div>
               </header>
 
-              <div className="px-4 pb-4 pt-3 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10">
-                <div className="lg:px-1 lg:py-2">
+              <div
+                className={cn(
+                  "px-4 pb-4 pt-3 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10",
+                  (isFriendsView || isShortMobileView) &&
+                    "flex min-h-0 flex-1 flex-col overflow-hidden",
+                )}
+              >
+                <div
+                  className={cn(
+                    "lg:px-1 lg:py-2",
+                    (isFriendsView || isShortMobileView) &&
+                      "flex min-h-0 flex-1 flex-col",
+                  )}
+                >
                   <AppWorkspace
                     activePathname={displayPathname}
                     authState={authState}

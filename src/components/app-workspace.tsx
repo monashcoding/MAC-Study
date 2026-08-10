@@ -54,7 +54,12 @@ export function AppWorkspace({
   }
 
   return (
-    <div className="relative">
+    <div
+      className={cn(
+        "relative",
+        activeView === "friends" && "flex min-h-0 flex-1 flex-col",
+      )}
+    >
       <WorkspacePanel
         active={activeView === "home"}
         id="home"

@@ -493,7 +493,9 @@ export function TimerDashboard() {
         supabase: remoteClient,
       });
       setActiveSession((current) =>
-        current ? { ...current, reminderIntervalMinutes: intervalMinutes } : current,
+        current
+          ? { ...current, reminderIntervalMinutes: intervalMinutes }
+          : current,
       );
       setPushStatus(status ?? (await getPushStatus()));
       setIsReminderDialogOpen(false);
@@ -778,8 +780,7 @@ export function TimerDashboard() {
             renderItem={(subject) => {
               const isActive = activeSession?.subjectId === subject.id;
               const subjectSeconds =
-                (subjectTotals[subject.id] ?? 0) +
-                (isActive ? activeToday : 0);
+                (subjectTotals[subject.id] ?? 0) + (isActive ? activeToday : 0);
 
               return (
                 <div
@@ -966,8 +967,8 @@ export function TimerDashboard() {
           title="Still studying?"
         >
           <p className="text-sm leading-6 text-[var(--color-text-muted)]">
-            Your study timer is still running. Keep it going or stop the
-            session now.
+            Your study timer is still running. Keep it going or stop the session
+            now.
           </p>
         </AppDialog>
       ) : null}
@@ -1535,12 +1536,12 @@ function SubjectEditor({
           </>
         ) : (
           <PaginatedList
-            className="divide-y divide-[var(--color-border)]"
+            className="grid gap-1"
             items={draftSubjects}
             pageSize={10}
             renderItem={(subject) => (
               <div
-                className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3"
+                className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-md px-1 py-2.5 transition hover:bg-[rgb(255_255_255/0.035)]"
                 key={subject.id}
               >
                 <div className="flex min-w-0 items-center gap-3">
@@ -1553,7 +1554,7 @@ function SubjectEditor({
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
                     onClick={() => setEditingSubjectId(subject.id)}
                     type="button"
                   >
@@ -1561,7 +1562,7 @@ function SubjectEditor({
                     <span className="sr-only">Edit {subject.name}</span>
                   </button>
                   <button
-                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[rgb(255_107_107/0.35)] text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:cursor-not-allowed disabled:opacity-30"
+                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:cursor-not-allowed disabled:opacity-30"
                     onClick={() => quickDeleteSubject(subject)}
                     type="button"
                   >

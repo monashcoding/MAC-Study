@@ -855,11 +855,7 @@ export function FriendsDashboard({
           <NudgePill
             burstCount={nudgeState.burstCount}
             disabled={!remoteClient || studyBlockActive || nudgeState.atLimit}
-            disabledLabel={
-              studyBlockActive
-                ? "Studying…"
-                : undefined
-            }
+            disabledLabel={studyBlockActive ? "Studying…" : undefined}
             mode={superNudgeMode ? "super" : "standard"}
             onClick={() => nudgeFriend(selectedFriend.id, superNudgeMode)}
             pendingCount={nudgeState.pending}
@@ -1133,9 +1129,9 @@ export function FriendsDashboard({
   }
 
   return (
-    <div className={cn(!directConversationVisible && "space-y-4 lg:space-y-6")}>
+    <div className="mac-friends-dashboard flex min-h-0 flex-1 flex-col">
       {!directConversationVisible ? (
-        <>
+        <div className="shrink-0 space-y-4 lg:space-y-6">
           <div
             aria-label="Friends view"
             className="flex items-center gap-2"
@@ -1221,249 +1217,255 @@ export function FriendsDashboard({
                 : "No friends yet"}
             </p>
           ) : null}
-        </>
+        </div>
       ) : null}
 
-      {feedback && !directConversationVisible ? (
-        <p
-          className="rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
-          role="status"
-        >
-          {feedback}
-        </p>
-      ) : null}
+      <div className="mac-friends-list-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain lg:overflow-visible">
+        {feedback && !directConversationVisible ? (
+          <p
+            className="mb-4 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
+            role="status"
+          >
+            {feedback}
+          </p>
+        ) : null}
 
-      {activeTab === "friends" ? (
-        <section className="space-y-3" role="tabpanel">
-          {friendList.length ? (
-            <PaginatedList
-              className="grid gap-2 lg:grid-cols-2 lg:gap-3"
-              items={friendList}
-              pageSize={12}
-              renderItem={(friend) => (
-                <div
-                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] transition hover:border-[rgb(255_255_255/0.12)] hover:bg-[rgb(255_255_255/0.045)]"
-                  key={friend.id}
-                >
+        {activeTab === "friends" ? (
+          <section className="space-y-3" role="tabpanel">
+            {friendList.length ? (
+              <PaginatedList
+                className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+                items={friendList}
+                pageSize={12}
+                renderItem={(friend) => (
+                  <div
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] transition hover:border-[rgb(255_255_255/0.12)] hover:bg-[rgb(255_255_255/0.045)]"
+                    key={friend.id}
+                  >
+                    <button
+                      className="mac-focus grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-3 text-left active:scale-[0.99] lg:min-h-20 lg:px-4"
+                      onClick={() => {
+                        setSelectedFriendId(friend.id);
+                        setInvitedGroupIds(new Set());
+                        setPendingInviteGroupIds(new Set());
+                        setIsInviteDialogOpen(false);
+                        setIsRemoveDialogOpen(false);
+                      }}
+                      type="button"
+                    >
+                      <ProfileBadge friend={friend} />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold">{friend.name}</p>
+                        <p className="truncate text-sm text-[var(--color-text-muted)]">
+                          {friend.handle}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-mono text-sm font-semibold tabular-nums">
+                          {formatDuration(
+                            getLiveRankingSeconds(friend, "day", now),
+                          )}
+                        </p>
+                        <p className="text-xs font-medium text-[var(--color-text-muted)]">
+                          today
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      aria-label={
+                        mutedFriendIds.has(friend.id)
+                          ? `Enable nudges from ${friend.handle}`
+                          : `Mute all nudges from ${friend.handle}`
+                      }
+                      aria-pressed={mutedFriendIds.has(friend.id)}
+                      className={cn(
+                        "mac-focus mr-2 inline-flex h-11 w-11 items-center justify-center rounded-md transition disabled:opacity-55",
+                        mutedFriendIds.has(friend.id)
+                          ? "bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]"
+                          : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
+                      )}
+                      disabled={
+                        !remoteClient || nudgeMuteBusyIds.has(friend.id)
+                      }
+                      onClick={() => void toggleFriendNudgeMute(friend)}
+                      type="button"
+                    >
+                      {mutedFriendIds.has(friend.id) ? (
+                        <BellOff aria-hidden size={17} />
+                      ) : (
+                        <Bell aria-hidden size={17} />
+                      )}
+                    </button>
+                  </div>
+                )}
+                resetKey="friends"
+              />
+            ) : (
+              <EmptyStateCta
+                action={
                   <button
-                    className="mac-focus grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-3 text-left active:scale-[0.99] lg:min-h-20 lg:px-4"
-                    onClick={() => {
-                      setSelectedFriendId(friend.id);
-                      setInvitedGroupIds(new Set());
-                      setPendingInviteGroupIds(new Set());
-                      setIsInviteDialogOpen(false);
-                      setIsRemoveDialogOpen(false);
-                    }}
+                    className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"
+                    onClick={() => setIsAdding(true)}
                     type="button"
                   >
-                    <ProfileBadge friend={friend} />
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold">{friend.name}</p>
-                      <p className="truncate text-sm text-[var(--color-text-muted)]">
-                        {friend.handle}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-mono text-sm font-semibold tabular-nums">
-                        {formatDuration(
-                          getLiveRankingSeconds(friend, "day", now),
-                        )}
-                      </p>
-                      <p className="text-xs font-medium text-[var(--color-text-muted)]">
-                        today
-                      </p>
-                    </div>
+                    <Plus aria-hidden size={17} />
+                    Add friend
                   </button>
-                  <button
-                    aria-label={
-                      mutedFriendIds.has(friend.id)
-                        ? `Enable nudges from ${friend.handle}`
-                        : `Mute all nudges from ${friend.handle}`
-                    }
-                    aria-pressed={mutedFriendIds.has(friend.id)}
-                    className={cn(
-                      "mac-focus mr-2 inline-flex h-11 w-11 items-center justify-center rounded-md transition disabled:opacity-55",
-                      mutedFriendIds.has(friend.id)
-                        ? "bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]"
-                        : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
-                    )}
-                    disabled={!remoteClient || nudgeMuteBusyIds.has(friend.id)}
-                    onClick={() => void toggleFriendNudgeMute(friend)}
-                    type="button"
-                  >
-                    {mutedFriendIds.has(friend.id) ? (
-                      <BellOff aria-hidden size={17} />
-                    ) : (
-                      <Bell aria-hidden size={17} />
-                    )}
-                  </button>
-                </div>
-              )}
-              resetKey="friends"
-            />
-          ) : (
-            <EmptyStateCta
-              action={
-                <button
-                  className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"
-                  onClick={() => setIsAdding(true)}
-                  type="button"
-                >
-                  <Plus aria-hidden size={17} />
-                  Add friend
-                </button>
-              }
-              description="Find someone by username and send a request."
-              icon={<Users aria-hidden size={18} />}
-              title="Build your study circle"
-            />
-          )}
-        </section>
-      ) : activeTab === "messages" ? (
-        <DirectMessages
-          currentUserId={currentUserId}
-          friends={friendList}
-          initialFriendId={messageFriendId}
-          key={`messages-${messageFriendId ?? "list"}`}
-          onConversationClosed={() => setMessageFriendId(null)}
-          onConversationOpenChange={setIsDirectConversationOpen}
-          onUnreadCountChange={setDirectMessageUnreadCount}
-          remoteClient={remoteClient}
-        />
-      ) : (
-        <section className="space-y-6" role="tabpanel">
-          {incomingSuperNudges.length ? (
-            <RequestSection
-              title={`Super Nudge (${incomingSuperNudges.length})`}
-            >
-              {incomingSuperNudges.map((request) => {
-                const friend = friendList.find(
-                  (item) => item.id === request.friendId,
-                );
-
-                return friend ? (
-                  <SuperNudgeRequestRow
-                    busy={superNudgeBusyIds.has(friend.id)}
-                    friend={friend}
-                    key={request.id}
-                    onAccept={() => void changeSuperNudge(request, "accept")}
-                    onSecondary={() =>
-                      void changeSuperNudge(request, "decline")
-                    }
-                    secondaryLabel="Decline"
-                  />
-                ) : null;
-              })}
-            </RequestSection>
-          ) : null}
-
-          {incomingRequests.length ? (
-            <RequestSection title={`Incoming (${incomingRequests.length})`}>
-              <PaginatedList
-                className="grid gap-2"
-                items={incomingRequests}
-                pageSize={10}
-                renderItem={(request) => (
-                  <FriendRequestRow
-                    busyKey={busyKey}
-                    key={request.id}
-                    onAction={(action) =>
-                      void updateFriendRequest(request, action)
-                    }
-                    request={request}
-                  />
-                )}
-                resetKey="incoming"
+                }
+                description="Find someone by username and send a request."
+                icon={<Users aria-hidden size={18} />}
+                title="Build your study circle"
               />
-            </RequestSection>
-          ) : null}
+            )}
+          </section>
+        ) : activeTab === "messages" ? (
+          <DirectMessages
+            currentUserId={currentUserId}
+            friends={friendList}
+            initialFriendId={messageFriendId}
+            key={`messages-${messageFriendId ?? "list"}`}
+            onConversationClosed={() => setMessageFriendId(null)}
+            onConversationOpenChange={setIsDirectConversationOpen}
+            onUnreadCountChange={setDirectMessageUnreadCount}
+            remoteClient={remoteClient}
+          />
+        ) : (
+          <section className="space-y-6" role="tabpanel">
+            {incomingSuperNudges.length ? (
+              <RequestSection
+                title={`Super Nudge (${incomingSuperNudges.length})`}
+              >
+                {incomingSuperNudges.map((request) => {
+                  const friend = friendList.find(
+                    (item) => item.id === request.friendId,
+                  );
 
-          {outgoingRequests.length ? (
-            <RequestSection title={`Sent (${outgoingRequests.length})`}>
-              <PaginatedList
-                className="grid gap-2"
-                items={outgoingRequests}
-                pageSize={10}
-                renderItem={(request) => (
-                  <FriendRequestRow
-                    busyKey={busyKey}
-                    key={request.id}
-                    onAction={(action) =>
-                      void updateFriendRequest(request, action)
-                    }
-                    request={request}
-                  />
-                )}
-                resetKey="outgoing"
-              />
-            </RequestSection>
-          ) : null}
+                  return friend ? (
+                    <SuperNudgeRequestRow
+                      busy={superNudgeBusyIds.has(friend.id)}
+                      friend={friend}
+                      key={request.id}
+                      onAccept={() => void changeSuperNudge(request, "accept")}
+                      onSecondary={() =>
+                        void changeSuperNudge(request, "decline")
+                      }
+                      secondaryLabel="Decline"
+                    />
+                  ) : null;
+                })}
+              </RequestSection>
+            ) : null}
 
-          {outgoingSuperNudges.length ? (
-            <RequestSection
-              title={`Super Nudge sent (${outgoingSuperNudges.length})`}
-            >
-              {outgoingSuperNudges.map((request) => {
-                const friend = friendList.find(
-                  (item) => item.id === request.friendId,
-                );
+            {incomingRequests.length ? (
+              <RequestSection title={`Incoming (${incomingRequests.length})`}>
+                <PaginatedList
+                  className="grid gap-2"
+                  items={incomingRequests}
+                  pageSize={10}
+                  renderItem={(request) => (
+                    <FriendRequestRow
+                      busyKey={busyKey}
+                      key={request.id}
+                      onAction={(action) =>
+                        void updateFriendRequest(request, action)
+                      }
+                      request={request}
+                    />
+                  )}
+                  resetKey="incoming"
+                />
+              </RequestSection>
+            ) : null}
 
-                return friend ? (
-                  <SuperNudgeRequestRow
-                    busy={superNudgeBusyIds.has(friend.id)}
-                    friend={friend}
-                    key={request.id}
-                    onSecondary={() => void changeSuperNudge(request, "cancel")}
-                    secondaryLabel="Cancel"
-                  />
-                ) : null;
-              })}
-            </RequestSection>
-          ) : null}
+            {outgoingRequests.length ? (
+              <RequestSection title={`Sent (${outgoingRequests.length})`}>
+                <PaginatedList
+                  className="grid gap-2"
+                  items={outgoingRequests}
+                  pageSize={10}
+                  renderItem={(request) => (
+                    <FriendRequestRow
+                      busyKey={busyKey}
+                      key={request.id}
+                      onAction={(action) =>
+                        void updateFriendRequest(request, action)
+                      }
+                      request={request}
+                    />
+                  )}
+                  resetKey="outgoing"
+                />
+              </RequestSection>
+            ) : null}
 
-          {!friendRequests.length &&
-          !incomingSuperNudges.length &&
-          !outgoingSuperNudges.length ? (
-            <div className="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-8 text-center">
-              <p className="font-semibold">No friend requests</p>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Incoming and sent requests will appear here.
-              </p>
-            </div>
-          ) : null}
-        </section>
-      )}
+            {outgoingSuperNudges.length ? (
+              <RequestSection
+                title={`Super Nudge sent (${outgoingSuperNudges.length})`}
+              >
+                {outgoingSuperNudges.map((request) => {
+                  const friend = friendList.find(
+                    (item) => item.id === request.friendId,
+                  );
 
-      {isAdding ? (
-        <AddFriendDialog
-          color={friendColor}
-          handle={friendHandle}
-          name={friendName}
-          onAdd={addFriend}
-          onAddRemote={(friendId) =>
-            void addRemoteFriendFromCandidate(friendId)
-          }
-          onClose={() => {
-            setIsAdding(false);
-            setFriendName("");
-            setFriendHandle("");
-            setFriendColor(PROFILE_COLORS[1]);
-          }}
-          onColorChange={setFriendColor}
-          onHandleChange={setFriendHandle}
-          onNameChange={setFriendName}
-          onShowRequests={() => {
-            setIsAdding(false);
-            setActiveTab("requests");
-          }}
-          remoteCandidates={remoteClient ? availableFriends : null}
+                  return friend ? (
+                    <SuperNudgeRequestRow
+                      busy={superNudgeBusyIds.has(friend.id)}
+                      friend={friend}
+                      key={request.id}
+                      onSecondary={() =>
+                        void changeSuperNudge(request, "cancel")
+                      }
+                      secondaryLabel="Cancel"
+                    />
+                  ) : null;
+                })}
+              </RequestSection>
+            ) : null}
+
+            {!friendRequests.length &&
+            !incomingSuperNudges.length &&
+            !outgoingSuperNudges.length ? (
+              <div className="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-8 text-center">
+                <p className="font-semibold">No friend requests</p>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  Incoming and sent requests will appear here.
+                </p>
+              </div>
+            ) : null}
+          </section>
+        )}
+
+        {isAdding ? (
+          <AddFriendDialog
+            color={friendColor}
+            handle={friendHandle}
+            name={friendName}
+            onAdd={addFriend}
+            onAddRemote={(friendId) =>
+              void addRemoteFriendFromCandidate(friendId)
+            }
+            onClose={() => {
+              setIsAdding(false);
+              setFriendName("");
+              setFriendHandle("");
+              setFriendColor(PROFILE_COLORS[1]);
+            }}
+            onColorChange={setFriendColor}
+            onHandleChange={setFriendHandle}
+            onNameChange={setFriendName}
+            onShowRequests={() => {
+              setIsAdding(false);
+              setActiveTab("requests");
+            }}
+            remoteCandidates={remoteClient ? availableFriends : null}
+          />
+        ) : null}
+
+        <TransientToast
+          message={toastMessage}
+          onDismiss={() => setToastMessage(null)}
         />
-      ) : null}
-
-      <TransientToast
-        message={toastMessage}
-        onDismiss={() => setToastMessage(null)}
-      />
+      </div>
     </div>
   );
 }
