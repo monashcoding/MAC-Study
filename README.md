@@ -1,3 +1,4 @@
+TEST
 # MAC Study
 
 MAC Study is a mobile-first PWA for Monash Association of Coding students to
