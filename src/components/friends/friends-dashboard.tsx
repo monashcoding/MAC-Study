@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -134,6 +135,7 @@ export function FriendsDashboard({
   const [now, setNow] = useState(() => new Date());
   const studyDateKey = getLocalDateKey(now);
   const previousStudyDateKeyRef = useRef(studyDateKey);
+  const listScrollRef = useRef<HTMLDivElement>(null);
   const pendingFriendRequestIdsRef = useRef(new Set<string>());
   const pendingCancelledRequestsRef = useRef(new Map<string, string>());
   const nudgeQueue = useNudgeQueue(Boolean(remoteClient));
@@ -141,6 +143,10 @@ export function FriendsDashboard({
   useEffect(() => {
     onUnreadChange?.(directMessageUnreadCount > 0);
   }, [directMessageUnreadCount, onUnreadChange]);
+
+  useLayoutEffect(() => {
+    listScrollRef.current?.scrollTo({ top: 0 });
+  }, [activeTab]);
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
     const snapshot = await fetchRemoteSocialSnapshot(supabase);
@@ -1129,15 +1135,15 @@ export function FriendsDashboard({
   }
 
   return (
-    <div className="mac-friends-dashboard flex min-h-0 flex-1 flex-col">
+    <div className="mac-friends-dashboard flex min-h-0 flex-1 flex-col overflow-hidden lg:block lg:overflow-visible">
       {!directConversationVisible ? (
         <div className="shrink-0 space-y-4 lg:space-y-6">
           <div
             aria-label="Friends view"
-            className="flex items-center gap-2"
+            className="flex flex-wrap items-center gap-2 min-[24rem]:flex-nowrap"
             role="tablist"
           >
-            <div className="grid min-w-0 flex-1 grid-cols-2 rounded-lg bg-[rgb(255_255_255/0.04)] p-1">
+            <div className="grid w-full grid-cols-2 rounded-lg bg-[rgb(255_255_255/0.04)] p-1 min-[24rem]:min-w-0 min-[24rem]:flex-1">
               <button
                 aria-selected={activeTab === "friends"}
                 className={cn(
@@ -1175,7 +1181,7 @@ export function FriendsDashboard({
                 </span>
               </button>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               <button
                 aria-selected={activeTab === "requests"}
                 className={cn(
@@ -1220,7 +1226,10 @@ export function FriendsDashboard({
         </div>
       ) : null}
 
-      <div className="mac-friends-list-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain lg:overflow-visible">
+      <div
+        className="mac-friends-list-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pt-4 [-webkit-overflow-scrolling:touch] lg:overflow-visible lg:pb-0 lg:pt-6"
+        ref={listScrollRef}
+      >
         {feedback && !directConversationVisible ? (
           <p
             className="mb-4 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
@@ -1434,38 +1443,38 @@ export function FriendsDashboard({
             ) : null}
           </section>
         )}
-
-        {isAdding ? (
-          <AddFriendDialog
-            color={friendColor}
-            handle={friendHandle}
-            name={friendName}
-            onAdd={addFriend}
-            onAddRemote={(friendId) =>
-              void addRemoteFriendFromCandidate(friendId)
-            }
-            onClose={() => {
-              setIsAdding(false);
-              setFriendName("");
-              setFriendHandle("");
-              setFriendColor(PROFILE_COLORS[1]);
-            }}
-            onColorChange={setFriendColor}
-            onHandleChange={setFriendHandle}
-            onNameChange={setFriendName}
-            onShowRequests={() => {
-              setIsAdding(false);
-              setActiveTab("requests");
-            }}
-            remoteCandidates={remoteClient ? availableFriends : null}
-          />
-        ) : null}
-
-        <TransientToast
-          message={toastMessage}
-          onDismiss={() => setToastMessage(null)}
-        />
       </div>
+
+      {isAdding ? (
+        <AddFriendDialog
+          color={friendColor}
+          handle={friendHandle}
+          name={friendName}
+          onAdd={addFriend}
+          onAddRemote={(friendId) =>
+            void addRemoteFriendFromCandidate(friendId)
+          }
+          onClose={() => {
+            setIsAdding(false);
+            setFriendName("");
+            setFriendHandle("");
+            setFriendColor(PROFILE_COLORS[1]);
+          }}
+          onColorChange={setFriendColor}
+          onHandleChange={setFriendHandle}
+          onNameChange={setFriendName}
+          onShowRequests={() => {
+            setIsAdding(false);
+            setActiveTab("requests");
+          }}
+          remoteCandidates={remoteClient ? availableFriends : null}
+        />
+      ) : null}
+
+      <TransientToast
+        message={toastMessage}
+        onDismiss={() => setToastMessage(null)}
+      />
     </div>
   );
 }

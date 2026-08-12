@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { X } from "lucide-react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 const FOCUSABLE_SELECTOR = [
@@ -141,11 +142,11 @@ export function AppDialog({
     };
   }, [closeImmediately]);
 
-  return (
+  const dialog = (
     <div
       aria-labelledby={titleId}
       aria-modal="true"
-      className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] items-center justify-center bg-black/58 px-3 pb-[calc(var(--mobile-nav-height)+0.75rem)] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm lg:pb-[max(0.75rem,var(--safe-area-bottom))]"
+      className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] min-h-0 items-center justify-center overflow-hidden bg-black/58 px-3 pb-[calc(var(--mobile-nav-height)+0.75rem)] pt-[calc(var(--safe-area-top)+0.75rem)] backdrop-blur-sm lg:pb-[max(0.75rem,var(--safe-area-bottom))]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) requestBackdropClose();
       }}
@@ -153,7 +154,7 @@ export function AppDialog({
     >
       <div
         className={cn(
-          "relative flex max-h-[min(88dvh,720px)] w-full flex-col overflow-hidden shadow-2xl",
+          "relative flex max-h-full w-full flex-col overflow-hidden shadow-2xl lg:max-h-[min(88dvh,720px)]",
           variant === "confirmation"
             ? "rounded-lg bg-[var(--color-background)]"
             : "rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)]",
@@ -249,6 +250,10 @@ export function AppDialog({
       </div>
     </div>
   );
+
+  return typeof document === "undefined"
+    ? null
+    : createPortal(dialog, document.body);
 }
 
 function getFocusableElements(root: HTMLElement | null) {

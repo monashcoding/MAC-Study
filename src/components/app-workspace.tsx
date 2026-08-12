@@ -57,7 +57,8 @@ export function AppWorkspace({
     <div
       className={cn(
         "relative",
-        activeView === "friends" && "flex min-h-0 flex-1 flex-col",
+        activeView === "friends" &&
+          "flex min-h-0 flex-1 flex-col overflow-hidden lg:block lg:overflow-visible",
       )}
     >
       <WorkspacePanel
@@ -123,7 +124,13 @@ function WorkspacePanel({
   return (
     <section
       aria-hidden={!active}
-      className={cn(active ? "mac-view-enter block" : "hidden")}
+      className={cn(
+        active
+          ? id === "friends"
+            ? "mac-view-enter flex min-h-0 flex-1 flex-col overflow-hidden lg:block lg:overflow-visible"
+            : "mac-view-enter block"
+          : "hidden",
+      )}
       data-workspace-view={id}
     >
       {children}
