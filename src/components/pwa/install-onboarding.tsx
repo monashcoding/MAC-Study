@@ -19,6 +19,7 @@ export function InstallOnboarding({
   const [isOpen, setIsOpen] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
   const storageKey = `mac-install-onboarding:${userId}`;
 
@@ -63,7 +64,11 @@ export function InstallOnboarding({
   }, [onComplete, storageKey]);
 
   function dismiss() {
-    window.localStorage.setItem(storageKey, "seen");
+    if (dontShowAgain) {
+      window.localStorage.setItem(storageKey, "seen");
+    } else {
+      window.localStorage.removeItem(storageKey);
+    }
     setIsOpen(false);
     onComplete();
   }
@@ -150,6 +155,16 @@ export function InstallOnboarding({
         On Android, use Chrome’s three-dot menu, then Add to Home screen and
         Install.
       </p>
+      <label className="mac-focus flex min-h-11 items-center gap-3 rounded-md px-1 text-sm text-[var(--color-text-muted)]">
+        <input
+          checked={dontShowAgain}
+          className="h-5 w-5 accent-[var(--color-mac-yellow)]"
+          disabled={isInstalling}
+          onChange={(event) => setDontShowAgain(event.target.checked)}
+          type="checkbox"
+        />
+        <span>Don&apos;t show again</span>
+      </label>
     </AppDialog>
   );
 }
