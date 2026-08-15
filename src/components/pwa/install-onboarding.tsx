@@ -21,7 +21,9 @@ export function InstallOnboarding({
   const [canInstall, setCanInstall] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
-  const storageKey = `mac-install-onboarding:${userId}`;
+  // Version the preference so people who dismissed the earlier tutorial see
+  // this revised tutorial until they explicitly opt out.
+  const storageKey = `mac-install-onboarding-v2:${userId}`;
 
   useEffect(() => {
     const standalone =
@@ -47,7 +49,6 @@ export function InstallOnboarding({
     }
 
     function handleInstalled() {
-      window.localStorage.setItem(storageKey, "seen");
       setIsOpen(false);
       onComplete();
     }
@@ -82,7 +83,6 @@ export function InstallOnboarding({
       await deferredPrompt.prompt();
       const choice = await deferredPrompt.userChoice;
       if (choice.outcome === "accepted") {
-        window.localStorage.setItem(storageKey, "seen");
         setIsOpen(false);
         onComplete();
       }
@@ -143,12 +143,6 @@ export function InstallOnboarding({
           <span className="inline-flex items-center gap-1">
             Tap Share <Share aria-hidden size={14} /> then Add to Home Screen.
           </span>
-        </li>
-        <li className="flex gap-3">
-          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[rgb(255_227_48/0.12)] text-xs font-bold text-[var(--color-mac-yellow)]">
-            3
-          </span>
-          <span>Turn on Open as Web App, then tap Add. Bang.</span>
         </li>
       </ol>
       <p className="text-xs leading-5 text-[var(--color-text-muted)]">
