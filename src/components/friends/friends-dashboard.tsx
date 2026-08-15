@@ -1143,11 +1143,11 @@ export function FriendsDashboard({
             className="flex flex-wrap items-center gap-2 min-[24rem]:flex-nowrap"
             role="tablist"
           >
-            <div className="grid w-full grid-cols-2 rounded-lg bg-[rgb(255_255_255/0.04)] p-1 min-[24rem]:min-w-0 min-[24rem]:flex-1">
+            <div className="grid w-full grid-cols-2 rounded-full bg-[rgb(255_255_255/0.04)] p-1 min-[24rem]:min-w-0 min-[24rem]:flex-1">
               <button
                 aria-selected={activeTab === "friends"}
                 className={cn(
-                  "mac-focus h-11 rounded-md border text-sm font-semibold transition",
+                  "mac-focus h-11 rounded-full border text-sm font-semibold transition",
                   activeTab === "friends"
                     ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
                     : "border-transparent text-[var(--color-text-muted)]",
@@ -1161,7 +1161,7 @@ export function FriendsDashboard({
               <button
                 aria-selected={activeTab === "messages"}
                 className={cn(
-                  "mac-focus h-11 rounded-md border text-sm font-semibold transition",
+                  "mac-focus h-11 rounded-full border text-sm font-semibold transition",
                   activeTab === "messages"
                     ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
                     : "border-transparent text-[var(--color-text-muted)]",
@@ -1185,10 +1185,10 @@ export function FriendsDashboard({
               <button
                 aria-selected={activeTab === "requests"}
                 className={cn(
-                  "mac-focus inline-grid h-11 shrink-0 grid-flow-col place-items-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold leading-none transition",
+                  "mac-focus inline-grid h-11 shrink-0 grid-flow-col place-items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold leading-none transition hover:bg-[rgb(255_255_255/0.04)]",
                   activeTab === "requests"
-                    ? "border-[rgb(255_227_48/0.45)] bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]"
-                    : "border-[var(--color-border)] text-[var(--color-text-muted)]",
+                    ? "text-[var(--color-mac-yellow)]"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
                 )}
                 onClick={() => setActiveTab("requests")}
                 role="tab"

@@ -132,7 +132,9 @@ export function GroupsDashboard({
   const nudgeQueue = useNudgeQueue(Boolean(remoteClient));
 
   useEffect(() => {
-    onUnreadChange?.(Object.values(groupUnreadCounts).some((count) => count > 0));
+    onUnreadChange?.(
+      Object.values(groupUnreadCounts).some((count) => count > 0),
+    );
   }, [groupUnreadCounts, onUnreadChange]);
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
@@ -1118,10 +1120,10 @@ export function GroupsDashboard({
           <button
             aria-pressed={activeTab === "requests"}
             className={cn(
-              "mac-focus inline-flex h-10 items-center justify-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition",
+              "mac-focus inline-flex h-10 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition hover:bg-[rgb(255_255_255/0.04)]",
               activeTab === "requests"
-                ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
-                : "border-[var(--color-border)] text-[var(--color-text-muted)]",
+                ? "text-[var(--color-mac-yellow)]"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
             )}
             onClick={() => setActiveTab("requests")}
             type="button"
@@ -1733,7 +1735,7 @@ function GroupMemberDialog({
             member.studying
               ? "Studying now"
               : nudgeAtLimit
-                ? nudgeFeedback ?? "Ready soon"
+                ? (nudgeFeedback ?? "Ready soon")
                 : undefined
           }
           onClick={onNudge}

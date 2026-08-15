@@ -23,7 +23,6 @@ import {
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
 import { EmptyStateCta } from "@/components/empty-state-cta";
-import { DateField } from "@/components/date-time-field";
 import { PaginatedList } from "@/components/paginated-list";
 import {
   cacheRemoteTimerState,
@@ -755,18 +754,12 @@ export function TimerDashboard() {
             </button>
             {subjects.length ? (
               <button
-                className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)] sm:w-auto sm:px-3"
-                onClick={() => {
-                  setDraftSubjects(subjects);
-                  setSubjectSaveError(null);
-                  setInitialEditingSubjectId(null);
-                  setIsEditingSubjects(true);
-                }}
+                aria-label="Add subject"
+                className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)]"
+                onClick={openNewSubjectEditor}
                 type="button"
               >
-                <Pencil aria-hidden size={16} />
-                <span className="hidden sm:inline">Edit</span>
-                <span className="sr-only sm:hidden">Edit subjects</span>
+                <Plus aria-hidden size={19} />
               </button>
             ) : null}
           </div>
@@ -1130,35 +1123,46 @@ function SessionEditor({
     session.subjectId ?? GENERAL_SESSION_SUBJECT,
   );
   const initialDurationSeconds = getSessionDurationSeconds(session);
-  const [sessionDate, setSessionDate] = useState(() =>
-    toLocalDateInput(session.startedAt),
-  );
   const [durationSeconds, setDurationSeconds] = useState(
     initialDurationSeconds,
   );
-  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [durationInput, setDurationInput] = useState(() =>
+    formatEditableDurationInput(initialDurationSeconds),
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const startedDate = applySessionDate(session.startedAt, sessionDate);
+  const startedDate = new Date(session.startedAt);
   const endedDate = new Date(startedDate.getTime() + durationSeconds * 1000);
   const durationMaxSeconds = Math.max(
     8 * 60 * 60,
     Math.ceil(initialDurationSeconds / 3600) * 3600,
   );
+  const typedDurationSeconds = parseEditableDurationInput(durationInput);
+  const isTypedDurationValid =
+    typedDurationSeconds !== null &&
+    typedDurationSeconds > 0 &&
+    typedDurationSeconds <= durationMaxSeconds;
   const durationProgress =
     ((durationSeconds - 1) / Math.max(1, durationMaxSeconds - 1)) * 100;
   const valid =
     !Number.isNaN(startedDate.getTime()) &&
     !Number.isNaN(endedDate.getTime()) &&
-    durationSeconds > 0;
+    isTypedDurationValid;
   const isDirty =
     subjectId !== (session.subjectId ?? GENERAL_SESSION_SUBJECT) ||
-    sessionDate !== toLocalDateInput(session.startedAt) ||
     durationSeconds !== initialDurationSeconds;
 
-  function adjustDuration(changeSeconds: number) {
-    setDurationSeconds((current) =>
-      Math.min(durationMaxSeconds, Math.max(1, current + changeSeconds)),
+  function setDuration(nextDurationSeconds: number) {
+    const clampedDurationSeconds = Math.min(
+      durationMaxSeconds,
+      Math.max(1, nextDurationSeconds),
     );
+
+    setDurationSeconds(clampedDurationSeconds);
+    setDurationInput(formatEditableDurationInput(clampedDurationSeconds));
+  }
+
+  function adjustDuration(changeSeconds: number) {
+    setDuration(durationSeconds + changeSeconds);
   }
 
   return (
@@ -1173,7 +1177,7 @@ function SessionEditor({
             onClick={() =>
               onSave({
                 endedAt: endedDate.toISOString(),
-                startedAt: startedDate.toISOString(),
+                startedAt: session.startedAt,
                 subjectId:
                   subjectId === GENERAL_SESSION_SUBJECT ? null : subjectId,
               })
@@ -1225,43 +1229,62 @@ function SessionEditor({
           />
         </div>
 
-        <DateField
-          isOpen={isDatePickerOpen}
-          label="Date"
-          onChange={(value) => setSessionDate(value.slice(0, 10))}
-          onOpenChange={setIsDatePickerOpen}
-          value={sessionDate}
-        />
-
-        <div className="space-y-4 pt-1">
+        <div className="space-y-3 pt-1">
           <div className="flex items-baseline justify-between gap-4">
             <p className="text-sm font-medium text-[var(--color-text-muted)]">
               Studied
             </p>
-            <p className="hidden font-mono text-2xl font-semibold tabular-nums text-[var(--color-mac-yellow)] lg:block">
-              {formatEditableDuration(durationSeconds)}
+            <p className="text-xs font-medium text-[var(--color-text-muted)]">
+              HH:MM:SS
             </p>
           </div>
 
-          <div className="flex items-center justify-center gap-4 lg:hidden">
+          <div className="flex items-center justify-center gap-3">
             <button
               aria-label="Reduce duration by 5 minutes"
-              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-lg text-[var(--color-text-muted)]"
+              className="mac-focus grid h-10 min-w-12 place-items-center rounded-full border border-[var(--color-border)] px-2 text-sm font-semibold leading-none text-[var(--color-text-muted)]"
               onClick={() => adjustDuration(-5 * 60)}
               type="button"
             >
-              −
+              −5m
             </button>
-            <p className="min-w-32 text-center font-mono text-3xl font-semibold tabular-nums text-[var(--color-mac-yellow)]">
-              {formatEditableDuration(durationSeconds)}
-            </p>
+            <input
+              aria-invalid={!isTypedDurationValid}
+              aria-label="Study duration in hours, minutes and seconds"
+              className="mac-focus h-12 w-36 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-center font-mono text-2xl font-semibold tabular-nums text-[var(--color-mac-yellow)] transition hover:border-[rgb(255_255_255/0.15)] focus:border-[var(--color-mac-yellow)]"
+              inputMode="text"
+              onBlur={() => {
+                if (isTypedDurationValid) {
+                  setDurationInput(
+                    formatEditableDurationInput(durationSeconds),
+                  );
+                }
+              }}
+              onChange={(event) => {
+                const value = event.target.value.replace(/[^\d:]/g, "");
+                const parsed = parseEditableDurationInput(value);
+
+                setDurationInput(value);
+                if (
+                  parsed !== null &&
+                  parsed > 0 &&
+                  parsed <= durationMaxSeconds
+                ) {
+                  setDurationSeconds(parsed);
+                }
+              }}
+              onFocus={(event) => event.currentTarget.select()}
+              placeholder="00:00:00"
+              type="text"
+              value={durationInput}
+            />
             <button
               aria-label="Increase duration by 5 minutes"
-              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-lg text-[var(--color-text-muted)]"
+              className="mac-focus grid h-10 min-w-12 place-items-center rounded-full border border-[var(--color-border)] px-2 text-sm font-semibold leading-none text-[var(--color-text-muted)]"
               onClick={() => adjustDuration(5 * 60)}
               type="button"
             >
-              +
+              +5m
             </button>
           </div>
 
@@ -1271,9 +1294,7 @@ function SessionEditor({
               className="mac-duration-slider w-full"
               max={durationMaxSeconds}
               min={1}
-              onChange={(event) =>
-                setDurationSeconds(Number(event.target.value))
-              }
+              onChange={(event) => setDuration(Number(event.target.value))}
               step={1}
               style={
                 {
@@ -1591,28 +1612,6 @@ function SubjectEditor({
   );
 }
 
-function toLocalDateInput(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  const localDate = new Date(
-    date.getTime() - date.getTimezoneOffset() * 60 * 1000,
-  );
-  return localDate.toISOString().slice(0, 10);
-}
-
-function applySessionDate(originalStartedAt: string, localDate: string) {
-  const original = new Date(originalStartedAt);
-  const [year, month, day] = localDate.split("-").map(Number);
-
-  if (Number.isNaN(original.getTime()) || !year || !month || !day) {
-    return new Date(Number.NaN);
-  }
-
-  original.setFullYear(year, month - 1, day);
-  return original;
-}
-
 function getSessionDurationSeconds(session: StoredSession) {
   const duration = Math.floor(
     (new Date(session.endedAt).getTime() -
@@ -1623,18 +1622,27 @@ function getSessionDurationSeconds(session: StoredSession) {
   return Number.isFinite(duration) ? Math.max(1, duration) : 1;
 }
 
-function formatEditableDuration(totalSeconds: number) {
+function formatEditableDurationInput(totalSeconds: number) {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds));
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   const seconds = safeSeconds % 60;
 
-  if (hours) return `${hours}h ${minutes}m`;
-  if (minutes) {
-    return seconds ? `${minutes}m ${seconds}s` : `${minutes} min`;
+  return [hours, minutes, seconds]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+}
+
+function parseEditableDurationInput(value: string) {
+  const parts = value.split(":");
+  if (parts.length !== 3 || parts.some((part) => !/^\d+$/.test(part))) {
+    return null;
   }
 
-  return `${seconds} sec`;
+  const [hours, minutes, seconds] = parts.map(Number);
+  if (minutes > 59 || seconds > 59) return null;
+
+  return hours * 60 * 60 + minutes * 60 + seconds;
 }
 
 function formatSessionDate(value: string) {
