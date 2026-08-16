@@ -707,37 +707,39 @@ export function TimerDashboard() {
         <p className="mt-4 font-mono text-6xl font-semibold leading-none tabular-nums sm:text-7xl lg:text-[5.4rem] xl:text-[clamp(4rem,5vw,6rem)]">
           {formatDuration(totalToday)}
         </p>
-        <button
-          className={cn(
-            "mac-focus mt-6 inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition hover:brightness-105 active:scale-[0.99] lg:h-12 lg:min-w-44",
-            activeSession
-              ? "bg-[var(--color-danger)] text-white"
-              : "bg-[var(--color-mac-yellow)] text-[#141414]",
-          )}
-          onClick={() =>
-            void (activeSession ? stopStudy() : setIsChoosingStudy(true))
-          }
-          type="button"
-        >
-          {activeSession ? (
-            <Pause aria-hidden fill="currentColor" size={18} />
-          ) : (
-            <Play aria-hidden size={18} />
-          )}
-          {activeSession ? "Pause session" : "Start session"}
-        </button>
-        {activeSession ? (
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <button
-            className="mac-focus mt-2 inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]"
-            onClick={() => void openReminderDialog()}
+            className={cn(
+              "mac-focus inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition hover:brightness-105 active:scale-[0.99] lg:h-12 lg:min-w-44",
+              activeSession
+                ? "bg-[var(--color-danger)] text-white"
+                : "bg-[var(--color-mac-yellow)] text-[#141414]",
+            )}
+            onClick={() =>
+              void (activeSession ? stopStudy() : setIsChoosingStudy(true))
+            }
             type="button"
           >
-            <BellRing aria-hidden size={15} />
-            {activeSession.reminderIntervalMinutes
-              ? `Every ${formatReminderInterval(activeSession.reminderIntervalMinutes)}`
-              : "Remind me"}
+            {activeSession ? (
+              <Pause aria-hidden fill="currentColor" size={18} />
+            ) : (
+              <Play aria-hidden size={18} />
+            )}
+            {activeSession ? "Pause session" : "Start session"}
           </button>
-        ) : null}
+          {activeSession ? (
+            <button
+              className="mac-focus inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]"
+              onClick={() => void openReminderDialog()}
+              type="button"
+            >
+              <BellRing aria-hidden size={15} />
+              {activeSession.reminderIntervalMinutes
+                ? `Every ${formatReminderInterval(activeSession.reminderIntervalMinutes)}`
+                : "Remind me"}
+            </button>
+          ) : null}
+        </div>
       </section>
 
       <section className="space-y-3 lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(18_18_18/0.36)] lg:p-5">
@@ -890,9 +892,8 @@ export function TimerDashboard() {
           onClose={() => setIsReminderDialogOpen(false)}
           title="Study reminder"
         >
-          <p className="text-sm leading-6 text-[var(--color-text-muted)]">
-            Get a quick check-in while this session is still running. The first
-            reminder arrives after the interval you choose.
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Choose a check-in interval.
           </p>
           <div className="grid grid-cols-2 gap-2">
             {REMINDER_INTERVALS.map((interval) => {

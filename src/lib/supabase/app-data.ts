@@ -320,6 +320,26 @@ type SessionRow = {
   duration_seconds: number | null;
 };
 
+type SessionRowWithoutReminders = Omit<
+  SessionRow,
+  "reminder_interval_minutes"
+>;
+
+const TIMER_SESSION_COLUMNS =
+  "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds, reminder_interval_minutes";
+const TIMER_SESSION_COLUMNS_WITHOUT_REMINDERS =
+  "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds";
+
+function isMissingStudyReminderColumn(error: {
+  code?: string;
+  message?: string;
+}) {
+  return (
+    error.code === "42703" &&
+    error.message?.includes("study_sessions.reminder_interval_minutes")
+  );
+}
+
 type NudgeRow = {
   id: string;
   group_id: string | null;
@@ -369,9 +389,7 @@ export async function fetchRemoteTimerState(
     fetchRemoteSubjects(supabase, userId),
     supabase
       .from("study_sessions")
-      .select(
-        "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds, reminder_interval_minutes",
-      )
+      .select(TIMER_SESSION_COLUMNS)
       .eq("user_id", userId)
       .is("deleted_at", null)
       .order("started_at", { ascending: false })
@@ -386,10 +404,33 @@ export async function fetchRemoteTimerState(
       .order("joined_at", { ascending: false }),
   ]);
 
-  if (sessionsResult.error) throw sessionsResult.error;
   if (enrolmentsResult.error) throw enrolmentsResult.error;
 
-  const rows = (sessionsResult.data ?? []) as SessionRow[];
+  let rows: SessionRow[];
+
+  if (!sessionsResult.error) {
+    rows = (sessionsResult.data ?? []) as SessionRow[];
+  } else if (isMissingStudyReminderColumn(sessionsResult.error)) {
+    const fallbackResult = await supabase
+      .from("study_sessions")
+      .select(TIMER_SESSION_COLUMNS_WITHOUT_REMINDERS)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .order("started_at", { ascending: false })
+      .limit(250);
+
+    if (fallbackResult.error) throw fallbackResult.error;
+
+    rows = ((fallbackResult.data ?? []) as SessionRowWithoutReminders[]).map(
+      (row) => ({
+        ...row,
+        reminder_interval_minutes: null,
+      }),
+    );
+  } else {
+    throw sessionsResult.error;
+  }
+
   const activeRow =
     rows.find((row) => row.status === "active" && !row.ended_at) ?? null;
   const completedRows = rows.filter(
