@@ -1,0 +1,164 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Download, Share } from "lucide-react";
+import { AppDialog } from "@/components/app-dialog";
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
+export function InstallOnboarding({
+  onComplete,
+  userId,
+}: {
+  onComplete: () => void;
+  userId: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [canInstall, setCanInstall] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
+  const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
+  // Version the preference so people who dismissed the earlier tutorial see
+  // this revised tutorial until they explicitly opt out.
+  const storageKey = `mac-install-onboarding-v2:${userId}`;
+
+  useEffect(() => {
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      ("standalone" in navigator &&
+        (navigator as Navigator & { standalone?: boolean }).standalone ===
+          true);
+    const mobile = window.matchMedia("(max-width: 63.999rem)").matches;
+
+    if (
+      standalone ||
+      !mobile ||
+      window.localStorage.getItem(storageKey) === "seen"
+    ) {
+      onComplete();
+      return;
+    }
+
+    function captureInstallPrompt(event: Event) {
+      event.preventDefault();
+      deferredPromptRef.current = event as BeforeInstallPromptEvent;
+      setCanInstall(true);
+    }
+
+    function handleInstalled() {
+      setIsOpen(false);
+      onComplete();
+    }
+
+    window.addEventListener("beforeinstallprompt", captureInstallPrompt);
+    window.addEventListener("appinstalled", handleInstalled);
+    const openingFrame = window.requestAnimationFrame(() => setIsOpen(true));
+
+    return () => {
+      window.cancelAnimationFrame(openingFrame);
+      window.removeEventListener("beforeinstallprompt", captureInstallPrompt);
+      window.removeEventListener("appinstalled", handleInstalled);
+    };
+  }, [onComplete, storageKey]);
+
+  function dismiss() {
+    if (dontShowAgain) {
+      window.localStorage.setItem(storageKey, "seen");
+    } else {
+      window.localStorage.removeItem(storageKey);
+    }
+    setIsOpen(false);
+    onComplete();
+  }
+
+  async function install() {
+    const deferredPrompt = deferredPromptRef.current;
+    if (!deferredPrompt) return;
+
+    setIsInstalling(true);
+    try {
+      await deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      if (choice.outcome === "accepted") {
+        setIsOpen(false);
+        onComplete();
+      }
+    } finally {
+      deferredPromptRef.current = null;
+      setCanInstall(false);
+      setIsInstalling(false);
+    }
+  }
+
+  if (!isOpen) return null;
+
+  return (
+    <AppDialog
+      bodyClassName="space-y-4"
+      closeLabel="Not now"
+      footer={
+        <div className="grid gap-2">
+          {canInstall ? (
+            <button
+              className="mac-focus inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
+              disabled={isInstalling}
+              onClick={() => void install()}
+              type="button"
+            >
+              <Download aria-hidden size={18} />
+              {isInstalling ? "Installing…" : "Install MAC Study"}
+            </button>
+          ) : null}
+          <button
+            className="mac-focus h-11 rounded-lg text-sm font-semibold text-[var(--color-text-muted)]"
+            disabled={isInstalling}
+            onClick={dismiss}
+            type="button"
+          >
+            Not now
+          </button>
+        </div>
+      }
+      maxWidthClassName="max-w-sm"
+      onClose={dismiss}
+      title="Put MAC Study on your phone"
+    >
+      <p className="text-sm leading-6 text-[var(--color-text-muted)]">
+        Open MAC Study from your Home Screen for the full app experience.
+      </p>
+      <ol className="space-y-3 text-sm">
+        <li className="flex gap-3">
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[rgb(255_227_48/0.12)] text-xs font-bold text-[var(--color-mac-yellow)]">
+            1
+          </span>
+          <span>Open this page in Safari on iPhone.</span>
+        </li>
+        <li className="flex gap-3">
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[rgb(255_227_48/0.12)] text-xs font-bold text-[var(--color-mac-yellow)]">
+            2
+          </span>
+          <span className="inline-flex items-center gap-1">
+            Tap Share <Share aria-hidden size={14} /> then Add to Home Screen.
+          </span>
+        </li>
+      </ol>
+      <p className="text-xs leading-5 text-[var(--color-text-muted)]">
+        On Android, use Chrome’s three-dot menu, then Add to Home screen and
+        Install.
+      </p>
+      <label className="mac-focus flex min-h-11 items-center gap-3 rounded-md px-1 text-sm text-[var(--color-text-muted)]">
+        <input
+          checked={dontShowAgain}
+          className="h-5 w-5 accent-[var(--color-mac-yellow)]"
+          disabled={isInstalling}
+          onChange={(event) => setDontShowAgain(event.target.checked)}
+          type="checkbox"
+        />
+        <span>Don&apos;t show again</span>
+      </label>
+    </AppDialog>
+  );
+}

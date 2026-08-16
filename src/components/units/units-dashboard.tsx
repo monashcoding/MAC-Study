@@ -538,18 +538,32 @@ export function UnitsDashboard() {
 
   return (
     <div className="space-y-6">
-      <section className="flex justify-end">
-        <button
-          className="mac-focus inline-flex h-10 shrink-0 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
-          onClick={() => {
-            setSelectedSpecialUnit(null);
-            setIsAdding(true);
-          }}
-          type="button"
-        >
-          <Plus aria-hidden size={17} />
-          Add unit
-        </button>
+      <section className="space-y-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+          <h2 className="truncate text-base font-semibold sm:text-lg">
+            Current and upcoming
+          </h2>
+          <button
+            className="mac-focus inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+            onClick={() => {
+              setSelectedSpecialUnit(null);
+              setIsAdding(true);
+            }}
+            type="button"
+          >
+            <Plus aria-hidden size={17} />
+            Add unit
+          </button>
+        </div>
+
+        {dataMode !== "loading" ? (
+          <EnrollmentSection
+            empty="Add your first current or upcoming unit."
+            enrollments={current}
+            onOpen={setSelectedOfferingId}
+            title={null}
+          />
+        ) : null}
       </section>
 
       {feedback ? <Feedback message={feedback} /> : null}
@@ -557,23 +571,13 @@ export function UnitsDashboard() {
         <p className="text-sm text-[var(--color-text-muted)]">Loading units…</p>
       ) : null}
 
-      {dataMode !== "loading" ? (
-        <>
-          <EnrollmentSection
-            empty="Add your first current or upcoming unit."
-            enrollments={current}
-            onOpen={setSelectedOfferingId}
-            title="Current and upcoming"
-          />
-          {past.length ? (
-            <EnrollmentSection
-              empty=""
-              enrollments={past}
-              onOpen={setSelectedOfferingId}
-              title="Past units"
-            />
-          ) : null}
-        </>
+      {dataMode !== "loading" && past.length ? (
+        <EnrollmentSection
+          empty=""
+          enrollments={past}
+          onOpen={setSelectedOfferingId}
+          title="Past units"
+        />
       ) : null}
 
       {isAdding ? (
@@ -638,11 +642,11 @@ function EnrollmentSection({
   empty: string;
   enrollments: UnitEnrollment[];
   onOpen: (offeringId: string) => void;
-  title: string;
+  title: string | null;
 }) {
   return (
     <section className="space-y-3">
-      <h3 className="text-lg font-semibold">{title}</h3>
+      {title ? <h3 className="text-lg font-semibold">{title}</h3> : null}
       {enrollments.length ? (
         <PaginatedList
           className="grid gap-3 lg:grid-cols-2"
@@ -676,7 +680,7 @@ function EnrollmentSection({
               </span>
             </button>
           )}
-          resetKey={title}
+          resetKey={title ?? "current-units"}
         />
       ) : (
         <p className="rounded-md border border-dashed border-[var(--color-border)] p-5 text-sm text-[var(--color-text-muted)]">
@@ -1152,10 +1156,7 @@ function AddUnitDialog({
   const initialYearRef = useRef(year);
   const initialPeriodRef = useRef(period);
   const normalizedCode = normalizeUnitCode(codeInput);
-  const aliasSpecialUnit = findSpecialUnitByAlias(
-    specialUnits,
-    normalizedCode,
-  );
+  const aliasSpecialUnit = findSpecialUnitByAlias(specialUnits, normalizedCode);
   const valid = isValidUnitCode(
     codeInput,
     specialUnits.map((unit) => unit.code),
@@ -1181,9 +1182,7 @@ function AddUnitDialog({
     const previousSpecialUnit = specialUnits.find(
       (unit) => unit.code === normalizedCode,
     );
-    const nextSpecialUnit = specialUnits.find(
-      (unit) => unit.code === nextCode,
-    );
+    const nextSpecialUnit = specialUnits.find((unit) => unit.code === nextCode);
     const suggestion = suggestions.find((item) => item.code === nextCode);
 
     setCodeInput(value.toUpperCase());
@@ -1443,9 +1442,7 @@ function RequestUnitDialog({
 
       <label className="block text-sm font-medium">
         Unit code{" "}
-        <span className="text-[var(--color-text-muted)]">
-          (if available)
-        </span>
+        <span className="text-[var(--color-text-muted)]">(if available)</span>
         <input
           autoCapitalize="characters"
           className="mac-focus mt-2 h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 font-mono uppercase"

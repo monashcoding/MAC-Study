@@ -24,11 +24,15 @@ export function AppWorkspace({
   activePathname,
   authState,
   fallback,
+  onDirectMessageUnreadChange,
+  onGroupChatUnreadChange,
   resetKeys,
 }: {
   activePathname: string;
   authState: AppAuthState;
   fallback: React.ReactNode;
+  onDirectMessageUnreadChange: (hasUnread: boolean) => void;
+  onGroupChatUnreadChange: (hasUnread: boolean) => void;
   resetKeys: Record<string, number>;
 }) {
   const activeView = getWorkspaceView(activePathname);
@@ -38,13 +42,25 @@ export function AppWorkspace({
       : "Student";
   const username =
     authState.mode === "authenticated" ? authState.profile.username : null;
+  const userId =
+    authState.mode === "authenticated" ? authState.profile.id : null;
+  const isDiscoverable =
+    authState.mode === "authenticated"
+      ? authState.profile.is_discoverable
+      : true;
 
   if (!activeView) {
     return fallback;
   }
 
   return (
-    <div className="relative">
+    <div
+      className={cn(
+        "relative",
+        activeView === "friends" &&
+          "flex min-h-0 flex-1 flex-col overflow-hidden lg:block lg:overflow-visible",
+      )}
+    >
       <WorkspacePanel
         active={activeView === "home"}
         id="home"
@@ -57,14 +73,14 @@ export function AppWorkspace({
         id="groups"
         key={`groups:${resetKeys["/app/groups"] ?? 0}`}
       >
-        <GroupsDashboard />
+        <GroupsDashboard onUnreadChange={onGroupChatUnreadChange} />
       </WorkspacePanel>
       <WorkspacePanel
         active={activeView === "friends"}
         id="friends"
         key={`friends:${resetKeys["/app/friends"] ?? 0}`}
       >
-        <FriendsDashboard />
+        <FriendsDashboard onUnreadChange={onDirectMessageUnreadChange} />
       </WorkspacePanel>
       <WorkspacePanel
         active={activeView === "units"}
@@ -85,7 +101,12 @@ export function AppWorkspace({
         id="profile"
         key={`profile:${resetKeys["/app/profile"] ?? 0}`}
       >
-        <ProfileDashboard displayName={displayName} username={username} />
+        <ProfileDashboard
+          displayName={displayName}
+          initialDiscoverable={isDiscoverable}
+          userId={userId}
+          username={username}
+        />
       </WorkspacePanel>
     </div>
   );
@@ -103,7 +124,13 @@ function WorkspacePanel({
   return (
     <section
       aria-hidden={!active}
-      className={cn(active ? "mac-view-enter block" : "hidden")}
+      className={cn(
+        active
+          ? id === "friends"
+            ? "mac-view-enter flex min-h-0 flex-1 flex-col overflow-hidden lg:block lg:overflow-visible"
+            : "mac-view-enter block"
+          : "hidden",
+      )}
       data-workspace-view={id}
     >
       {children}

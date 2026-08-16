@@ -291,7 +291,7 @@ export function StatisticsDashboard() {
       </section>
 
       {totalSeconds <= 0 ? (
-        <EmptyStatistics period={selectedPeriod} />
+        <EmptyStatistics />
       ) : chartView === "column" ? (
         <ColumnChart
           buckets={stats.buckets}
@@ -553,25 +553,13 @@ function ColumnChart({
   );
 }
 
-function EmptyStatistics({ period }: { period: StatsPeriod }) {
-  const periodName =
-    period === "day"
-      ? "day"
-      : period === "week"
-        ? "week"
-        : period === "month"
-          ? "month"
-          : "year";
-
+function EmptyStatistics() {
   return (
-    <section className="flex min-h-60 flex-col items-center justify-center rounded-lg border border-dashed border-[rgb(255_255_255/0.1)] bg-[rgb(255_255_255/0.02)] px-6 py-10 text-center">
+    <section className="flex min-h-60 flex-col items-center justify-center rounded-lg border border-[rgb(255_255_255/0.1)] bg-[rgb(255_255_255/0.02)] px-6 py-10 text-center">
       <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
         <BarChart3 aria-hidden size={22} />
       </span>
       <h2 className="mt-4 text-lg font-semibold">No study time yet</h2>
-      <p className="mt-1 max-w-xs text-sm leading-6 text-[var(--color-text-muted)]">
-        Complete a study session to see your {periodName} take shape.
-      </p>
     </section>
   );
 }

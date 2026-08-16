@@ -12,7 +12,12 @@ import {
   type SocialGroup,
   type SocialState,
 } from "@/lib/social-state";
-import { getElapsedSeconds, getLocalDateKey } from "@/lib/timer";
+import {
+  addDateKeyDays,
+  getAustralianDateStart,
+  getElapsedSeconds,
+  getLocalDateKey,
+} from "@/lib/timer";
 import {
   type SpecialUnit,
   type TeachingPeriod,
@@ -40,6 +45,7 @@ export type RemoteUnitState = {
 export type RemoteActiveSession = {
   subjectId: string | null;
   groupId?: string | null;
+  reminderIntervalMinutes?: number | null;
   startedAt: string;
 };
 
@@ -306,12 +312,33 @@ type SessionRow = {
   user_id: string;
   subject_id: string | null;
   group_id: string | null;
+  reminder_interval_minutes: number | null;
   started_at: string;
   ended_at: string | null;
   status: "active" | "completed" | "needs_confirmation" | "voided";
   source: "timer" | "manual_adjustment";
   duration_seconds: number | null;
 };
+
+type SessionRowWithoutReminders = Omit<
+  SessionRow,
+  "reminder_interval_minutes"
+>;
+
+const TIMER_SESSION_COLUMNS =
+  "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds, reminder_interval_minutes";
+const TIMER_SESSION_COLUMNS_WITHOUT_REMINDERS =
+  "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds";
+
+function isMissingStudyReminderColumn(error: {
+  code?: string;
+  message?: string;
+}) {
+  return (
+    error.code === "42703" &&
+    error.message?.includes("study_sessions.reminder_interval_minutes")
+  );
+}
 
 type NudgeRow = {
   id: string;
@@ -362,9 +389,7 @@ export async function fetchRemoteTimerState(
     fetchRemoteSubjects(supabase, userId),
     supabase
       .from("study_sessions")
-      .select(
-        "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds",
-      )
+      .select(TIMER_SESSION_COLUMNS)
       .eq("user_id", userId)
       .is("deleted_at", null)
       .order("started_at", { ascending: false })
@@ -379,10 +404,33 @@ export async function fetchRemoteTimerState(
       .order("joined_at", { ascending: false }),
   ]);
 
-  if (sessionsResult.error) throw sessionsResult.error;
   if (enrolmentsResult.error) throw enrolmentsResult.error;
 
-  const rows = (sessionsResult.data ?? []) as SessionRow[];
+  let rows: SessionRow[];
+
+  if (!sessionsResult.error) {
+    rows = (sessionsResult.data ?? []) as SessionRow[];
+  } else if (isMissingStudyReminderColumn(sessionsResult.error)) {
+    const fallbackResult = await supabase
+      .from("study_sessions")
+      .select(TIMER_SESSION_COLUMNS_WITHOUT_REMINDERS)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .order("started_at", { ascending: false })
+      .limit(250);
+
+    if (fallbackResult.error) throw fallbackResult.error;
+
+    rows = ((fallbackResult.data ?? []) as SessionRowWithoutReminders[]).map(
+      (row) => ({
+        ...row,
+        reminder_interval_minutes: null,
+      }),
+    );
+  } else {
+    throw sessionsResult.error;
+  }
+
   const activeRow =
     rows.find((row) => row.status === "active" && !row.ended_at) ?? null;
   const completedRows = rows.filter(
@@ -400,6 +448,7 @@ export async function fetchRemoteTimerState(
       ? {
           subjectId: activeRow.subject_id,
           groupId: activeRow.group_id,
+          reminderIntervalMinutes: activeRow.reminder_interval_minutes,
           startedAt: activeRow.started_at,
         }
       : null,
@@ -447,6 +496,20 @@ export async function startRemoteStudySession({
   if (error) {
     throw error;
   }
+}
+
+export async function setRemoteActiveStudyReminder({
+  intervalMinutes,
+  supabase,
+}: {
+  intervalMinutes: number | null;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("set_active_study_reminder", {
+    next_interval_minutes: intervalMinutes,
+  });
+
+  if (error) throw error;
 }
 
 export async function stopRemoteStudySession(supabase: SupabaseClient) {
@@ -1633,6 +1696,8 @@ export async function inviteRemoteFriendToGroup({
   groupId: string;
   supabase: SupabaseClient;
 }) {
+  void _supabase;
+
   const response = await fetch("/api/groups/invites", {
     body: JSON.stringify({ friendId, groupId }),
     headers: { "Content-Type": "application/json" },
@@ -1791,6 +1856,11 @@ export function subscribeToRemoteAppChanges(
     )
     .on(
       "postgres_changes",
+      { event: "*", schema: "public", table: "direct_messages" },
+      () => onChange("direct_messages"),
+    )
+    .on(
+      "postgres_changes",
       { event: "*", schema: "public", table: "super_nudge_requests" },
       () => onChange("super_nudge_requests"),
     )
@@ -1803,6 +1873,16 @@ export function subscribeToRemoteAppChanges(
       "postgres_changes",
       { event: "*", schema: "public", table: "app_notifications" },
       () => onChange("app_notifications"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "group_chat_messages" },
+      () => onChange("group_chat_messages"),
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "group_chat_read_receipts" },
+      () => onChange("group_chat_read_receipts"),
     )
     .on(
       "postgres_changes",
@@ -1844,6 +1924,24 @@ export function subscribeToRemoteAppChanges(
   return () => {
     void supabase.removeChannel(channel);
   };
+}
+
+export async function fetchRemoteDirectMessageUnreadCount({
+  supabase,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const { count, error } = await supabase
+    .from("direct_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("recipient_id", userId)
+    .is("read_at", null);
+
+  if (error) throw error;
+
+  return count ?? 0;
 }
 
 async function fetchRemoteSubjects(supabase: SupabaseClient, userId: string) {
@@ -2006,7 +2104,8 @@ function friendFromProfile(
   );
   const activeSession =
     userSessions.find((session) => session.status === "active") ?? null;
-  const totals = getSessionTotals(userSessions, now);
+  const dailyStudySeconds = getDailySessionTotals(userSessions, now);
+  const totals = getSessionTotals(userSessions, dailyStudySeconds, now);
 
   return {
     id: profile.id,
@@ -2023,50 +2122,51 @@ function friendFromProfile(
     weekSeconds: totals.week,
     monthSeconds: totals.month,
     allTimeSeconds: totals.allTime,
-    dailyStudySeconds: getDailySessionTotals(userSessions, now),
+    dailyStudySeconds,
     activeStartedAt: activeSession?.started_at ?? null,
     activeUpdatedAt: activeSession ? now.toISOString() : null,
     subjectSeconds: {},
   };
 }
 
-function getSessionTotals(sessions: SessionRow[], now = new Date()) {
-  const todayKey = now.toISOString().slice(0, 10);
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - 6);
-  weekStart.setHours(0, 0, 0, 0);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  return sessions.reduce(
-    (totals, session) => {
-      if (session.status === "voided") {
-        return totals;
+function getSessionTotals(
+  sessions: SessionRow[],
+  dailyStudySeconds: Record<string, number>,
+  now = new Date(),
+) {
+  const todayKey = getLocalDateKey(now);
+  const calendarDay = new Date(`${todayKey}T00:00:00Z`).getUTCDay();
+  const weekStartKey = addDateKeyDays(todayKey, -((calendarDay + 6) % 7));
+  const monthStartKey = `${todayKey.slice(0, 7)}-01`;
+  const totals = Object.entries(dailyStudySeconds).reduce(
+    (result, [dateKey, seconds]) => {
+      if (dateKey >= weekStartKey && dateKey <= todayKey) {
+        result.week += seconds;
       }
 
-      const startedAt = new Date(session.started_at);
-      const seconds = session.ended_at
-        ? (session.duration_seconds ??
-          getElapsedSeconds(session.started_at, new Date(session.ended_at)))
-        : getElapsedSeconds(session.started_at, now);
-
-      totals.allTime += seconds;
-
-      if (startedAt.toISOString().slice(0, 10) === todayKey) {
-        totals.day += seconds;
+      if (dateKey >= monthStartKey && dateKey <= todayKey) {
+        result.month += seconds;
       }
 
-      if (startedAt >= weekStart) {
-        totals.week += seconds;
-      }
-
-      if (startedAt >= monthStart) {
-        totals.month += seconds;
-      }
-
-      return totals;
+      return result;
     },
-    { allTime: 0, day: 0, month: 0, week: 0 },
+    {
+      day: dailyStudySeconds[todayKey] ?? 0,
+      month: 0,
+      week: 0,
+    },
   );
+
+  return {
+    ...totals,
+    allTime: sessions.reduce(
+      (total, session) =>
+        session.status === "voided"
+          ? total
+          : total + getSessionDurationSeconds(session, now),
+      0,
+    ),
+  };
 }
 
 function getDailySessionTotals(sessions: SessionRow[], now = new Date()) {
@@ -2075,15 +2175,34 @@ function getDailySessionTotals(sessions: SessionRow[], now = new Date()) {
       return totals;
     }
 
-    const seconds = session.ended_at
-      ? (session.duration_seconds ??
-        getElapsedSeconds(session.started_at, new Date(session.ended_at)))
-      : getElapsedSeconds(session.started_at, now);
-    const key = getLocalDateKey(new Date(session.started_at));
+    const sessionEnd = session.ended_at
+      ? new Date(session.ended_at)
+      : new Date(now);
+    let cursor = new Date(session.started_at);
 
-    totals[key] = (totals[key] ?? 0) + seconds;
+    while (cursor < sessionEnd) {
+      const key = getLocalDateKey(cursor);
+      const nextDay = getAustralianDateStart(addDateKeyDays(key, 1));
+      const segmentEnd = nextDay < sessionEnd ? nextDay : new Date(sessionEnd);
+      const seconds = Math.max(
+        0,
+        Math.floor((segmentEnd.getTime() - cursor.getTime()) / 1000),
+      );
+
+      totals[key] = (totals[key] ?? 0) + seconds;
+      if (segmentEnd <= cursor) break;
+      cursor = segmentEnd;
+    }
+
     return totals;
   }, {});
+}
+
+function getSessionDurationSeconds(session: SessionRow, now: Date) {
+  return session.ended_at
+    ? (session.duration_seconds ??
+        getElapsedSeconds(session.started_at, new Date(session.ended_at)))
+    : getElapsedSeconds(session.started_at, now);
 }
 
 function normalizeGroupIcon(icon: string | null | undefined): GroupIconKey {

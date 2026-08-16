@@ -1,3 +1,4 @@
+TEST
 # MAC Study
 
 MAC Study is a mobile-first PWA for Monash Association of Coding students to
@@ -72,6 +73,20 @@ NEXT_PUBLIC_MAC_AUTH_URL=https://auth.monashcoding.com
 
 The signing JWK is server-only. Never prefix it with `NEXT_PUBLIC_`, expose it
 to browser code, or commit it to Git.
+
+### Study reminder scheduler
+
+Study reminders are claimed atomically by `claim_due_study_reminders` and sent
+by `POST /api/study-reminders/run`. After applying
+`20260805010000_study_session_reminders.sql`, configure a once-per-minute
+Supabase Cron or Dokploy job to call that endpoint with:
+
+```text
+Authorization: Bearer <STUDY_REMINDER_CRON_SECRET>
+```
+
+The scheduler secret is server-only. Do not add it to a migration or browser
+environment variable.
 
 ## Scripts
 

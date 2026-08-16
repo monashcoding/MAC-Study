@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  BellRing,
   BookOpen,
   CalendarClock,
   LoaderCircle,
@@ -22,7 +23,6 @@ import {
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
 import { EmptyStateCta } from "@/components/empty-state-cta";
-import { DateField } from "@/components/date-time-field";
 import { PaginatedList } from "@/components/paginated-list";
 import {
   cacheRemoteTimerState,
@@ -32,6 +32,7 @@ import {
   fetchRemoteTimerState,
   deleteRemoteStudySession,
   saveRemoteSubjects,
+  setRemoteActiveStudyReminder,
   startRemoteStudySession,
   stopRemoteStudySession,
   subscribeToRemoteAppChanges,
@@ -40,12 +41,17 @@ import {
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import {
+  enablePushNotifications,
+  getPushStatus,
+  type PushStatus,
+} from "@/lib/push/client";
+import {
+  addDateKeyDays,
   formatDuration,
-  getElapsedSeconds,
+  getAustralianDateStart,
+  getIntervalOverlapSeconds,
   getLocalDateKey,
-  groupSessionsBySubject,
   isLongSession,
-  sumCompletedSeconds,
 } from "@/lib/timer";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
 import { TransientToast } from "@/components/transient-toast";
@@ -66,6 +72,7 @@ const SUBJECT_COLORS: string[] = SUBJECT_COLOR_OPTIONS.map(
   (option) => option.value,
 );
 const defaultStudySubjects: StudySubject[] = [];
+const REMINDER_INTERVALS = [25, 30, 45, 60, 90, 120] as const;
 
 type StudySubject = {
   id: string;
@@ -82,6 +89,7 @@ type StoredSubject = Partial<StudySubject> & {
 type ActiveSession = {
   subjectId: string | null;
   groupId?: string | null;
+  reminderIntervalMinutes?: number | null;
   startedAt: string;
 };
 
@@ -131,6 +139,11 @@ export function TimerDashboard() {
   const [returnToSessionHistory, setReturnToSessionHistory] = useState(false);
   const [sessionBusy, setSessionBusy] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [isReminderDialogOpen, setIsReminderDialogOpen] = useState(false);
+  const [isStudyCheckInOpen, setIsStudyCheckInOpen] = useState(false);
+  const [reminderSaving, setReminderSaving] = useState(false);
+  const [reminderFeedback, setReminderFeedback] = useState<string | null>(null);
+  const [pushStatus, setPushStatus] = useState<PushStatus | null>(null);
   const isSavingSubjectsRef = useRef(false);
   const isSessionMutationInFlightRef = useRef(false);
 
@@ -225,6 +238,20 @@ export function TimerDashboard() {
   }, [applyRemoteTimerState, loadLocalTimerState]);
 
   useEffect(() => {
+    if (
+      new URLSearchParams(window.location.search).get("study-reminder") !==
+      "check"
+    ) {
+      return;
+    }
+
+    window.queueMicrotask(() => setIsStudyCheckInOpen(true));
+    const url = new URL(window.location.href);
+    url.searchParams.delete("study-reminder");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }, []);
+
+  useEffect(() => {
     if (!isLoaded || dataMode !== "local") {
       return;
     }
@@ -256,21 +283,56 @@ export function TimerDashboard() {
     return () => window.clearInterval(interval);
   }, []);
 
-  const elapsedSeconds = activeSession
-    ? getElapsedSeconds(activeSession.startedAt, now)
-    : 0;
   const todayKey = getLocalDateKey(now);
-
-  const todaySessions = useMemo(
-    () =>
-      sessions.filter(
-        (session) => getLocalDateKey(new Date(session.endedAt)) === todayKey,
-      ),
-    [sessions, todayKey],
+  const todayStart = useMemo(
+    () => getAustralianDateStart(todayKey),
+    [todayKey],
   );
-  const subjectTotals = groupSessionsBySubject(todaySessions);
-  const completedToday = sumCompletedSeconds(todaySessions);
-  const totalToday = completedToday + elapsedSeconds;
+  const todayEnd = useMemo(
+    () => getAustralianDateStart(addDateKeyDays(todayKey, 1)),
+    [todayKey],
+  );
+  const completedToday = useMemo(
+    () =>
+      sessions.reduce(
+        (total, session) =>
+          total +
+          getIntervalOverlapSeconds(
+            session.startedAt,
+            session.endedAt,
+            todayStart,
+            todayEnd,
+          ),
+        0,
+      ),
+    [sessions, todayEnd, todayStart],
+  );
+  const subjectTotals = useMemo(
+    () =>
+      sessions.reduce<Record<string, number>>((totals, session) => {
+        if (!session.subjectId) return totals;
+
+        totals[session.subjectId] =
+          (totals[session.subjectId] ?? 0) +
+          getIntervalOverlapSeconds(
+            session.startedAt,
+            session.endedAt,
+            todayStart,
+            todayEnd,
+          );
+        return totals;
+      }, {}),
+    [sessions, todayEnd, todayStart],
+  );
+  const activeToday = activeSession
+    ? getIntervalOverlapSeconds(
+        activeSession.startedAt,
+        now,
+        todayStart,
+        todayEnd,
+      )
+    : 0;
+  const totalToday = completedToday + activeToday;
   const sortedSessions = useMemo(
     () =>
       [...sessions].sort(
@@ -387,6 +449,64 @@ export function TimerDashboard() {
     if (needsConfirmation) {
       setReturnToSessionHistory(false);
       setEditingSessionId(sessionId);
+    }
+  }
+
+  async function openReminderDialog() {
+    setReminderFeedback(null);
+    setIsReminderDialogOpen(true);
+    setPushStatus(null);
+
+    if (dataMode !== "remote") return;
+
+    try {
+      setPushStatus(await getPushStatus());
+    } catch {
+      setReminderFeedback("Reminders are unavailable on this device.");
+    }
+  }
+
+  async function updateStudyReminder(intervalMinutes: number | null) {
+    if (!activeSession || !remoteClient || dataMode !== "remote") {
+      setReminderFeedback("Reminders need a signed-in, connected session.");
+      return;
+    }
+
+    setReminderSaving(true);
+    setReminderFeedback(null);
+
+    try {
+      let status = pushStatus;
+      if (intervalMinutes && status?.state !== "enabled") {
+        status ??= await getPushStatus();
+        await enablePushNotifications(status.publicKey);
+        status = await getPushStatus();
+      }
+
+      if (intervalMinutes && status?.state !== "enabled") {
+        throw new Error("Enable device alerts before turning on reminders.");
+      }
+
+      await setRemoteActiveStudyReminder({
+        intervalMinutes,
+        supabase: remoteClient,
+      });
+      setActiveSession((current) =>
+        current
+          ? { ...current, reminderIntervalMinutes: intervalMinutes }
+          : current,
+      );
+      setPushStatus(status ?? (await getPushStatus()));
+      setIsReminderDialogOpen(false);
+      await refreshRemoteTimer(remoteClient).catch(() => undefined);
+    } catch (error) {
+      setReminderFeedback(
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not update the study reminder.",
+      );
+    } finally {
+      setReminderSaving(false);
     }
   }
 
@@ -587,25 +707,39 @@ export function TimerDashboard() {
         <p className="mt-4 font-mono text-6xl font-semibold leading-none tabular-nums sm:text-7xl lg:text-[5.4rem] xl:text-[clamp(4rem,5vw,6rem)]">
           {formatDuration(totalToday)}
         </p>
-        <button
-          className={cn(
-            "mac-focus mt-6 inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition hover:brightness-105 active:scale-[0.99] lg:h-12 lg:min-w-44",
-            activeSession
-              ? "bg-[var(--color-danger)] text-white"
-              : "bg-[var(--color-mac-yellow)] text-[#141414]",
-          )}
-          onClick={() =>
-            void (activeSession ? stopStudy() : setIsChoosingStudy(true))
-          }
-          type="button"
-        >
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+          <button
+            className={cn(
+              "mac-focus inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition hover:brightness-105 active:scale-[0.99] lg:h-12 lg:min-w-44",
+              activeSession
+                ? "bg-[var(--color-danger)] text-white"
+                : "bg-[var(--color-mac-yellow)] text-[#141414]",
+            )}
+            onClick={() =>
+              void (activeSession ? stopStudy() : setIsChoosingStudy(true))
+            }
+            type="button"
+          >
+            {activeSession ? (
+              <Pause aria-hidden fill="currentColor" size={18} />
+            ) : (
+              <Play aria-hidden size={18} />
+            )}
+            {activeSession ? "Pause session" : "Start session"}
+          </button>
           {activeSession ? (
-            <Pause aria-hidden fill="currentColor" size={18} />
-          ) : (
-            <Play aria-hidden size={18} />
-          )}
-          {activeSession ? "Pause session" : "Start session"}
-        </button>
+            <button
+              className="mac-focus inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]"
+              onClick={() => void openReminderDialog()}
+              type="button"
+            >
+              <BellRing aria-hidden size={15} />
+              {activeSession.reminderIntervalMinutes
+                ? `Every ${formatReminderInterval(activeSession.reminderIntervalMinutes)}`
+                : "Remind me"}
+            </button>
+          ) : null}
+        </div>
       </section>
 
       <section className="space-y-3 lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(18_18_18/0.36)] lg:p-5">
@@ -622,18 +756,12 @@ export function TimerDashboard() {
             </button>
             {subjects.length ? (
               <button
-                className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)] sm:w-auto sm:px-3"
-                onClick={() => {
-                  setDraftSubjects(subjects);
-                  setSubjectSaveError(null);
-                  setInitialEditingSubjectId(null);
-                  setIsEditingSubjects(true);
-                }}
+                aria-label="Add subject"
+                className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)]"
+                onClick={openNewSubjectEditor}
                 type="button"
               >
-                <Pencil aria-hidden size={16} />
-                <span className="hidden sm:inline">Edit</span>
-                <span className="sr-only sm:hidden">Edit subjects</span>
+                <Plus aria-hidden size={19} />
               </button>
             ) : null}
           </div>
@@ -647,8 +775,7 @@ export function TimerDashboard() {
             renderItem={(subject) => {
               const isActive = activeSession?.subjectId === subject.id;
               const subjectSeconds =
-                (subjectTotals[subject.id] ?? 0) +
-                (isActive ? elapsedSeconds : 0);
+                (subjectTotals[subject.id] ?? 0) + (isActive ? activeToday : 0);
 
               return (
                 <div
@@ -747,6 +874,99 @@ export function TimerDashboard() {
         />
       ) : null}
 
+      {isReminderDialogOpen && activeSession ? (
+        <AppDialog
+          bodyClassName="space-y-4"
+          closeLabel="Close study reminder settings"
+          footer={
+            <button
+              className="mac-focus h-11 w-full rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text-muted)]"
+              disabled={reminderSaving}
+              onClick={() => void updateStudyReminder(null)}
+              type="button"
+            >
+              Turn reminders off
+            </button>
+          }
+          maxWidthClassName="max-w-sm"
+          onClose={() => setIsReminderDialogOpen(false)}
+          title="Study reminder"
+        >
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Choose a check-in interval.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {REMINDER_INTERVALS.map((interval) => {
+              const selected =
+                activeSession.reminderIntervalMinutes === interval;
+
+              return (
+                <button
+                  className={cn(
+                    "mac-focus h-11 rounded-md border text-sm font-semibold transition disabled:opacity-45",
+                    selected
+                      ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]"
+                      : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.04)]",
+                  )}
+                  disabled={reminderSaving}
+                  key={interval}
+                  onClick={() => void updateStudyReminder(interval)}
+                  type="button"
+                >
+                  Every {formatReminderInterval(interval)}
+                </button>
+              );
+            })}
+          </div>
+          {pushStatus && pushStatus.state !== "enabled" ? (
+            <p className="text-xs leading-5 text-[var(--color-text-muted)]">
+              Device alerts will be enabled when you choose an interval.
+            </p>
+          ) : null}
+          {reminderFeedback ? (
+            <p className="text-sm text-[var(--color-danger)]" role="status">
+              {reminderFeedback}
+            </p>
+          ) : null}
+        </AppDialog>
+      ) : null}
+
+      {isStudyCheckInOpen && activeSession ? (
+        <AppDialog
+          bodyClassName="space-y-2"
+          closeLabel="Close study check-in"
+          footer={
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="mac-focus h-11 rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text-muted)]"
+                onClick={() => setIsStudyCheckInOpen(false)}
+                type="button"
+              >
+                Keep studying
+              </button>
+              <button
+                className="mac-focus h-11 rounded-md bg-[var(--color-danger)] text-sm font-semibold text-white"
+                onClick={() => {
+                  setIsStudyCheckInOpen(false);
+                  void stopStudy();
+                }}
+                type="button"
+              >
+                Stop session
+              </button>
+            </div>
+          }
+          maxWidthClassName="max-w-sm"
+          onClose={() => setIsStudyCheckInOpen(false)}
+          title="Still studying?"
+        >
+          <p className="text-sm leading-6 text-[var(--color-text-muted)]">
+            Your study timer is still running. Keep it going or stop the session
+            now.
+          </p>
+        </AppDialog>
+      ) : null}
+
       {isSessionHistoryOpen ? (
         <SessionHistoryDialog
           onClose={() => setIsSessionHistoryOpen(false)}
@@ -790,6 +1010,10 @@ export function TimerDashboard() {
       />
     </div>
   );
+}
+
+function formatReminderInterval(minutes: number) {
+  return minutes % 60 === 0 ? `${minutes / 60} hr` : `${minutes} min`;
 }
 
 const GENERAL_SESSION_SUBJECT = "__general__";
@@ -900,35 +1124,46 @@ function SessionEditor({
     session.subjectId ?? GENERAL_SESSION_SUBJECT,
   );
   const initialDurationSeconds = getSessionDurationSeconds(session);
-  const [sessionDate, setSessionDate] = useState(() =>
-    toLocalDateInput(session.startedAt),
-  );
   const [durationSeconds, setDurationSeconds] = useState(
     initialDurationSeconds,
   );
-  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [durationInput, setDurationInput] = useState(() =>
+    formatEditableDurationInput(initialDurationSeconds),
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const startedDate = applySessionDate(session.startedAt, sessionDate);
+  const startedDate = new Date(session.startedAt);
   const endedDate = new Date(startedDate.getTime() + durationSeconds * 1000);
   const durationMaxSeconds = Math.max(
     8 * 60 * 60,
     Math.ceil(initialDurationSeconds / 3600) * 3600,
   );
+  const typedDurationSeconds = parseEditableDurationInput(durationInput);
+  const isTypedDurationValid =
+    typedDurationSeconds !== null &&
+    typedDurationSeconds > 0 &&
+    typedDurationSeconds <= durationMaxSeconds;
   const durationProgress =
     ((durationSeconds - 1) / Math.max(1, durationMaxSeconds - 1)) * 100;
   const valid =
     !Number.isNaN(startedDate.getTime()) &&
     !Number.isNaN(endedDate.getTime()) &&
-    durationSeconds > 0;
+    isTypedDurationValid;
   const isDirty =
     subjectId !== (session.subjectId ?? GENERAL_SESSION_SUBJECT) ||
-    sessionDate !== toLocalDateInput(session.startedAt) ||
     durationSeconds !== initialDurationSeconds;
 
-  function adjustDuration(changeSeconds: number) {
-    setDurationSeconds((current) =>
-      Math.min(durationMaxSeconds, Math.max(1, current + changeSeconds)),
+  function setDuration(nextDurationSeconds: number) {
+    const clampedDurationSeconds = Math.min(
+      durationMaxSeconds,
+      Math.max(1, nextDurationSeconds),
     );
+
+    setDurationSeconds(clampedDurationSeconds);
+    setDurationInput(formatEditableDurationInput(clampedDurationSeconds));
+  }
+
+  function adjustDuration(changeSeconds: number) {
+    setDuration(durationSeconds + changeSeconds);
   }
 
   return (
@@ -943,7 +1178,7 @@ function SessionEditor({
             onClick={() =>
               onSave({
                 endedAt: endedDate.toISOString(),
-                startedAt: startedDate.toISOString(),
+                startedAt: session.startedAt,
                 subjectId:
                   subjectId === GENERAL_SESSION_SUBJECT ? null : subjectId,
               })
@@ -995,43 +1230,62 @@ function SessionEditor({
           />
         </div>
 
-        <DateField
-          isOpen={isDatePickerOpen}
-          label="Date"
-          onChange={(value) => setSessionDate(value.slice(0, 10))}
-          onOpenChange={setIsDatePickerOpen}
-          value={sessionDate}
-        />
-
-        <div className="space-y-4 pt-1">
+        <div className="space-y-3 pt-1">
           <div className="flex items-baseline justify-between gap-4">
             <p className="text-sm font-medium text-[var(--color-text-muted)]">
               Studied
             </p>
-            <p className="hidden font-mono text-2xl font-semibold tabular-nums text-[var(--color-mac-yellow)] lg:block">
-              {formatEditableDuration(durationSeconds)}
+            <p className="text-xs font-medium text-[var(--color-text-muted)]">
+              HH:MM:SS
             </p>
           </div>
 
-          <div className="flex items-center justify-center gap-4 lg:hidden">
+          <div className="flex items-center justify-center gap-3">
             <button
               aria-label="Reduce duration by 5 minutes"
-              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-lg text-[var(--color-text-muted)]"
+              className="mac-focus grid h-10 min-w-12 place-items-center rounded-full border border-[var(--color-border)] px-2 text-sm font-semibold leading-none text-[var(--color-text-muted)]"
               onClick={() => adjustDuration(-5 * 60)}
               type="button"
             >
-              −
+              −5m
             </button>
-            <p className="min-w-32 text-center font-mono text-3xl font-semibold tabular-nums text-[var(--color-mac-yellow)]">
-              {formatEditableDuration(durationSeconds)}
-            </p>
+            <input
+              aria-invalid={!isTypedDurationValid}
+              aria-label="Study duration in hours, minutes and seconds"
+              className="mac-focus h-12 w-36 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-center font-mono text-2xl font-semibold tabular-nums text-[var(--color-mac-yellow)] transition hover:border-[rgb(255_255_255/0.15)] focus:border-[var(--color-mac-yellow)]"
+              inputMode="text"
+              onBlur={() => {
+                if (isTypedDurationValid) {
+                  setDurationInput(
+                    formatEditableDurationInput(durationSeconds),
+                  );
+                }
+              }}
+              onChange={(event) => {
+                const value = event.target.value.replace(/[^\d:]/g, "");
+                const parsed = parseEditableDurationInput(value);
+
+                setDurationInput(value);
+                if (
+                  parsed !== null &&
+                  parsed > 0 &&
+                  parsed <= durationMaxSeconds
+                ) {
+                  setDurationSeconds(parsed);
+                }
+              }}
+              onFocus={(event) => event.currentTarget.select()}
+              placeholder="00:00:00"
+              type="text"
+              value={durationInput}
+            />
             <button
               aria-label="Increase duration by 5 minutes"
-              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--color-border)] text-lg text-[var(--color-text-muted)]"
+              className="mac-focus grid h-10 min-w-12 place-items-center rounded-full border border-[var(--color-border)] px-2 text-sm font-semibold leading-none text-[var(--color-text-muted)]"
               onClick={() => adjustDuration(5 * 60)}
               type="button"
             >
-              +
+              +5m
             </button>
           </div>
 
@@ -1041,9 +1295,7 @@ function SessionEditor({
               className="mac-duration-slider w-full"
               max={durationMaxSeconds}
               min={1}
-              onChange={(event) =>
-                setDurationSeconds(Number(event.target.value))
-              }
+              onChange={(event) => setDuration(Number(event.target.value))}
               step={1}
               style={
                 {
@@ -1306,12 +1558,12 @@ function SubjectEditor({
           </>
         ) : (
           <PaginatedList
-            className="divide-y divide-[var(--color-border)]"
+            className="grid gap-1"
             items={draftSubjects}
             pageSize={10}
             renderItem={(subject) => (
               <div
-                className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3"
+                className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-md px-1 py-2.5 transition hover:bg-[rgb(255_255_255/0.035)]"
                 key={subject.id}
               >
                 <div className="flex min-w-0 items-center gap-3">
@@ -1324,7 +1576,7 @@ function SubjectEditor({
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
                     onClick={() => setEditingSubjectId(subject.id)}
                     type="button"
                   >
@@ -1332,7 +1584,7 @@ function SubjectEditor({
                     <span className="sr-only">Edit {subject.name}</span>
                   </button>
                   <button
-                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border border-[rgb(255_107_107/0.35)] text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:cursor-not-allowed disabled:opacity-30"
+                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:cursor-not-allowed disabled:opacity-30"
                     onClick={() => quickDeleteSubject(subject)}
                     type="button"
                   >
@@ -1361,28 +1613,6 @@ function SubjectEditor({
   );
 }
 
-function toLocalDateInput(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  const localDate = new Date(
-    date.getTime() - date.getTimezoneOffset() * 60 * 1000,
-  );
-  return localDate.toISOString().slice(0, 10);
-}
-
-function applySessionDate(originalStartedAt: string, localDate: string) {
-  const original = new Date(originalStartedAt);
-  const [year, month, day] = localDate.split("-").map(Number);
-
-  if (Number.isNaN(original.getTime()) || !year || !month || !day) {
-    return new Date(Number.NaN);
-  }
-
-  original.setFullYear(year, month - 1, day);
-  return original;
-}
-
 function getSessionDurationSeconds(session: StoredSession) {
   const duration = Math.floor(
     (new Date(session.endedAt).getTime() -
@@ -1393,18 +1623,27 @@ function getSessionDurationSeconds(session: StoredSession) {
   return Number.isFinite(duration) ? Math.max(1, duration) : 1;
 }
 
-function formatEditableDuration(totalSeconds: number) {
+function formatEditableDurationInput(totalSeconds: number) {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds));
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   const seconds = safeSeconds % 60;
 
-  if (hours) return `${hours}h ${minutes}m`;
-  if (minutes) {
-    return seconds ? `${minutes}m ${seconds}s` : `${minutes} min`;
+  return [hours, minutes, seconds]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+}
+
+function parseEditableDurationInput(value: string) {
+  const parts = value.split(":");
+  if (parts.length !== 3 || parts.some((part) => !/^\d+$/.test(part))) {
+    return null;
   }
 
-  return `${seconds} sec`;
+  const [hours, minutes, seconds] = parts.map(Number);
+  if (minutes > 59 || seconds > 59) return null;
+
+  return hours * 60 * 60 + minutes * 60 + seconds;
 }
 
 function formatSessionDate(value: string) {

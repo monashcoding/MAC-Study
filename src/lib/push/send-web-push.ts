@@ -2,7 +2,11 @@ import webpush from "web-push";
 import { getOptionalWebPushEnv } from "@/lib/supabase/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
-export type NotificationCategory = "friend" | "nudge" | "other";
+export type NotificationCategory =
+  | "friend"
+  | "nudge"
+  | "other"
+  | "study_reminder";
 
 type PushSubscriptionRow = {
   auth: string;
@@ -64,7 +68,9 @@ export async function sendWebPush({
       ? preferences?.friend_notifications
       : category === "nudge"
         ? preferences?.nudge_notifications
-        : preferences?.other_notifications;
+        : category === "other"
+          ? preferences?.other_notifications
+          : true;
 
   if (enabled === false) {
     return { sent: 0, skipped: "disabled" };

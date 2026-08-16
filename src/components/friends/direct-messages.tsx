@@ -68,12 +68,16 @@ export function DirectMessages({
   friends,
   initialFriendId,
   onConversationClosed,
+  onConversationOpenChange,
+  onUnreadCountChange,
   remoteClient,
 }: {
   currentUserId: string | null;
   friends: SocialFriend[];
   initialFriendId: string | null;
   onConversationClosed: () => void;
+  onConversationOpenChange?: (open: boolean) => void;
+  onUnreadCountChange?: (count: number) => void;
   remoteClient: SupabaseClient | null;
 }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -172,6 +176,21 @@ export function DirectMessages({
   useEffect(() => {
     friendsRef.current = friends;
   }, [friends]);
+
+  useEffect(() => {
+    onConversationOpenChange?.(Boolean(selectedFriend));
+  }, [onConversationOpenChange, selectedFriend]);
+
+  useEffect(() => {
+    if (!hasLoadedConversationsRef.current) return;
+
+    onUnreadCountChange?.(
+      conversations.reduce(
+        (total, conversation) => total + conversation.unreadCount,
+        0,
+      ),
+    );
+  }, [conversations, isLoadingConversations, onUnreadCountChange]);
 
   const markConversationRead = useCallback(
     async (friendId: string) => {
@@ -449,6 +468,7 @@ export function DirectMessages({
   }
 
   function openConversation(friendId: string) {
+    onConversationOpenChange?.(true);
     setSelectedFriendId(friendId);
     setMessages([]);
     setFeedback(null);
@@ -466,6 +486,7 @@ export function DirectMessages({
             aria-label="Back to messages"
             className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)]"
             onClick={() => {
+              onConversationOpenChange?.(false);
               setSelectedFriendId(null);
               setMessages([]);
               setFeedback(null);

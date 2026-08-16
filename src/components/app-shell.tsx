@@ -27,6 +27,7 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { AppWorkspace } from "@/components/app-workspace";
 import { AppHeaderDetailProvider } from "@/components/app-header-detail";
+import { InstallOnboarding } from "@/components/pwa/install-onboarding";
 import { NotificationOnboarding } from "@/components/pwa/notification-onboarding";
 import { AppNotifications } from "@/components/social/app-notifications";
 import { NudgeNotifications } from "@/components/social/nudge-notifications";
@@ -95,6 +96,9 @@ export function AppShell({
   const [workspaceResetKeys, setWorkspaceResetKeys] = useState<
     Record<string, number>
   >({});
+  const [navUnread, setNavUnread] = useState({ friends: false, groups: false });
+  const [installOnboardingComplete, setInstallOnboardingComplete] =
+    useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const currentNav =
@@ -106,6 +110,7 @@ export function AppShell({
     (isActive(displayPathname, "/app/groups") ||
       isActive(displayPathname, "/app/units"));
   const currentTitle = isNestedDetail ? headerDetail : currentNav.title;
+  const isFriendsView = isActive(displayPathname, "/app/friends");
   const accountName =
     authState.mode === "authenticated"
       ? authState.profile.display_name?.trim() || "Student"
@@ -125,6 +130,9 @@ export function AppShell({
     },
     [],
   );
+  const handleInstallOnboardingComplete = useCallback(() => {
+    setInstallOnboardingComplete(true);
+  }, []);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -290,7 +298,10 @@ export function AppShell({
       <>
         <div className="mac-desktop-shell fixed inset-0 flex flex-col overflow-hidden bg-[var(--color-background)] lg:static lg:block lg:min-h-dvh lg:overflow-visible">
           <div
-            className="mac-app-scroll mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:grid lg:min-h-dvh lg:max-w-none lg:grid-cols-[17.5rem_minmax(0,1fr)] lg:overflow-visible"
+            className={cn(
+              "mac-app-scroll mx-auto flex min-h-0 w-full max-w-6xl flex-1 overflow-y-auto lg:grid lg:min-h-dvh lg:max-w-none lg:grid-cols-[17.5rem_minmax(0,1fr)] lg:overflow-visible",
+              isFriendsView && "overflow-y-hidden",
+            )}
             ref={scrollContainerRef}
           >
             <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:border-r lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(17_17_17/0.94)] lg:p-5 lg:backdrop-blur-xl">
@@ -303,6 +314,11 @@ export function AppShell({
                   {navItems.map((item) => (
                     <NavLink
                       href={item.href}
+                      hasUnread={
+                        item.href === "/app/friends"
+                          ? navUnread.friends
+                          : item.href === "/app/groups" && navUnread.groups
+                      }
                       icon={item.icon}
                       isActive={isActive(displayPathname, item.href)}
                       key={item.href}
@@ -321,7 +337,13 @@ export function AppShell({
               />
             </aside>
 
-            <main className="min-w-0 flex-1 lg:min-h-dvh">
+            <main
+              className={cn(
+                "min-w-0 flex-1 lg:min-h-dvh",
+                isFriendsView &&
+                  "flex min-h-0 flex-col overflow-hidden lg:overflow-visible",
+              )}
+            >
               <header className="sticky top-0 z-20 bg-[rgb(23_23_23/0.94)] px-4 pb-3 pt-[calc(var(--safe-area-top)+0.85rem)] backdrop-blur lg:z-30 lg:border-b lg:border-[rgb(255_255_255/0.07)] lg:bg-[rgb(23_23_23/0.84)] lg:px-8 lg:py-5 xl:px-12">
                 <div className="relative mx-auto flex max-w-[80rem] items-center justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3 lg:hidden">
@@ -371,12 +393,37 @@ export function AppShell({
                 </div>
               </header>
 
-              <div className="px-4 pb-4 pt-3 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10">
-                <div className="lg:px-1 lg:py-2">
+              <div
+                className={cn(
+                  "px-4 pb-4 pt-3 sm:px-6 lg:mx-auto lg:w-full lg:max-w-[80rem] lg:px-8 lg:py-8 xl:px-12 xl:py-10",
+                  isFriendsView &&
+                    "flex min-h-0 flex-1 flex-col overflow-hidden lg:block lg:overflow-visible",
+                )}
+              >
+                <div
+                  className={cn(
+                    "lg:px-1 lg:py-2",
+                    isFriendsView && "flex min-h-0 flex-1 flex-col lg:block",
+                  )}
+                >
                   <AppWorkspace
                     activePathname={displayPathname}
                     authState={authState}
                     fallback={children}
+                    onDirectMessageUnreadChange={(hasUnread) =>
+                      setNavUnread((current) =>
+                        current.friends === hasUnread
+                          ? current
+                          : { ...current, friends: hasUnread },
+                      )
+                    }
+                    onGroupChatUnreadChange={(hasUnread) =>
+                      setNavUnread((current) =>
+                        current.groups === hasUnread
+                          ? current
+                          : { ...current, groups: hasUnread },
+                      )
+                    }
                     resetKeys={workspaceResetKeys}
                   />
                 </div>
@@ -389,6 +436,10 @@ export function AppShell({
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(displayPathname, item.href);
+                const hasUnread =
+                  item.href === "/app/friends"
+                    ? navUnread.friends
+                    : item.href === "/app/groups" && navUnread.groups;
 
                 return (
                   <Link
@@ -407,7 +458,10 @@ export function AppShell({
                     onPointerEnter={() => warmRoute(item.href)}
                     prefetch
                   >
-                    <Icon aria-hidden size={22} strokeWidth={2.15} />
+                    <span className="relative inline-flex">
+                      <Icon aria-hidden size={22} strokeWidth={2.15} />
+                      {hasUnread ? <NavUnreadDot /> : null}
+                    </span>
                     <span className="max-w-full truncate px-0.5">
                       {"mobileLabel" in item ? item.mobileLabel : item.label}
                     </span>
@@ -422,7 +476,14 @@ export function AppShell({
           <>
             <AppNotifications userId={authState.user.id} />
             <NudgeNotifications userId={authState.user.id} />
-            <NotificationOnboarding userId={authState.user.id} />
+            <InstallOnboarding
+              onComplete={handleInstallOnboardingComplete}
+              userId={authState.user.id}
+            />
+            <NotificationOnboarding
+              enabled={installOnboardingComplete}
+              userId={authState.user.id}
+            />
           </>
         ) : null}
       </>
@@ -466,6 +527,7 @@ function LogoMark({ size = "md" }: { size?: "sm" | "md" }) {
 
 function NavLink({
   href,
+  hasUnread,
   icon: Icon,
   isActive,
   label,
@@ -473,6 +535,7 @@ function NavLink({
   onNavigate,
 }: {
   href: string;
+  hasUnread: boolean;
   icon: React.ComponentType<{ size?: number; "aria-hidden"?: boolean }>;
   isActive: boolean;
   label: string;
@@ -495,15 +558,18 @@ function NavLink({
       onPointerEnter={() => onIntent(href)}
       prefetch
     >
-      <span
-        className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition",
-          isActive
-            ? "bg-[rgb(20_20_20/0.1)]"
-            : "bg-[rgb(255_255_255/0.035)] group-hover:bg-[rgb(255_255_255/0.06)]",
-        )}
-      >
-        <Icon aria-hidden size={18} />
+      <span className="relative shrink-0">
+        <span
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-md transition",
+            isActive
+              ? "bg-[rgb(20_20_20/0.1)]"
+              : "bg-[rgb(255_255_255/0.035)] group-hover:bg-[rgb(255_255_255/0.06)]",
+          )}
+        >
+          <Icon aria-hidden size={18} />
+        </span>
+        {hasUnread ? <NavUnreadDot /> : null}
       </span>
       <span className="min-w-0 flex-1">{label}</span>
       <ChevronRight
@@ -517,6 +583,18 @@ function NavLink({
         size={15}
       />
     </Link>
+  );
+}
+
+function NavUnreadDot() {
+  return (
+    <>
+      <span
+        aria-hidden
+        className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[var(--color-danger)] ring-2 ring-[var(--color-background)]"
+      />
+      <span className="sr-only">Unread messages</span>
+    </>
   );
 }
 

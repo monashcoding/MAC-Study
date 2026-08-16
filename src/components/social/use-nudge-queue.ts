@@ -1,26 +1,31 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getNudgeDeliveryMessage,
   sendRemoteNudge,
 } from "@/lib/supabase/app-data";
 
-const NUDGE_LIMIT = 1;
+const DEFAULT_NUDGE_LIMIT = 1;
 const NUDGE_WINDOW_MS = 60_000;
 
 type NudgeTarget = {
   groupId?: string | null;
   key: string;
+  maxPerMinute?: number;
   recipientId: string;
 };
 
 type TargetQueueState = {
+  atLimit: boolean;
+  burstCount: number;
   feedback: string | null;
   pending: number;
 };
 
 const emptyQueueState: TargetQueueState = {
+  atLimit: false,
+  burstCount: 0,
   feedback: null,
   pending: 0,
 };
@@ -28,9 +33,16 @@ const emptyQueueState: TargetQueueState = {
 export function useNudgeQueue(enabled: boolean) {
   const queuesRef = useRef<Record<string, Promise<void>>>({});
   const recentTapsRef = useRef<Record<string, number[]>>({});
+  const expiryTimersRef = useRef<number[]>([]);
   const [targetStates, setTargetStates] = useState<
     Record<string, TargetQueueState>
   >({});
+
+  useEffect(() => {
+    return () => {
+      expiryTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, []);
 
   const enqueue = useCallback(
     (target: NudgeTarget) => {
@@ -38,6 +50,8 @@ export function useNudgeQueue(enabled: boolean) {
         setTargetStates((current) => ({
           ...current,
           [target.key]: {
+            atLimit: false,
+            burstCount: 0,
             feedback: "Sign in to send lock-screen nudges.",
             pending: 0,
           },
@@ -49,8 +63,9 @@ export function useNudgeQueue(enabled: boolean) {
       const recentTaps = (recentTapsRef.current[target.key] ?? []).filter(
         (timestamp) => now - timestamp < NUDGE_WINDOW_MS,
       );
+      const limit = target.maxPerMinute ?? DEFAULT_NUDGE_LIMIT;
 
-      if (recentTaps.length >= NUDGE_LIMIT) {
+      if (recentTaps.length >= limit) {
         const retrySeconds = Math.max(
           1,
           Math.ceil((NUDGE_WINDOW_MS - (now - recentTaps[0])) / 1000),
@@ -60,6 +75,8 @@ export function useNudgeQueue(enabled: boolean) {
         setTargetStates((current) => ({
           ...current,
           [target.key]: {
+            atLimit: true,
+            burstCount: recentTaps.length,
             feedback: `Ready again in ${retrySeconds}s.`,
             pending: current[target.key]?.pending ?? 0,
           },
@@ -70,15 +87,41 @@ export function useNudgeQueue(enabled: boolean) {
       recentTapsRef.current[target.key] = [...recentTaps, now];
       setTargetStates((current) => {
         const pending = (current[target.key]?.pending ?? 0) + 1;
+        const burstCount = recentTaps.length + 1;
 
         return {
           ...current,
           [target.key]: {
+            atLimit: burstCount >= limit,
+            burstCount,
             feedback: "Sending nudge...",
             pending,
           },
         };
       });
+      const expiryTimer = window.setTimeout(() => {
+        expiryTimersRef.current = expiryTimersRef.current.filter(
+          (timer) => timer !== expiryTimer,
+        );
+        const currentTime = Date.now();
+        const nextRecent = (recentTapsRef.current[target.key] ?? []).filter(
+          (timestamp) => currentTime - timestamp < NUDGE_WINDOW_MS,
+        );
+        recentTapsRef.current[target.key] = nextRecent;
+        setTargetStates((current) => {
+          const previous = current[target.key] ?? emptyQueueState;
+
+          return {
+            ...current,
+            [target.key]: {
+              ...previous,
+              atLimit: nextRecent.length >= limit,
+              burstCount: nextRecent.length,
+            },
+          };
+        });
+      }, NUDGE_WINDOW_MS + 25);
+      expiryTimersRef.current.push(expiryTimer);
 
       const send = async () => {
         let feedback: string;
@@ -99,6 +142,10 @@ export function useNudgeQueue(enabled: boolean) {
           return {
             ...current,
             [target.key]: {
+              ...current[target.key],
+              atLimit:
+                (current[target.key]?.burstCount ?? 0) >= limit,
+              burstCount: current[target.key]?.burstCount ?? 0,
               feedback,
               pending,
             },
