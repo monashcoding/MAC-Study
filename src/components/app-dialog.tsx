@@ -31,6 +31,7 @@ export function AppDialog({
   maxWidthClassName = "max-w-xl",
   onClose,
   title,
+  titleClassName,
   variant = "default",
 }: {
   bodyClassName?: string;
@@ -42,6 +43,7 @@ export function AppDialog({
   maxWidthClassName?: string;
   onClose: () => void;
   title: string;
+  titleClassName?: string;
   variant?: "confirmation" | "default";
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -170,7 +172,13 @@ export function AppDialog({
               "border-b border-[var(--color-border)] bg-[rgb(20_20_20/0.96)] backdrop-blur-xl",
           )}
         >
-          <h2 className="min-w-0 truncate text-lg font-semibold" id={titleId}>
+          <h2
+            className={cn(
+              "min-w-0 text-lg font-semibold",
+              titleClassName ?? "truncate",
+            )}
+            id={titleId}
+          >
             {title}
           </h2>
           <button
