@@ -1,4 +1,4 @@
-const CACHE_NAME = "mac-study-shell-v5";
+const CACHE_NAME = "mac-study-shell-v6";
 const SHELL_ASSETS = ["/icons/mac-square.png"];
 
 self.addEventListener("install", (event) => {

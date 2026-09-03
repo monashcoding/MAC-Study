@@ -543,8 +543,30 @@ export function UnitsDashboard() {
           <h2 className="truncate text-base font-semibold sm:text-lg">
             Current and upcoming
           </h2>
+          {current.length ? (
+            <button
+              className="mac-focus inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+              onClick={() => {
+                setSelectedSpecialUnit(null);
+                setIsAdding(true);
+              }}
+              type="button"
+            >
+              <Plus aria-hidden size={17} />
+              Add unit
+            </button>
+          ) : null}
+        </div>
+
+        {dataMode !== "loading" && current.length ? (
+          <EnrollmentSection
+            enrollments={current}
+            onOpen={setSelectedOfferingId}
+            title={null}
+          />
+        ) : dataMode !== "loading" ? (
           <button
-            className="mac-focus inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+            className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"
             onClick={() => {
               setSelectedSpecialUnit(null);
               setIsAdding(true);
@@ -554,15 +576,6 @@ export function UnitsDashboard() {
             <Plus aria-hidden size={17} />
             Add unit
           </button>
-        </div>
-
-        {dataMode !== "loading" ? (
-          <EnrollmentSection
-            empty="Add your first current or upcoming unit."
-            enrollments={current}
-            onOpen={setSelectedOfferingId}
-            title={null}
-          />
         ) : null}
       </section>
 
@@ -573,7 +586,6 @@ export function UnitsDashboard() {
 
       {dataMode !== "loading" && past.length ? (
         <EnrollmentSection
-          empty=""
           enrollments={past}
           onOpen={setSelectedOfferingId}
           title="Past units"
@@ -634,12 +646,10 @@ export function UnitsDashboard() {
 }
 
 function EnrollmentSection({
-  empty,
   enrollments,
   onOpen,
   title,
 }: {
-  empty: string;
   enrollments: UnitEnrollment[];
   onOpen: (offeringId: string) => void;
   title: string | null;
@@ -682,11 +692,7 @@ function EnrollmentSection({
           )}
           resetKey={title ?? "current-units"}
         />
-      ) : (
-        <p className="rounded-md border border-dashed border-[var(--color-border)] p-5 text-sm text-[var(--color-text-muted)]">
-          {empty}
-        </p>
-      )}
+      ) : null}
     </section>
   );
 }

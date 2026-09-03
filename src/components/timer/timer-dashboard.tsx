@@ -11,7 +11,6 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   BellRing,
-  BookOpen,
   CalendarClock,
   LoaderCircle,
   Pause,
@@ -841,9 +840,6 @@ export function TimerDashboard() {
                 Add subject
               </button>
             }
-            description="Create one to track where your study time goes."
-            icon={<BookOpen aria-hidden size={18} />}
-            title="Add your first subject"
           />
         )}
       </section>
