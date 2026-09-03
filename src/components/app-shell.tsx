@@ -490,7 +490,7 @@ function LogoMark({ size = "md" }: { size?: "sm" | "md" }) {
     <Image
       alt=""
       aria-hidden
-      className="shrink-0 rounded-full"
+      className="shrink-0 rounded-xl"
       height={pixels}
       priority={size === "md"}
       src="/icons/mac-square.png"
