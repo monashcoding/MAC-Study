@@ -1321,9 +1321,6 @@ export function FriendsDashboard({
                     Add friend
                   </button>
                 }
-                description="Find someone by username and send a request."
-                icon={<Users aria-hidden size={18} />}
-                title="Build your study circle"
               />
             )}
           </section>
@@ -1434,7 +1431,7 @@ export function FriendsDashboard({
             {!friendRequests.length &&
             !incomingSuperNudges.length &&
             !outgoingSuperNudges.length ? (
-              <div className="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-8 text-center">
+              <div className="py-4 text-center">
                 <p className="font-semibold">No friend requests</p>
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                   Incoming and sent requests will appear here.

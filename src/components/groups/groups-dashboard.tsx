@@ -1215,9 +1215,6 @@ export function GroupsDashboard({
                   Create group
                 </button>
               }
-              description="Invite friends and study together."
-              icon={<UserPlus aria-hidden size={18} />}
-              title="Create your first group"
             />
           )}
         </section>
@@ -1268,7 +1265,7 @@ export function GroupsDashboard({
           ) : null}
 
           {!groupInvites.length ? (
-            <div className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-8 text-center">
+            <div className="py-4 text-center">
               <p className="font-semibold">No group invitations</p>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                 Incoming and sent invitations will appear here.

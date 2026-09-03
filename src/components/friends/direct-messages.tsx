@@ -698,7 +698,7 @@ export function DirectMessages({
           resetKey="direct-conversations"
         />
       ) : (
-        <div className="rounded-lg border border-dashed border-[var(--color-border)] px-5 py-10 text-center">
+        <div className="py-6 text-center">
           <MessageCircle
             aria-hidden
             className="mx-auto text-[var(--color-text-muted)]"

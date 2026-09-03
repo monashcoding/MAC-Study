@@ -38,28 +38,24 @@ const navItems = [
     href: "/app",
     label: "Home",
     title: "Home",
-    subtitle: "Track today's study and jump straight into a subject.",
     icon: House,
   },
   {
     href: "/app/groups",
     label: "Group",
     title: "Group",
-    subtitle: "Study with friends and compare group effort.",
     icon: Users,
   },
   {
     href: "/app/friends",
     label: "Friends",
     title: "Friends",
-    subtitle: "Your people, study time, and invitations.",
     icon: UserRound,
   },
   {
     href: "/app/units",
     label: "Units",
     title: "Units",
-    subtitle: "Find people in your current units.",
     icon: BookOpen,
   },
   {
@@ -67,14 +63,12 @@ const navItems = [
     label: "Statistics",
     mobileLabel: "Stats",
     title: "Statistics",
-    subtitle: "See where your study time is going.",
     icon: BarChart3,
   },
   {
     href: "/app/profile",
     label: "Profile",
     title: "Profile",
-    subtitle: "Manage your account and notifications.",
     icon: Settings,
   },
 ];
@@ -330,11 +324,7 @@ export function AppShell({
                 </nav>
               </div>
 
-              <DesktopAccount
-                handle={accountHandle}
-                mode={authState.mode}
-                name={accountName}
-              />
+              <DesktopAccount handle={accountHandle} name={accountName} />
             </aside>
 
             <main
@@ -362,24 +352,8 @@ export function AppShell({
                     <h1 className="text-3xl font-semibold tracking-[-0.025em]">
                       {currentTitle}
                     </h1>
-                    <p className="mt-1.5 max-w-xl text-sm text-[var(--color-text-muted)]">
-                      {currentNav.subtitle}
-                    </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="hidden h-10 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] px-3 text-xs font-semibold text-[var(--color-text-muted)] xl:inline-flex">
-                      <span
-                        className={cn(
-                          "h-2 w-2 rounded-full",
-                          authState.mode === "authenticated"
-                            ? "bg-[var(--color-success)]"
-                            : "bg-[var(--color-mac-yellow)]",
-                        )}
-                      />
-                      {authState.mode === "authenticated"
-                        ? "Synced"
-                        : "Demo mode"}
-                    </span>
                     {authState.mode === "authenticated" ? (
                       <a
                         className="mac-focus hidden h-10 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-muted)] transition hover:border-[rgb(255_255_255/0.2)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)] lg:inline-flex"
@@ -598,15 +572,7 @@ function NavUnreadDot() {
   );
 }
 
-function DesktopAccount({
-  handle,
-  mode,
-  name,
-}: {
-  handle: string;
-  mode: AppAuthState["mode"];
-  name: string;
-}) {
+function DesktopAccount({ handle, name }: { handle: string; name: string }) {
   const initials = name
     .split(/\s+/)
     .map((part) => part[0])
@@ -626,17 +592,6 @@ function DesktopAccount({
             {handle}
           </span>
         </span>
-      </div>
-      <div className="mt-3 flex items-center gap-2 border-t border-[rgb(255_255_255/0.07)] pt-3 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
-        <span
-          className={cn(
-            "h-1.5 w-1.5 rounded-full",
-            mode === "authenticated"
-              ? "bg-[var(--color-success)]"
-              : "bg-[var(--color-mac-yellow)]",
-          )}
-        />
-        {mode === "authenticated" ? "Account connected" : "Demo workspace"}
       </div>
     </div>
   );
