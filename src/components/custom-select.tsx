@@ -82,7 +82,16 @@ export function CustomSelect<T extends string | number>({
       maxHeight,
       optionsRef.current.length * 48 + 12,
     );
-    const width = Math.min(rect.width, viewportWidth - edge * 2);
+    const longestLabelLength = optionsRef.current.reduce(
+      (longest, option) => Math.max(longest, option.label.length),
+      0,
+    );
+    const estimatedContentWidth =
+      longestLabelLength * (size === "compact" ? 7 : 7.5) + 64;
+    const width = Math.min(
+      Math.max(rect.width, estimatedContentWidth),
+      viewportWidth - edge * 2,
+    );
     const left = Math.min(
       Math.max(rect.left, viewportLeft + edge),
       viewportLeft + viewportWidth - width - edge,
@@ -92,7 +101,7 @@ export function CustomSelect<T extends string | number>({
       : rect.bottom + gap;
 
     setMenuPosition({ left, maxHeight, top, width });
-  }, [placement]);
+  }, [placement, size]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -285,7 +294,7 @@ export function CustomSelect<T extends string | number>({
                           style={{ backgroundColor: option.swatchColor }}
                         />
                       ) : null}
-                      <span className="truncate font-medium">
+                      <span className="break-words font-medium">
                         {option.label}
                       </span>
                     </span>

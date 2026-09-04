@@ -71,6 +71,7 @@ import {
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { fetchGroupChatUnreadCounts } from "@/lib/supabase/group-chat-read-receipts";
+import { getGroupLeaveAvailability } from "@/lib/group-membership";
 import { NudgePill } from "@/components/social/nudge-pill";
 import { useNudgeQueue } from "@/components/social/use-nudge-queue";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
@@ -641,7 +642,6 @@ export function GroupsDashboard({
     if (remoteClient) {
       await leaveRemoteGroup({
         groupId: selectedGroup.id,
-        supabase: remoteClient,
       });
       setSelectedGroupId(null);
       setIsGroupSettingsOpen(false);
@@ -1811,7 +1811,7 @@ type PendingGroupAction =
     }
   | { kind: "leadership"; member: SocialFriend }
   | { kind: "remove"; member: SocialFriend }
-  | { kind: "leave" };
+  | { kind: "leave"; willDisband: boolean };
 
 function GroupSettingsDialog({
   allFriends,
@@ -1857,6 +1857,10 @@ function GroupSettingsDialog({
     "member";
   const isLeader = currentRole === "owner";
   const canManageMembers = isLeader || currentRole === "admin";
+  const leaveAvailability = getGroupLeaveAvailability(
+    currentRole,
+    members.length,
+  );
   const inviteableFriends = allFriends.filter(
     (friend) =>
       friend.id !== currentUserId &&
@@ -1912,7 +1916,11 @@ function GroupSettingsDialog({
         `${pendingAction.member.name} removed.`,
       );
     } else {
-      succeeded = await runAction("leave", onLeave, "You left the group.");
+      succeeded = await runAction(
+        "leave",
+        onLeave,
+        pendingAction.willDisband ? "Group disbanded." : "You left the group.",
+      );
     }
 
     if (succeeded) setPendingAction(null);
@@ -2157,28 +2165,42 @@ function GroupSettingsDialog({
 
         <section className="space-y-3 border-t border-[var(--color-border)] pt-5">
           <h3 className="text-sm font-semibold">Your membership</h3>
-          {isLeader ? (
-            <div className="flex items-center gap-3 rounded-md bg-[rgb(255_255_255/0.035)] px-3 py-3">
-              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
-                <Crown aria-hidden size={17} />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">Group leader</p>
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Transfer leadership before leaving.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <button
-              className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--color-danger)] px-4 text-sm font-semibold text-[var(--color-danger)] disabled:opacity-45"
-              disabled={busyKey !== null}
-              onClick={() => setPendingAction({ kind: "leave" })}
-              type="button"
+          <button
+            aria-describedby={
+              isLeader ? "group-leave-availability-message" : undefined
+            }
+            className={cn(
+              "mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border px-4 text-sm font-semibold transition",
+              leaveAvailability.canLeave
+                ? "border-[var(--color-danger)] text-[var(--color-danger)] hover:bg-[rgb(255_107_107/0.07)] disabled:opacity-45"
+                : "cursor-not-allowed border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] text-[var(--color-text-muted)]",
+            )}
+            disabled={!leaveAvailability.canLeave || busyKey !== null}
+            onClick={() =>
+              setPendingAction({
+                kind: "leave",
+                willDisband: leaveAvailability.willDisband,
+              })
+            }
+            type="button"
+          >
+            <LogOut aria-hidden size={16} /> Leave group
+          </button>
+          {leaveAvailability.requiresOwnershipTransfer ? (
+            <p
+              className="text-xs leading-5 text-[var(--color-text-muted)]"
+              id="group-leave-availability-message"
             >
-              <LogOut aria-hidden size={16} /> Leave group
-            </button>
-          )}
+              Transfer ownership before leaving.
+            </p>
+          ) : leaveAvailability.willDisband ? (
+            <p
+              className="text-xs leading-5 text-[var(--color-text-muted)]"
+              id="group-leave-availability-message"
+            >
+              Leaving will disband this group.
+            </p>
+          ) : null}
         </section>
       </AppDialog>
 
@@ -2206,6 +2228,7 @@ function GroupActionConfirmation({
   onConfirm: () => void;
 }) {
   const isDanger = action.kind === "remove" || action.kind === "leave";
+  const willDisband = action.kind === "leave" && action.willDisband;
   const title =
     action.kind === "role"
       ? action.nextRole === "admin"
@@ -2215,7 +2238,9 @@ function GroupActionConfirmation({
         ? "Transfer leadership?"
         : action.kind === "remove"
           ? "Remove from group?"
-          : "Leave group?";
+          : willDisband
+            ? "Disband group?"
+            : "Leave group?";
   const handle = action.kind === "leave" ? null : action.member.handle;
   const description =
     action.kind === "role"
@@ -2228,7 +2253,9 @@ function GroupActionConfirmation({
         ? `${handle} will become leader and you will become a moderator.`
         : action.kind === "remove"
           ? `${handle} will lose access to this group.`
-          : "You will lose access to this group.";
+          : willDisband
+            ? "You are the last member. Leaving will permanently remove the group and its chat history."
+            : "You will lose access to this group.";
   const confirmLabel =
     action.kind === "role"
       ? action.nextRole === "admin"
@@ -2238,7 +2265,9 @@ function GroupActionConfirmation({
         ? "Transfer"
         : action.kind === "remove"
           ? "Remove"
-          : "Leave group";
+          : willDisband
+            ? "Leave and disband"
+            : "Leave group";
 
   return (
     <AppDialog
