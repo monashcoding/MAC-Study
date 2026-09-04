@@ -136,18 +136,7 @@ body {
 
 @media (min-width: 64rem) {
   .mac-desktop-shell {
-    background:
-      radial-gradient(
-        circle at 88% 4%,
-        rgb(255 227 48 / 0.055),
-        transparent 28rem
-      ),
-      radial-gradient(
-        circle at 54% 92%,
-        rgb(108 182 255 / 0.035),
-        transparent 34rem
-      ),
-      var(--color-background);
+    background: var(--color-background);
   }
 
   html {
@@ -526,13 +515,7 @@ textarea::placeholder {
 [role="dialog"] > div {
   border-color: rgb(255 255 255 / 0.1);
   border-radius: 0.75rem;
-  background:
-    radial-gradient(
-      circle at top right,
-      rgb(255 227 48 / 0.055),
-      transparent 18rem
-    ),
-    #181818;
+  background: #181818;
   box-shadow: 0 32px 90px rgb(0 0 0 / 0.5);
 }
 

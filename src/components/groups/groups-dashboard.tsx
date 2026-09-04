@@ -1489,7 +1489,7 @@ function CreateGroupDialog({
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-[rgb(255_255_255/0.055)] bg-[linear-gradient(145deg,rgb(255_255_255/0.045),rgb(255_255_255/0.018))] px-3 py-3 text-center lg:px-4 lg:py-4">
+    <div className="rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.03)] px-3 py-3 text-center lg:px-4 lg:py-4">
       <p className="text-xl font-semibold tabular-nums lg:text-2xl">{value}</p>
       <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">
         {label}
