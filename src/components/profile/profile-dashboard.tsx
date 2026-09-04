@@ -18,7 +18,7 @@ export function ProfileDashboard({
 
   return (
     <div className="space-y-6 lg:grid lg:grid-cols-[minmax(17rem,0.72fr)_minmax(0,1.28fr)] lg:items-start lg:gap-6 lg:space-y-0">
-      <section className="overflow-hidden rounded-lg border border-[rgb(255_255_255/0.07)] bg-[radial-gradient(circle_at_top_right,rgb(255_227_48/0.11),transparent_45%),rgb(255_255_255/0.025)] p-4 lg:p-5">
+      <section className="overflow-hidden rounded-lg border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.025)] p-4 lg:p-5">
         <div className="flex items-center gap-3 lg:items-start">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414] lg:h-16 lg:w-16">
             {initials ? (

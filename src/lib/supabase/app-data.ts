@@ -320,10 +320,7 @@ type SessionRow = {
   duration_seconds: number | null;
 };
 
-type SessionRowWithoutReminders = Omit<
-  SessionRow,
-  "reminder_interval_minutes"
->;
+type SessionRowWithoutReminders = Omit<SessionRow, "reminder_interval_minutes">;
 
 const TIMER_SESSION_COLUMNS =
   "id, user_id, subject_id, group_id, started_at, ended_at, status, source, duration_seconds, reminder_interval_minutes";
@@ -1206,18 +1203,20 @@ export async function removeRemoteGroupMember({
   if (error) throw error;
 }
 
-export async function leaveRemoteGroup({
-  groupId,
-  supabase,
-}: {
-  groupId: string;
-  supabase: SupabaseClient;
-}) {
-  const { error } = await supabase.rpc("leave_study_group", {
-    target_group_id: groupId,
+export async function leaveRemoteGroup({ groupId }: { groupId: string }) {
+  const response = await fetch("/api/groups/leave", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ groupId }),
   });
 
-  if (error) throw error;
+  if (!response.ok) throw new Error(await getResponseError(response));
+
+  const body = (await response.json()) as {
+    outcome: "disbanded" | "left";
+  };
+
+  return body.outcome;
 }
 
 export async function fetchRemoteGroupChatMessages(

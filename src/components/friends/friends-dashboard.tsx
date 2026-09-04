@@ -1636,9 +1636,6 @@ function AddFriendDialog({
   onShowRequests: () => void;
   remoteCandidates: RemoteFriendCandidate[] | null;
 }) {
-  const [revealedCandidateIds, setRevealedCandidateIds] = useState<Set<string>>(
-    () => new Set(),
-  );
   const isDirty =
     remoteCandidates === null &&
     Boolean(name.trim() || handle.trim() || color !== PROFILE_COLORS[1]);
@@ -1675,38 +1672,16 @@ function AddFriendDialog({
                 key={candidate.id}
               >
                 <ProfileBadge friend={candidate} size="sm" />
-                <button
-                  aria-expanded={revealedCandidateIds.has(candidate.id)}
-                  className="mac-focus min-w-0 rounded-md text-left"
-                  onClick={() =>
-                    setRevealedCandidateIds((current) => {
-                      const next = new Set(current);
-                      if (next.has(candidate.id)) {
-                        next.delete(candidate.id);
-                      } else {
-                        next.add(candidate.id);
-                      }
-                      return next;
-                    })
-                  }
-                  title={
-                    revealedCandidateIds.has(candidate.id)
-                      ? candidate.name
-                      : `Show ${candidate.handle}'s display name`
-                  }
-                  type="button"
-                >
+                <div className="min-w-0">
                   <p className="truncate font-semibold">{candidate.handle}</p>
-                  {revealedCandidateIds.has(candidate.id) ? (
-                    <p className="truncate text-sm font-medium text-[var(--color-text)]">
-                      {candidate.name}
-                    </p>
-                  ) : null}
+                  <p className="truncate text-sm font-medium text-[var(--color-text)]">
+                    {candidate.name}
+                  </p>
                   <p className="truncate text-xs text-[var(--color-text-muted)]">
                     {candidate.mutualFriendCount} mutual{" "}
                     {candidate.mutualFriendCount === 1 ? "friend" : "friends"}
                   </p>
-                </button>
+                </div>
                 {candidate.requestDirection === "incoming" ? (
                   <button
                     className="mac-focus h-10 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)]"
