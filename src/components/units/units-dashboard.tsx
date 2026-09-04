@@ -577,6 +577,23 @@ export function UnitsDashboard() {
             Add unit
           </button>
         ) : null}
+
+        {dataMode !== "loading" ? (
+          <div
+            className="flex max-w-xl items-start gap-2.5 rounded-md border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.03)] px-3 py-2.5 text-sm leading-5 text-[var(--color-text-muted)]"
+            role="note"
+          >
+            <Info
+              aria-hidden
+              className="mt-0.5 shrink-0 text-[var(--color-mac-yellow)]"
+              size={16}
+            />
+            <p>
+              Find and add friends who are studying the same units as
+              you.
+            </p>
+          </div>
+        ) : null}
       </section>
 
       {feedback ? <Feedback message={feedback} /> : null}
