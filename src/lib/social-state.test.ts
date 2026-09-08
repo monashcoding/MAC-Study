@@ -8,6 +8,7 @@ describe("normalizeSocialState groups", () => {
       groups: [
         {
           id: "public-study",
+          inviteCode: "JOIN123",
           name: "Public study",
           memberIds: ["you"],
           currentUserRole: "owner",
@@ -18,6 +19,7 @@ describe("normalizeSocialState groups", () => {
 
     expect(state.groups[0]).toMatchObject({
       currentUserRole: "owner",
+      inviteCode: "JOIN123",
       memberRoles: { you: "owner" },
       visibility: "private",
     });

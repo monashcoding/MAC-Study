@@ -162,8 +162,8 @@ async function sendGroupInvitePush(notification: GroupNotificationRow) {
 }
 
 function getGroupInviteError(message: string) {
-  if (message.includes("leaders and moderators")) {
-    return "Only group leaders and moderators can invite members.";
+  if (message.includes("group members")) {
+    return "Join the group before inviting people.";
   }
 
   if (message.includes("Only friends")) {

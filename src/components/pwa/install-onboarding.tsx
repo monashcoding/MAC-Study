@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   Download,
+  MonitorDown,
   MoreVertical,
   Share,
   Smartphone,
@@ -54,10 +55,14 @@ export function InstallOnboarding({
   userId: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isDesktopGuideOpen, setIsDesktopGuideOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(false);
+  const [desktopDontShowAgain, setDesktopDontShowAgain] = useState(false);
+  const [phoneLauncherCompact, setPhoneLauncherCompact] = useState(false);
+  const [desktopLauncherCompact, setDesktopLauncherCompact] = useState(false);
   const [activePlatform, setActivePlatform] = useState<InstallPlatform>("ios");
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
   const isDesktopRef = useRef(false);
@@ -70,18 +75,31 @@ export function InstallOnboarding({
   // Version the preference so people who dismissed the earlier tutorial see
   // this revised tutorial until they explicitly opt out.
   const storageKey = `mac-install-onboarding-v3:${userId}`;
+  const phoneCompactStorageKey = `mac-install-phone-compact:${userId}`;
+  const desktopCompactStorageKey = `mac-install-desktop-compact:${userId}`;
 
   useEffect(() => {
     const desktopDevice = !isMobileDevice();
+    const compactPhone =
+      desktopDevice &&
+      window.localStorage.getItem(phoneCompactStorageKey) === "compact";
+    const compactDesktop =
+      desktopDevice &&
+      window.localStorage.getItem(desktopCompactStorageKey) === "compact";
     isDesktopRef.current = desktopDevice;
+    dontShowAgainRef.current = compactPhone;
     const syncFrame = window.requestAnimationFrame(() => {
       setIsDesktop(desktopDevice);
+      setPhoneLauncherCompact(compactPhone);
+      setDesktopLauncherCompact(compactDesktop);
+      setDontShowAgain(compactPhone);
+      setDesktopDontShowAgain(compactDesktop);
     });
 
     return () => {
       window.cancelAnimationFrame(syncFrame);
     };
-  }, []);
+  }, [desktopCompactStorageKey, phoneCompactStorageKey]);
 
   useEffect(() => {
     const desktopDevice = !isMobileDevice();
@@ -100,6 +118,7 @@ export function InstallOnboarding({
 
     function handleInstalled() {
       setIsOpen(false);
+      setIsDesktopGuideOpen(false);
       onComplete();
     }
 
@@ -126,8 +145,17 @@ export function InstallOnboarding({
     };
   }, [onComplete, storageKey]);
 
-  function openDesktopGuide() {
+  function openPhoneGuide() {
+    dontShowAgainRef.current = phoneLauncherCompact;
+    setDontShowAgain(phoneLauncherCompact);
     setIsOpen(true);
+    setIsDesktopGuideOpen(false);
+  }
+
+  function openDesktopInstallGuide() {
+    setDesktopDontShowAgain(desktopLauncherCompact);
+    setIsOpen(false);
+    setIsDesktopGuideOpen(true);
   }
 
   const closeGuide = useCallback(() => {
@@ -135,13 +163,41 @@ export function InstallOnboarding({
 
     if (isDesktopRef.current) return;
 
+    onComplete();
+  }, [onComplete]);
+
+  function confirmPhoneGuide() {
+    setIsOpen(false);
+
+    if (isDesktopRef.current) {
+      const compact = dontShowAgainRef.current;
+      setPhoneLauncherCompact(compact);
+      if (compact) {
+        window.localStorage.setItem(phoneCompactStorageKey, "compact");
+      } else {
+        window.localStorage.removeItem(phoneCompactStorageKey);
+      }
+      return;
+    }
+
     if (dontShowAgainRef.current) {
       window.localStorage.setItem(storageKey, "seen");
     } else {
       window.localStorage.removeItem(storageKey);
     }
     onComplete();
-  }, [onComplete, storageKey]);
+  }
+
+  function confirmDesktopGuide() {
+    setIsDesktopGuideOpen(false);
+    setDesktopLauncherCompact(desktopDontShowAgain);
+
+    if (desktopDontShowAgain) {
+      window.localStorage.setItem(desktopCompactStorageKey, "compact");
+    } else {
+      window.localStorage.removeItem(desktopCompactStorageKey);
+    }
+  }
 
   async function install() {
     const deferredPrompt = deferredPromptRef.current;
@@ -153,6 +209,7 @@ export function InstallOnboarding({
       const choice = await deferredPrompt.userChoice;
       if (choice.outcome === "accepted") {
         setIsOpen(false);
+        setIsDesktopGuideOpen(false);
         onComplete();
       }
     } finally {
@@ -188,24 +245,62 @@ export function InstallOnboarding({
   return (
     <>
       {isDesktop ? (
-        <button
-          aria-haspopup="dialog"
-          className="mac-focus group fixed bottom-6 right-6 z-40 inline-flex min-h-14 items-center gap-3 rounded-xl border border-[rgb(255_227_48/0.28)] bg-[rgb(28_28_28/0.96)] px-3 py-2.5 text-left shadow-[0_18px_48px_rgb(0_0_0/0.42)] backdrop-blur-xl transition duration-200 hover:-translate-y-0.5 hover:border-[rgb(255_227_48/0.55)] hover:bg-[rgb(32_32_32/0.98)]"
-          onClick={openDesktopGuide}
-          type="button"
-        >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-mac-yellow)] text-[#141414] shadow-[0_8px_24px_rgb(255_227_48/0.16)]">
-            <Smartphone aria-hidden size={20} strokeWidth={2.2} />
-          </span>
-          <span className="pr-1">
-            <span className="block text-sm font-semibold text-[var(--color-text)]">
-              Add to your phone
+        <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2 sm:flex-row sm:items-stretch">
+          <button
+            aria-haspopup="dialog"
+            aria-label="Install MAC Study on PC"
+            className={cn(
+              "mac-focus group inline-flex min-h-14 items-center rounded-xl border border-[rgb(255_227_48/0.28)] bg-[rgb(28_28_28/0.96)] shadow-[0_18px_48px_rgb(0_0_0/0.42)] backdrop-blur-xl transition duration-200 hover:-translate-y-0.5 hover:border-[rgb(255_227_48/0.55)] hover:bg-[rgb(32_32_32/0.98)]",
+              desktopLauncherCompact
+                ? "w-14 justify-center"
+                : "gap-3 px-3 py-2.5 text-left",
+            )}
+            onClick={openDesktopInstallGuide}
+            title="Install MAC Study on PC"
+            type="button"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-mac-yellow)] text-[#141414] shadow-[0_8px_24px_rgb(255_227_48/0.16)]">
+              <MonitorDown aria-hidden size={21} strokeWidth={2.1} />
             </span>
-            <span className="mt-0.5 block text-xs text-[var(--color-text-muted)]">
-              Installation instructions
+            {!desktopLauncherCompact ? (
+              <span className="pr-1">
+                <span className="block text-sm font-semibold text-[var(--color-text)]">
+                  Install on PC
+                </span>
+                <span className="mt-0.5 block text-xs text-[var(--color-text-muted)]">
+                  Chrome instructions
+                </span>
+              </span>
+            ) : null}
+          </button>
+          <button
+            aria-haspopup="dialog"
+            aria-label="Add MAC Study to your phone"
+            className={cn(
+              "mac-focus group inline-flex min-h-14 items-center rounded-xl border border-[rgb(255_227_48/0.28)] bg-[rgb(28_28_28/0.96)] shadow-[0_18px_48px_rgb(0_0_0/0.42)] backdrop-blur-xl transition duration-200 hover:-translate-y-0.5 hover:border-[rgb(255_227_48/0.55)] hover:bg-[rgb(32_32_32/0.98)]",
+              phoneLauncherCompact
+                ? "w-14 justify-center"
+                : "gap-3 px-3 py-2.5 text-left",
+            )}
+            onClick={openPhoneGuide}
+            title="Add MAC Study to your phone"
+            type="button"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-mac-yellow)] text-[#141414] shadow-[0_8px_24px_rgb(255_227_48/0.16)]">
+              <Smartphone aria-hidden size={20} strokeWidth={2.2} />
             </span>
-          </span>
-        </button>
+            {!phoneLauncherCompact ? (
+              <span className="pr-1">
+                <span className="block text-sm font-semibold text-[var(--color-text)]">
+                  Add to your phone
+                </span>
+                <span className="mt-0.5 block text-xs text-[var(--color-text-muted)]">
+                  Installation instructions
+                </span>
+              </span>
+            ) : null}
+          </button>
+        </div>
       ) : null}
 
       {isOpen ? (
@@ -213,38 +308,14 @@ export function InstallOnboarding({
           bodyClassName="space-y-4 sm:p-5"
           closeLabel="Close phone install guide"
           footer={
-            isDesktop ? (
-              <div className="grid gap-2">
-                {canInstall ? (
-                  <button
-                    className="mac-focus inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
-                    disabled={isInstalling}
-                    onClick={() => void install()}
-                    type="button"
-                  >
-                    <Download aria-hidden size={18} />
-                    {isInstalling ? "Installing…" : "Install MAC Study on PC"}
-                  </button>
-                ) : null}
-                <button
-                  className="mac-focus h-11 rounded-lg text-sm font-semibold text-[var(--color-text-muted)]"
-                  disabled={isInstalling}
-                  onClick={closeGuide}
-                  type="button"
-                >
-                  {canInstall ? "Not now" : "Got it"}
-                </button>
-              </div>
-            ) : (
-              <button
-                className="mac-focus h-11 w-full rounded-lg text-sm font-semibold text-[var(--color-text-muted)]"
-                disabled={isInstalling}
-                onClick={closeGuide}
-                type="button"
-              >
-                Not now
-              </button>
-            )
+            <button
+              className="mac-focus h-11 w-full rounded-lg text-sm font-semibold text-[var(--color-text-muted)]"
+              disabled={isInstalling}
+              onClick={confirmPhoneGuide}
+              type="button"
+            >
+              Got it
+            </button>
           }
           maxWidthClassName="max-w-lg"
           onClose={closeGuide}
@@ -316,21 +387,86 @@ export function InstallOnboarding({
             </div>
           </div>
 
-          {!isDesktop ? (
-            <label className="mac-focus flex min-h-11 items-center gap-3 rounded-md px-1 text-sm text-[var(--color-text-muted)]">
-              <input
-                checked={dontShowAgain}
-                className="h-5 w-5 accent-[var(--color-mac-yellow)]"
+          <label className="mac-focus flex min-h-11 items-center gap-3 rounded-md px-1 text-sm text-[var(--color-text-muted)]">
+            <input
+              checked={dontShowAgain}
+              className="h-5 w-5 accent-[var(--color-mac-yellow)]"
+              disabled={isInstalling}
+              onChange={(event) => {
+                dontShowAgainRef.current = event.target.checked;
+                setDontShowAgain(event.target.checked);
+              }}
+              type="checkbox"
+            />
+            <span>Don&apos;t show again</span>
+          </label>
+        </AppDialog>
+      ) : null}
+
+      {isDesktopGuideOpen ? (
+        <AppDialog
+          bodyClassName="grid gap-2.5 sm:p-5"
+          closeLabel="Close PC install guide"
+          footer={
+            <div className="grid gap-2">
+              {canInstall ? (
+                <button
+                  className="mac-focus inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
+                  disabled={isInstalling}
+                  onClick={() => void install()}
+                  type="button"
+                >
+                  <Download aria-hidden size={18} />
+                  {isInstalling ? "Installing…" : "Install MAC Study on PC"}
+                </button>
+              ) : null}
+              <button
+                className="mac-focus h-11 rounded-lg text-sm font-semibold text-[var(--color-text-muted)]"
                 disabled={isInstalling}
-                onChange={(event) => {
-                  dontShowAgainRef.current = event.target.checked;
-                  setDontShowAgain(event.target.checked);
-                }}
-                type="checkbox"
-              />
-              <span>Don&apos;t show again</span>
-            </label>
-          ) : null}
+                onClick={confirmDesktopGuide}
+                type="button"
+              >
+                Got it
+              </button>
+            </div>
+          }
+          maxWidthClassName="max-w-md"
+          onClose={() => setIsDesktopGuideOpen(false)}
+          title="Install MAC Study on PC"
+          titleClassName="whitespace-normal text-xl leading-6"
+        >
+          <ol className="grid gap-2.5">
+            <li className="relative flex min-h-16 items-center rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.018)] py-3 pl-16 pr-4 text-sm font-semibold">
+              <span className="absolute left-3 flex h-10 w-10 items-center justify-center rounded-lg bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+                <MonitorDown aria-hidden size={20} strokeWidth={2.1} />
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[var(--color-background)] bg-[var(--color-mac-yellow)] px-1 text-[0.62rem] font-bold text-[#141414]">
+                  1
+                </span>
+              </span>
+              Select this icon in the far right of your URL bar
+            </li>
+            <li className="relative flex min-h-16 items-center rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.018)] py-3 pl-16 pr-4 text-sm font-semibold">
+              <span className="absolute left-3 flex h-10 w-10 items-center justify-center rounded-lg bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+                <Download aria-hidden size={19} />
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[var(--color-background)] bg-[var(--color-mac-yellow)] px-1 text-[0.62rem] font-bold text-[#141414]">
+                  2
+                </span>
+              </span>
+              Select Install.
+            </li>
+          </ol>
+          <label className="mac-focus flex min-h-11 items-center gap-3 rounded-md px-1 text-sm text-[var(--color-text-muted)]">
+            <input
+              checked={desktopDontShowAgain}
+              className="h-5 w-5 accent-[var(--color-mac-yellow)]"
+              disabled={isInstalling}
+              onChange={(event) =>
+                setDesktopDontShowAgain(event.target.checked)
+              }
+              type="checkbox"
+            />
+            <span>Don&apos;t show again</span>
+          </label>
         </AppDialog>
       ) : null}
     </>
