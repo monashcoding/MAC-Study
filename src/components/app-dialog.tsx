@@ -27,6 +27,8 @@ export function AppDialog({
   closeLabel = "Close dialog",
   confirmDiscard = true,
   footer,
+  footerClassName,
+  headerClassName,
   isDirty = false,
   maxWidthClassName = "max-w-xl",
   onClose,
@@ -39,6 +41,8 @@ export function AppDialog({
   closeLabel?: string;
   confirmDiscard?: boolean;
   footer?: ReactNode;
+  footerClassName?: string;
+  headerClassName?: string;
   isDirty?: boolean;
   maxWidthClassName?: string;
   onClose: () => void;
@@ -168,8 +172,8 @@ export function AppDialog({
         <div
           className={cn(
             "flex shrink-0 items-center justify-between gap-3 px-4 py-3",
-            variant === "default" &&
-              "border-b border-[var(--color-border)] bg-[rgb(20_20_20/0.96)] backdrop-blur-xl",
+            variant === "default" && "border-b border-[var(--color-border)]",
+            headerClassName,
           )}
         >
           <h2
@@ -213,8 +217,8 @@ export function AppDialog({
           <div
             className={cn(
               "shrink-0 p-4",
-              variant === "default" &&
-                "border-t border-[var(--color-border)] bg-[rgb(20_20_20/0.96)] backdrop-blur-xl",
+              variant === "default" && "border-t border-[var(--color-border)]",
+              footerClassName,
             )}
           >
             {footer}

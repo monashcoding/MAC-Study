@@ -14,7 +14,9 @@ import {
   BellOff,
   Check,
   Clock3,
+  Copy,
   Crown,
+  Link2,
   LoaderCircle,
   LogOut,
   MoreHorizontal,
@@ -53,6 +55,7 @@ import {
   fetchRemoteTimerState,
   fetchRemoteSocialSnapshot,
   inviteRemoteFriendToGroup,
+  joinRemoteGroupByLink,
   leaveRemoteGroup,
   removeRemoteGroupMember,
   saveRemoteGroupNotificationSettings,
@@ -110,6 +113,10 @@ export function GroupsDashboard({
   const [isChoosingStudy, setIsChoosingStudy] = useState(false);
   const [isGroupSettingsOpen, setIsGroupSettingsOpen] = useState(false);
   const [isInvitingFriends, setIsInvitingFriends] = useState(false);
+  const [pendingJoinLink, setPendingJoinLink] = useState<{
+    code: string;
+    groupId: string;
+  } | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [groupView, setGroupView] = useState<"class" | "rankings" | "chat">(
@@ -130,6 +137,7 @@ export function GroupsDashboard({
   const [now, setNow] = useState(() => new Date());
   const studyDateKey = getLocalDateKey(now);
   const previousStudyDateKeyRef = useRef(studyDateKey);
+  const joinLinkHandledRef = useRef(false);
   const nudgeQueue = useNudgeQueue(Boolean(remoteClient));
 
   useEffect(() => {
@@ -316,6 +324,30 @@ export function GroupsDashboard({
   const selectedGroup = socialState.groups.find(
     (group) => group.id === selectedGroupId,
   );
+  useEffect(() => {
+    if (joinLinkHandledRef.current) return;
+
+    const url = new URL(window.location.href);
+    const groupId = url.searchParams.get("joinGroup")?.trim();
+    const code = url.searchParams.get("joinCode")?.trim();
+
+    if (!groupId || !code) return;
+
+    joinLinkHandledRef.current = true;
+    window.queueMicrotask(() => {
+      setSelectedGroupId(null);
+      setGroupView("class");
+      setPendingJoinLink({ code, groupId });
+    });
+    url.searchParams.delete("joinGroup");
+    url.searchParams.delete("joinCode");
+    window.history.replaceState(
+      null,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, []);
+
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const groupId = searchParams.get("group");
@@ -657,6 +689,29 @@ export function GroupsDashboard({
     setIsGroupSettingsOpen(false);
   }
 
+  async function joinGroupFromLink({
+    code,
+    groupId,
+  }: {
+    code: string;
+    groupId: string;
+  }) {
+    if (!remoteClient) {
+      throw new Error("Group invite links require an online account.");
+    }
+
+    const joinedGroupId = await joinRemoteGroupByLink({
+      code,
+      groupId,
+      supabase: remoteClient,
+    });
+    await refreshRemoteSocial(remoteClient);
+    setActiveTab("groups");
+    setGroupView("class");
+    setSelectedGroupId(joinedGroupId);
+    setPendingJoinLink(null);
+  }
+
   async function startGroupStudy(subjectId: string | null) {
     if (!selectedGroup || activeStudySession) {
       setIsChoosingStudy(false);
@@ -778,9 +833,6 @@ export function GroupsDashboard({
     const selectedMemberNudgeState = selectedMember
       ? nudgeQueue.getState(`${selectedGroup.id}:${selectedMember.id}`)
       : null;
-    const canInviteFriends =
-      selectedGroup.currentUserRole === "owner" ||
-      selectedGroup.currentUserRole === "admin";
     const pendingInviteFriendIds = new Set(
       outgoingGroupInvites
         .filter((invite) => invite.group.id === selectedGroup.id)
@@ -828,17 +880,15 @@ export function GroupsDashboard({
               <span className="shrink-0">{members.length} members</span>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {canInviteFriends ? (
-                <button
-                  aria-label="Invite friends"
-                  className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414] transition active:scale-[0.98]"
-                  onClick={() => setIsInvitingFriends(true)}
-                  title="Invite friends"
-                  type="button"
-                >
-                  <UserPlus aria-hidden size={18} />
-                </button>
-              ) : null}
+              <button
+                aria-label="Invite people"
+                className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414] transition active:scale-[0.98]"
+                onClick={() => setIsInvitingFriends(true)}
+                title="Invite people"
+                type="button"
+              >
+                <UserPlus aria-hidden size={18} />
+              </button>
               <button
                 aria-label="Group settings"
                 className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md bg-[rgb(255_255_255/0.045)] text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.08)]"
@@ -1057,6 +1107,14 @@ export function GroupsDashboard({
               resetKey={`${selectedGroup.id}:${rankingWindow}`}
             />
           </section>
+        ) : null}
+
+        {pendingJoinLink ? (
+          <GroupJoinLinkDialog
+            isReady={isLoaded && remoteClient !== null}
+            onClose={() => setPendingJoinLink(null)}
+            onJoin={() => joinGroupFromLink(pendingJoinLink)}
+          />
         ) : null}
 
         <div className="fixed inset-x-4 bottom-[calc(var(--mobile-nav-height)+0.75rem)] z-20 mx-auto max-w-lg lg:static lg:inset-x-auto lg:max-w-none lg:pt-2">
@@ -1289,6 +1347,14 @@ export function GroupsDashboard({
           currentUserId={currentUserId}
           selectedMembers={selectedMembers}
           socialState={socialState}
+        />
+      ) : null}
+
+      {pendingJoinLink ? (
+        <GroupJoinLinkDialog
+          isReady={isLoaded && remoteClient !== null}
+          onClose={() => setPendingJoinLink(null)}
+          onJoin={() => joinGroupFromLink(pendingJoinLink)}
         />
       ) : null}
     </div>
@@ -1544,6 +1610,7 @@ function GroupFriendInviteDialog({
     () => new Set(pendingFriendIds),
   );
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const inviteableFriends = friends
     .filter(
       (friend) =>
@@ -1579,14 +1646,56 @@ function GroupFriendInviteDialog({
     }
   }
 
+  async function copyInviteLink() {
+    if (!group.inviteCode) return;
+
+    const inviteUrl = `${window.location.origin}/join/group/${encodeURIComponent(
+      group.id,
+    )}/${encodeURIComponent(group.inviteCode)}`;
+
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setLinkCopied(true);
+      setFeedback(null);
+    } catch {
+      setFeedback("Could not copy the invite link.");
+    }
+  }
+
   return (
     <AppDialog
       bodyClassName="grid gap-3"
-      closeLabel="Close friend invitations"
+      closeLabel="Close group invitations"
       maxWidthClassName="max-w-md"
       onClose={onClose}
-      title="Invite friends"
+      title="Invite people"
     >
+      {group.inviteCode ? (
+        <div className="mac-muted-panel flex min-w-0 items-center gap-3 p-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+            <Link2 aria-hidden size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Share join link</p>
+            <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+              Anyone with this link can join the group.
+            </p>
+          </div>
+          <button
+            className="mac-focus inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold transition hover:bg-[rgb(255_255_255/0.045)]"
+            onClick={() => void copyInviteLink()}
+            type="button"
+          >
+            {linkCopied ? (
+              <Check aria-hidden size={15} />
+            ) : (
+              <Copy aria-hidden size={15} />
+            )}
+            {linkCopied ? "Copied" : "Copy link"}
+          </button>
+        </div>
+      ) : null}
+
       {feedback ? (
         <p className="text-sm text-[var(--color-danger)]" role="status">
           {feedback}
@@ -1639,6 +1748,74 @@ function GroupFriendInviteDialog({
           All available friends are already members or invited.
         </p>
       )}
+    </AppDialog>
+  );
+}
+
+function GroupJoinLinkDialog({
+  isReady,
+  onClose,
+  onJoin,
+}: {
+  isReady: boolean;
+  onClose: () => void;
+  onJoin: () => void | Promise<void>;
+}) {
+  const [isJoining, setIsJoining] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function join() {
+    if (!isReady || isJoining) return;
+
+    setIsJoining(true);
+    setError(null);
+    try {
+      await onJoin();
+    } catch (joinError) {
+      setError(getErrorMessage(joinError, "This group could not be joined."));
+      setIsJoining(false);
+    }
+  }
+
+  return (
+    <AppDialog
+      closeLabel="Close group invitation"
+      footer={
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className="mac-focus h-11 rounded-md border border-[var(--color-border)] px-4 text-sm font-semibold"
+            disabled={isJoining}
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] disabled:opacity-50"
+            disabled={!isReady || isJoining}
+            onClick={() => void join()}
+            type="button"
+          >
+            {isJoining || !isReady ? (
+              <LoaderCircle aria-hidden className="animate-spin" size={16} />
+            ) : null}
+            {isJoining ? "Joining…" : !isReady ? "Loading…" : "Join group"}
+          </button>
+        </div>
+      }
+      maxWidthClassName="max-w-sm"
+      onClose={onClose}
+      title="Join group"
+      variant="confirmation"
+    >
+      <p className="text-sm leading-6 text-[var(--color-text-muted)]">
+        Join this MAC Study group using the shared invite link.
+      </p>
+      {error ? (
+        <p className="mt-3 text-sm text-[var(--color-danger)]" role="alert">
+          {error}
+        </p>
+      ) : null}
     </AppDialog>
   );
 }
@@ -1856,7 +2033,6 @@ function GroupSettingsDialog({
     selectedGroup.memberRoles?.[currentUserId] ??
     "member";
   const isLeader = currentRole === "owner";
-  const canManageMembers = isLeader || currentRole === "admin";
   const leaveAvailability = getGroupLeaveAvailability(
     currentRole,
     members.length,
@@ -2004,7 +2180,7 @@ function GroupSettingsDialog({
                 {members.length} {members.length === 1 ? "person" : "people"}
               </p>
             </div>
-            {canManageMembers && inviteableFriends.length ? (
+            {inviteableFriends.length ? (
               <button
                 aria-expanded={inviteOpen}
                 className="mac-focus inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 text-xs font-semibold"

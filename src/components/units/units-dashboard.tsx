@@ -256,10 +256,7 @@ export function UnitsDashboard() {
     };
   }, [dataMode, remoteClient, selectedOfferingId, socialState.groups]);
 
-  const manageableGroups = socialState.groups.filter(
-    (group) =>
-      group.currentUserRole === "owner" || group.currentUserRole === "admin",
-  );
+  const manageableGroups = socialState.groups;
   const filteredCohort = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -588,10 +585,7 @@ export function UnitsDashboard() {
               className="mt-0.5 shrink-0 text-[var(--color-mac-yellow)]"
               size={16}
             />
-            <p>
-              Find and add friends who are studying the same units as
-              you.
-            </p>
+            <p>Find and add friends who are studying the same units as you.</p>
           </div>
         ) : null}
       </section>

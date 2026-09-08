@@ -1798,13 +1798,10 @@ function GroupInviteDialog({
     >
       {groups.length ? (
         groups.map((group, index) => {
-          const canInvite =
-            group.currentUserRole === "owner" ||
-            group.currentUserRole === "admin";
           const alreadyMember = group.memberIds.includes(friend.id);
           const invited = invitedGroupIds.has(group.id);
           const pending = pendingGroupIds.has(group.id);
-          const disabled = !canInvite || alreadyMember || invited || pending;
+          const disabled = alreadyMember || invited || pending;
 
           return (
             <div
@@ -1819,11 +1816,8 @@ function GroupInviteDialog({
                   {group.name}
                 </span>
                 <span className="block text-xs text-[var(--color-text-muted)]">
-                  {!canInvite
-                    ? "Leader or moderator required"
-                    : `${group.memberIds.length} ${
-                        group.memberIds.length === 1 ? "member" : "members"
-                      }`}
+                  {group.memberIds.length}{" "}
+                  {group.memberIds.length === 1 ? "member" : "members"}
                 </span>
               </span>
               <button

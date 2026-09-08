@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -12,6 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   BellRing,
   CalendarClock,
+  Check,
   LoaderCircle,
   Pause,
   Pencil,
@@ -58,6 +60,8 @@ import { getTeachingPeriodLabel, type UnitEnrollment } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "mac-study-demo-state";
+const SKIP_SUBJECT_DELETE_CONFIRMATION_KEY =
+  "mac-study-skip-subject-delete-confirmation";
 const UNLINKED_UNIT_VALUE = "__unlinked__";
 const SUBJECT_COLOR_OPTIONS = [
   { label: "Yellow", swatchColor: "#FFE330", value: "#FFE330" },
@@ -145,6 +149,11 @@ export function TimerDashboard() {
   const [pushStatus, setPushStatus] = useState<PushStatus | null>(null);
   const isSavingSubjectsRef = useRef(false);
   const isSessionMutationInFlightRef = useRef(false);
+
+  const closeSubjectEditor = useCallback(() => {
+    setIsEditingSubjects(false);
+    setInitialEditingSubjectId(null);
+  }, []);
 
   const applyRemoteTimerState = useCallback((remoteState: RemoteTimerState) => {
     setSubjects(remoteState.subjects);
@@ -652,6 +661,46 @@ export function TimerDashboard() {
     });
   }
 
+  async function deleteSubjectImmediately(subjectId: string) {
+    const subject = subjects.find((item) => item.id === subjectId);
+
+    if (!subject) {
+      deleteDraftSubject(subjectId);
+      return;
+    }
+
+    const previousSubjects = subjects;
+    const previousDraftSubjects = draftSubjects;
+    const remainingSubjects = subjects.filter((item) => item.id !== subjectId);
+
+    setSubjects(remainingSubjects);
+    setDraftSubjects(remainingSubjects);
+    setSubjectSaveError(null);
+
+    if (dataMode !== "remote" || !remoteClient) {
+      setSubjectToastMessage(`${subject.name} deleted`);
+      return;
+    }
+
+    isSavingSubjectsRef.current = true;
+
+    try {
+      const savedSubjects = await saveRemoteSubjects({
+        subjects: remainingSubjects,
+        supabase: remoteClient,
+      });
+      setSubjects(savedSubjects);
+      setDraftSubjects(savedSubjects);
+      setSubjectToastMessage(`${subject.name} deleted`);
+    } catch (error) {
+      setSubjects(previousSubjects);
+      setDraftSubjects(previousDraftSubjects);
+      throw error;
+    } finally {
+      isSavingSubjectsRef.current = false;
+    }
+  }
+
   function saveSubjects() {
     const cleanedSubjects = normalizeSubjects(draftSubjects);
     const subjectIds = new Set(cleanedSubjects.map((subject) => subject.id));
@@ -849,11 +898,9 @@ export function TimerDashboard() {
           draftSubjects={draftSubjects}
           initialSubjectId={initialEditingSubjectId}
           onAdd={addDraftSubject}
-          onClose={() => {
-            setIsEditingSubjects(false);
-            setInitialEditingSubjectId(null);
-          }}
-          onDelete={deleteDraftSubject}
+          onClose={closeSubjectEditor}
+          onDelete={deleteSubjectImmediately}
+          onDeleteDraft={deleteDraftSubject}
           onRestore={restoreDraftSubject}
           onSave={saveSubjects}
           onUpdate={updateDraftSubject}
@@ -1375,6 +1422,7 @@ function SubjectEditor({
   onAdd,
   onClose,
   onDelete,
+  onDeleteDraft,
   onRestore,
   onSave,
   onUpdate,
@@ -1385,7 +1433,8 @@ function SubjectEditor({
   initialSubjectId: string | null;
   onAdd: () => string;
   onClose: () => void;
-  onDelete: (subjectId: string) => void;
+  onDelete: (subjectId: string) => Promise<void>;
+  onDeleteDraft: (subjectId: string) => void;
   onRestore: (subject: StudySubject, index: number) => void;
   onSave: () => void;
   onUpdate: (subjectId: string, updates: Partial<StudySubject>) => void;
@@ -1395,6 +1444,14 @@ function SubjectEditor({
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(
     initialSubjectId,
   );
+  const colourGroupId = useId();
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [subjectToDelete, setSubjectToDelete] = useState<StudySubject | null>(
+    null,
+  );
+  const [dontShowDeleteConfirmation, setDontShowDeleteConfirmation] =
+    useState(false);
+  const [isDeletingSubject, setIsDeletingSubject] = useState(false);
   const [deletedSubjects, setDeletedSubjects] = useState<
     { index: number; subject: StudySubject }[]
   >([]);
@@ -1425,9 +1482,47 @@ function SubjectEditor({
     setEditingSubjectId(onAdd());
   }
 
-  function deleteSubject(subjectId: string) {
-    onDelete(subjectId);
-    setEditingSubjectId(null);
+  function requestSubjectDelete(subject: StudySubject) {
+    setDeleteError(null);
+
+    if (
+      window.localStorage.getItem(SKIP_SUBJECT_DELETE_CONFIRMATION_KEY) ===
+      "true"
+    ) {
+      void confirmSubjectDelete(subject, false);
+      return;
+    }
+
+    setDontShowDeleteConfirmation(false);
+    setSubjectToDelete(subject);
+  }
+
+  async function confirmSubjectDelete(
+    subject: StudySubject,
+    rememberChoice: boolean,
+  ) {
+    if (isDeletingSubject) return;
+
+    setIsDeletingSubject(true);
+    setDeleteError(null);
+
+    try {
+      await onDelete(subject.id);
+
+      if (rememberChoice) {
+        window.localStorage.setItem(
+          SKIP_SUBJECT_DELETE_CONFIRMATION_KEY,
+          "true",
+        );
+      }
+
+      setSubjectToDelete(null);
+      onClose();
+    } catch {
+      setDeleteError("Subject could not be deleted. Try again.");
+    } finally {
+      setIsDeletingSubject(false);
+    }
   }
 
   function quickDeleteSubject(subject: StudySubject) {
@@ -1435,7 +1530,7 @@ function SubjectEditor({
     if (index < 0) return;
 
     setDeletedSubjects((current) => [...current, { index, subject }]);
-    onDelete(subject.id);
+    onDeleteDraft(subject.id);
   }
 
   function undoLastDelete() {
@@ -1448,17 +1543,37 @@ function SubjectEditor({
   return (
     <>
       <AppDialog
-        bodyClassName={editingSubject ? "space-y-6 p-5" : "p-0"}
+        bodyClassName={editingSubject ? "space-y-6 px-5 py-6 sm:px-6" : "p-0"}
         closeLabel="Close subject editor"
         confirmDiscard={!isCreatingSubject}
+        footerClassName={editingSubject ? "p-5 sm:px-6" : undefined}
+        headerClassName={
+          editingSubject ? "border-b-0 px-5 py-4 sm:px-6" : undefined
+        }
         footer={
-          <div
-            className={cn(
-              "flex flex-col gap-2 sm:flex-row",
-              editingSubject ? "sm:justify-end" : "sm:justify-between",
-            )}
-          >
-            {editingSubject ? null : (
+          editingSubject ? (
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3">
+              <button
+                aria-label={`Delete ${editingSubject.name}`}
+                className="mac-focus inline-flex h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-[var(--color-danger)] px-2 text-sm font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-35"
+                disabled={isDeletingSubject}
+                onClick={() => requestSubjectDelete(editingSubject)}
+                type="button"
+              >
+                <Trash2 aria-hidden className="shrink-0" size={16} />
+                Delete
+              </button>
+              <button
+                className="mac-focus inline-flex h-12 min-w-0 items-center justify-center rounded-xl bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.99] disabled:opacity-35"
+                disabled={isDeletingSubject}
+                onClick={onSave}
+                type="button"
+              >
+                Save changes
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
               <button
                 className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)]"
                 onClick={addAndEditSubject}
@@ -1467,19 +1582,19 @@ function SubjectEditor({
                 <Plus aria-hidden size={17} />
                 Add subject
               </button>
-            )}
-            <button
-              className="mac-focus inline-flex h-11 items-center justify-center rounded-xl bg-[var(--color-mac-yellow)] px-5 text-sm font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.99]"
-              onClick={onSave}
-              type="button"
-            >
-              Save changes
-            </button>
-          </div>
+              <button
+                className="mac-focus inline-flex h-11 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] px-5 text-sm font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.99]"
+                onClick={onSave}
+                type="button"
+              >
+                Save changes
+              </button>
+            </div>
+          )
         }
         isDirty={isDirty}
-        maxWidthClassName="max-w-lg"
-        onClose={onClose}
+        maxWidthClassName={editingSubject ? "max-w-md" : "max-w-lg"}
+        onClose={subjectToDelete ? () => undefined : onClose}
         title={editingSubject ? "Subject details" : "Edit subjects"}
       >
         {saveError ? (
@@ -1510,6 +1625,7 @@ function SubjectEditor({
               <p className="mb-2 text-sm font-medium">Linked unit</p>
               <CustomSelect
                 ariaLabel={`Linked unit for ${editingSubject.name}`}
+                className="[&>button]:h-12 [&>button]:rounded-xl [&>button]:px-4"
                 onChange={(offeringId) => {
                   const enrollment = availableUnitEnrollments.find(
                     (item) => item.offeringId === offeringId,
@@ -1532,25 +1648,59 @@ function SubjectEditor({
               />
             </div>
 
-            <div>
-              <p className="mb-2 text-sm font-medium">Play colour</p>
-              <CustomSelect
-                ariaLabel={`Play colour for ${editingSubject.name}`}
-                onChange={(color) =>
-                  onUpdate(editingSubject.id, { color: String(color) })
-                }
-                options={SUBJECT_COLOR_OPTIONS}
-                value={editingSubject.color}
-              />
+            <div className="space-y-2">
+              <p className="text-sm font-medium" id={colourGroupId}>
+                Play colour
+              </p>
+              <div
+                aria-labelledby={colourGroupId}
+                className="grid grid-cols-3 gap-2 min-[360px]:grid-cols-6"
+                role="radiogroup"
+              >
+                {SUBJECT_COLOR_OPTIONS.map((option) => (
+                  <label
+                    className="relative min-w-0 cursor-pointer"
+                    key={option.value}
+                    title={option.label}
+                  >
+                    <input
+                      aria-label={option.label}
+                      checked={editingSubject.color === option.value}
+                      className="peer sr-only"
+                      name={colourGroupId}
+                      onChange={() =>
+                        onUpdate(editingSubject.id, { color: option.value })
+                      }
+                      type="radio"
+                      value={option.value}
+                    />
+                    <span
+                      className="flex h-12 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] transition hover:bg-[var(--color-surface-raised)] peer-checked:border-[var(--subject-colour)] peer-checked:bg-[var(--color-surface-raised)] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-mac-yellow)]"
+                      style={
+                        { "--subject-colour": option.value } as CSSProperties
+                      }
+                    >
+                      <span
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-[#141414]"
+                        style={{ backgroundColor: option.value }}
+                      >
+                        {editingSubject.color === option.value ? (
+                          <Check aria-hidden size={16} strokeWidth={3} />
+                        ) : null}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
-
-            <button
-              className="mac-focus inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[rgb(255_107_107/0.35)] bg-[rgb(255_107_107/0.035)] px-3 text-sm font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-35"
-              onClick={() => deleteSubject(editingSubject.id)}
-              type="button"
-            >
-              Delete subject
-            </button>
+            {deleteError && !subjectToDelete ? (
+              <p
+                className="text-sm font-medium text-[var(--color-danger)]"
+                role="alert"
+              >
+                {deleteError}
+              </p>
+            ) : null}
           </>
         ) : (
           <PaginatedList
@@ -1559,7 +1709,7 @@ function SubjectEditor({
             pageSize={10}
             renderItem={(subject) => (
               <div
-                className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-md px-1 py-2.5 transition hover:bg-[rgb(255_255_255/0.035)]"
+                className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-md px-4 py-2.5 transition hover:bg-[rgb(255_255_255/0.035)]"
                 key={subject.id}
               >
                 <div className="flex min-w-0 items-center gap-3">
@@ -1604,6 +1754,82 @@ function SubjectEditor({
           onAction={undoLastDelete}
           onDismiss={() => setDeletedSubjects([])}
         />
+      ) : null}
+
+      {subjectToDelete ? (
+        <AppDialog
+          closeLabel="Cancel subject deletion"
+          footer={
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="mac-focus h-11 rounded-md border border-[var(--color-border)] text-sm font-semibold"
+                disabled={isDeletingSubject}
+                onClick={() => {
+                  setSubjectToDelete(null);
+                  setDeleteError(null);
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[rgb(255_107_107/0.55)] bg-[rgb(255_107_107/0.07)] text-sm font-semibold text-[var(--color-danger)]"
+                disabled={isDeletingSubject}
+                onClick={() =>
+                  void confirmSubjectDelete(
+                    subjectToDelete,
+                    dontShowDeleteConfirmation,
+                  )
+                }
+                type="button"
+              >
+                {isDeletingSubject ? (
+                  <LoaderCircle
+                    aria-hidden
+                    className="animate-spin"
+                    size={17}
+                  />
+                ) : null}
+                Delete subject
+              </button>
+            </div>
+          }
+          maxWidthClassName="max-w-sm"
+          onClose={() => {
+            if (isDeletingSubject) return;
+            setSubjectToDelete(null);
+            setDeleteError(null);
+          }}
+          title={`Delete ${subjectToDelete.name}?`}
+          variant="confirmation"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--color-text-muted)]">
+              This removes the subject from your list. Previous study sessions
+              will remain in your history.
+            </p>
+            <label className="mac-focus flex min-h-11 items-center gap-3 rounded-md text-sm text-[var(--color-text-muted)]">
+              <input
+                checked={dontShowDeleteConfirmation}
+                className="h-5 w-5 accent-[var(--color-mac-yellow)]"
+                disabled={isDeletingSubject}
+                onChange={(event) =>
+                  setDontShowDeleteConfirmation(event.target.checked)
+                }
+                type="checkbox"
+              />
+              <span>Don&apos;t show again</span>
+            </label>
+            {deleteError ? (
+              <p
+                className="text-sm font-medium text-[var(--color-danger)]"
+                role="alert"
+              >
+                {deleteError}
+              </p>
+            ) : null}
+          </div>
+        </AppDialog>
       ) : null}
     </>
   );

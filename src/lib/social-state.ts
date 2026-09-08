@@ -57,6 +57,7 @@ export type SocialGroup = {
   id: string;
   name: string;
   icon: GroupIconKey;
+  inviteCode?: string;
   memberIds: string[];
   memberRoles: Record<string, GroupRole>;
   currentUserRole?: GroupRole;
@@ -304,6 +305,7 @@ function normalizeGroup(value: unknown) {
     icon: GROUP_ICON_KEYS.includes(icon as GroupIconKey)
       ? (icon as GroupIconKey)
       : "users",
+    inviteCode: asString(value.inviteCode).trim() || undefined,
     memberIds,
     memberRoles,
     currentUserRole,

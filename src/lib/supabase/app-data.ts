@@ -1035,6 +1035,7 @@ export async function fetchRemoteSocialSnapshot(
     id: group.id,
     name: group.name,
     icon: normalizeGroupIcon(group.icon),
+    inviteCode: group.invite_code?.trim() || undefined,
     memberIds: memberships
       .filter((member) => member.group_id === group.id)
       .map((member) => member.user_id)
@@ -1710,6 +1711,35 @@ export async function inviteRemoteFriendToGroup({
   if (!response.ok) {
     throw new Error(body?.message ?? "Could not send that group invitation.");
   }
+}
+
+export async function joinRemoteGroupByLink({
+  code,
+  groupId,
+  supabase,
+}: {
+  code: string;
+  groupId: string;
+  supabase: SupabaseClient;
+}) {
+  const { data, error } = await supabase.rpc("join_group_by_link", {
+    group_invite_code: code,
+    target_group_id: groupId,
+  });
+
+  if (error) {
+    if (error.message.includes("GROUP_JOIN_BLOCKED")) {
+      throw new Error("You cannot rejoin this group.");
+    }
+
+    throw new Error("This invite link is invalid or has expired.");
+  }
+
+  if (typeof data !== "string") {
+    throw new Error("This invite link is invalid or has expired.");
+  }
+
+  return data;
 }
 
 export async function updateRemoteGroupInvite({
