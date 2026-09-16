@@ -10,11 +10,17 @@ export type TeachingPeriod = (typeof TEACHING_PERIODS)[number];
 export type UnitEnrollment = {
   code: string;
   joinedAt: string;
+  memberCount: number;
   nickname: string | null;
   offeringId: string;
   period: TeachingPeriod;
   unitId: string;
   year: number;
+};
+
+export type UnitEnrollmentFilter = {
+  period: TeachingPeriod | null;
+  year: number | null;
 };
 
 export type UnitCohortMember = {
@@ -144,6 +150,22 @@ export function isPastUnitEnrollment(
   );
 
   return end < now;
+}
+
+export function filterUnitEnrollments(
+  enrollments: UnitEnrollment[],
+  filter: UnitEnrollmentFilter,
+) {
+  return enrollments.filter(
+    (enrollment) =>
+      (filter.year === null || enrollment.year === filter.year) &&
+      (filter.period === null || enrollment.period === filter.period),
+  );
+}
+
+export function getUnitMemberCountLabel(memberCount: number) {
+  const normalizedCount = Math.max(1, Math.floor(memberCount));
+  return `${normalizedCount} ${normalizedCount === 1 ? "person" : "people"}`;
 }
 
 export function uniqueUnitSuggestions(suggestions: UnitSuggestion[]) {
