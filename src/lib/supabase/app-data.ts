@@ -228,6 +228,11 @@ type UnitCohortRow = {
   username: string | null;
 };
 
+type UnitCohortCountRow = {
+  member_count: number | string;
+  offering_id: string;
+};
+
 type GroupRow = {
   id: string;
   name: string;
@@ -738,6 +743,7 @@ export async function fetchRemoteUnitState(
     subjectsResult,
     specialUnitsResult,
     specialUnitAliasesResult,
+    cohortCountsResult,
   ] = await Promise.all([
     supabase
       .from("unit_enrolments")
@@ -764,15 +770,26 @@ export async function fetchRemoteUnitState(
       .from("special_unit_aliases")
       .select("alias_code, special_unit_code")
       .order("alias_code", { ascending: true }),
+    supabase.rpc("get_my_unit_cohort_counts"),
   ]);
 
   if (enrolmentsResult.error) throw enrolmentsResult.error;
   if (unitsResult.error) throw unitsResult.error;
   if (subjectsResult.error) throw subjectsResult.error;
 
+  const cohortCounts = new Map(
+    ((cohortCountsResult.data ?? []) as UnitCohortCountRow[]).map((row) => [
+      row.offering_id,
+      Math.max(1, Number(row.member_count) || 1),
+    ]),
+  );
   const enrollments = ((enrolmentsResult.data ?? []) as UnitEnrollmentRow[])
     .map(unitEnrollmentFromRow)
-    .filter((value): value is UnitEnrollment => Boolean(value));
+    .filter((value): value is UnitEnrollment => Boolean(value))
+    .map((enrollment) => ({
+      ...enrollment,
+      memberCount: cohortCounts.get(enrollment.offeringId) ?? 1,
+    }));
   const subjectSuggestions = ((subjectsResult.data ?? []) as SubjectRow[]).map(
     (subject) => ({
       code: subject.code,
@@ -2009,6 +2026,7 @@ function unitEnrollmentFromRow(row: UnitEnrollmentRow) {
   return {
     code: unit.code,
     joinedAt: row.joined_at,
+    memberCount: 1,
     nickname: row.nickname,
     offeringId: offering.id,
     period: offering.teaching_period,
