@@ -4,6 +4,7 @@ import type {
   Tables,
 } from "../types";
 import { getRemoteUserId } from "./shared";
+import { invalidateRemoteCachesForTable } from "@/lib/client-cache";
 import type {
   RemoteAppNotification,
   RemoteGroupNotificationSettings,
@@ -319,92 +320,97 @@ export function subscribeToRemoteAppChanges(
   supabase: SupabaseClient,
   onChange: (table?: string) => void,
 ) {
+  const handleChange = (table: string) => {
+    invalidateRemoteCachesForTable(table);
+    onChange(table);
+  };
+
   const channel = supabase
     .channel(`mac-study-app-data-${Math.random().toString(36).slice(2)}`)
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "study_sessions" },
-      () => onChange("study_sessions"),
+      () => handleChange("study_sessions"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "group_members" },
-      () => onChange("group_members"),
+      () => handleChange("group_members"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "friendships" },
-      () => onChange("friendships"),
+      () => handleChange("friendships"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "friend_requests" },
-      () => onChange("friend_requests"),
+      () => handleChange("friend_requests"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "direct_messages" },
-      () => onChange("direct_messages"),
+      () => handleChange("direct_messages"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "super_nudge_requests" },
-      () => onChange("super_nudge_requests"),
+      () => handleChange("super_nudge_requests"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "group_invites" },
-      () => onChange("group_invites"),
+      () => handleChange("group_invites"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "app_notifications" },
-      () => onChange("app_notifications"),
+      () => handleChange("app_notifications"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "group_chat_messages" },
-      () => onChange("group_chat_messages"),
+      () => handleChange("group_chat_messages"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "group_chat_read_receipts" },
-      () => onChange("group_chat_read_receipts"),
+      () => handleChange("group_chat_read_receipts"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "groups" },
-      () => onChange("groups"),
+      () => handleChange("groups"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "profiles" },
-      () => onChange("profiles"),
+      () => handleChange("profiles"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "nudges" },
-      () => onChange("nudges"),
+      () => handleChange("nudges"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "subjects" },
-      () => onChange("subjects"),
+      () => handleChange("subjects"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "unit_enrolments" },
-      () => onChange("unit_enrolments"),
+      () => handleChange("unit_enrolments"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "special_units" },
-      () => onChange("special_units"),
+      () => handleChange("special_units"),
     )
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "special_unit_aliases" },
-      () => onChange("special_unit_aliases"),
+      () => handleChange("special_unit_aliases"),
     )
     .subscribe();
 

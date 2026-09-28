@@ -44,13 +44,19 @@ export type RemoteTimerState = {
   sessions: RemoteStoredSession[];
 };
 
-export type RemoteSocialSnapshot = {
+export type RemoteSocialStateSnapshot = {
   socialState: SocialState;
+  currentUserId: string;
+};
+
+export type RemoteFriendsSnapshot = RemoteSocialStateSnapshot & {
   availableFriends: RemoteFriendCandidate[];
   friendRequests: RemoteFriendRequest[];
-  groupInvites: RemoteGroupInvite[];
   superNudges: RemoteSuperNudge[];
-  currentUserId: string;
+};
+
+export type RemoteGroupsSnapshot = RemoteSocialStateSnapshot & {
+  groupInvites: RemoteGroupInvite[];
 };
 
 export type RemoteFriendCandidate = SocialFriend & {

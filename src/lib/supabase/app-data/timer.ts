@@ -3,6 +3,7 @@ import type {
   Tables,
 } from "../types";
 import type { UnitEnrollment } from "@/lib/units";
+import { invalidateRemoteCachesForTable } from "@/lib/client-cache";
 import { getRemoteUserId } from "./shared";
 import type { RemoteTimerState } from "./types";
 import {
@@ -169,6 +170,8 @@ export async function startRemoteStudySession({
   if (error) {
     throw error;
   }
+
+  invalidateRemoteCachesForTable("study_sessions");
 }
 
 export async function setRemoteActiveStudyReminder({
@@ -185,6 +188,8 @@ export async function setRemoteActiveStudyReminder({
   });
 
   if (error) throw error;
+
+  invalidateRemoteCachesForTable("study_sessions");
 }
 
 export async function stopRemoteStudySession(supabase: SupabaseClient) {
@@ -220,6 +225,8 @@ export async function stopRemoteStudySession(supabase: SupabaseClient) {
     throw error;
   }
 
+  invalidateRemoteCachesForTable("study_sessions");
+
   return { endedAt: endedAt.toISOString(), id: activeSession.id, status };
 }
 
@@ -254,6 +261,8 @@ export async function updateRemoteStudySession({
     .is("deleted_at", null);
 
   if (error) throw error;
+
+  invalidateRemoteCachesForTable("study_sessions");
 }
 
 export async function deleteRemoteStudySession({
@@ -274,4 +283,6 @@ export async function deleteRemoteStudySession({
     .not("ended_at", "is", null);
 
   if (error) throw error;
+
+  invalidateRemoteCachesForTable("study_sessions");
 }

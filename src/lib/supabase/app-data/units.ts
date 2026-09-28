@@ -10,6 +10,7 @@ import {
   type UnitEnrollment,
   uniqueUnitSuggestions,
 } from "@/lib/units";
+import { invalidateRemoteCachesForTable } from "@/lib/client-cache";
 import { getRemoteUserId } from "./shared";
 import type { RemoteSubject, RemoteUnitState } from "./types";
 
@@ -173,6 +174,7 @@ export async function saveRemoteSubjects({
     });
   }
 
+  invalidateRemoteCachesForTable("subjects");
   return fetchRemoteSubjects(supabase, userId);
 }
 
@@ -289,6 +291,7 @@ export async function setRemoteSubjectUnitOffering({
     throw error;
   }
 
+  invalidateRemoteCachesForTable("subjects");
   return Boolean(data);
 }
 
@@ -316,6 +319,7 @@ export async function upsertRemoteUnitEnrollment({
     throw error;
   }
 
+  invalidateRemoteCachesForTable("unit_enrolments");
   return data as string;
 }
 
@@ -363,6 +367,7 @@ export async function leaveRemoteUnitEnrollment({
     throw error;
   }
 
+  invalidateRemoteCachesForTable("unit_enrolments");
   return Boolean(data);
 }
 

@@ -32,9 +32,9 @@ import { EmptyStateCta } from "@/components/empty-state-cta";
 import { PaginatedList } from "@/components/paginated-list";
 import { useAppHeaderDetail } from "@/components/app-header-detail";
 import {
-  cacheRemoteSocialSnapshot,
+  cacheRemoteGroupsSnapshot,
   cacheRemoteTimerState,
-  getCachedRemoteSocialSnapshot,
+  getCachedRemoteGroupsSnapshot,
   getCachedRemoteTimerState,
 } from "@/lib/client-cache";
 import {
@@ -53,7 +53,7 @@ import {
   fetchRemoteGroupNotificationSettings,
   fetchRemoteUserNudgeMute,
   fetchRemoteTimerState,
-  fetchRemoteSocialSnapshot,
+  fetchRemoteGroupsSnapshot,
   inviteRemoteFriendToGroup,
   joinRemoteGroupByLink,
   leaveRemoteGroup,
@@ -147,10 +147,10 @@ export function GroupsDashboard({
   }, [groupUnreadCounts, onUnreadChange]);
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
-    const snapshot = await fetchRemoteSocialSnapshot(supabase);
+    const snapshot = await fetchRemoteGroupsSnapshot(supabase);
 
     if (snapshot) {
-      cacheRemoteSocialSnapshot(snapshot);
+      cacheRemoteGroupsSnapshot(snapshot);
       setCurrentUserId(snapshot.currentUserId);
       setSocialState(snapshot.socialState);
       setGroupInvites(snapshot.groupInvites ?? []);
@@ -204,7 +204,7 @@ export function GroupsDashboard({
 
     async function loadInitialState() {
       let supabase: SupabaseClient | null = null;
-      const cachedSocial = getCachedRemoteSocialSnapshot();
+      const cachedSocial = getCachedRemoteGroupsSnapshot();
       const cachedTimer = getCachedRemoteTimerState();
 
       if (cachedSocial) {
@@ -225,13 +225,13 @@ export function GroupsDashboard({
           setRemoteClient(supabase);
         }
         const [snapshot, timerState, unreadCounts] = await Promise.all([
-          fetchRemoteSocialSnapshot(supabase),
+          fetchRemoteGroupsSnapshot(supabase),
           fetchRemoteTimerState(supabase),
           fetchGroupChatUnreadCounts(supabase).catch(() => ({})),
         ]);
 
         if (!cancelled && snapshot) {
-          cacheRemoteSocialSnapshot(snapshot);
+          cacheRemoteGroupsSnapshot(snapshot);
           setCurrentUserId(snapshot.currentUserId);
           setSocialState(snapshot.socialState);
           setGroupInvites(snapshot.groupInvites ?? []);

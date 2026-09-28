@@ -40,14 +40,14 @@ import {
   type SocialState,
 } from "@/lib/social-state";
 import {
-  cacheRemoteSocialSnapshot,
-  getCachedRemoteSocialSnapshot,
+  cacheRemoteFriendsSnapshot,
+  getCachedRemoteFriendsSnapshot,
 } from "@/lib/client-cache";
 import {
   addRemoteFriend,
   fetchRemoteDirectMessageUnreadCount,
   fetchRemoteGlobalNudgeMutes,
-  fetchRemoteSocialSnapshot,
+  fetchRemoteFriendsSnapshot,
   inviteRemoteFriendToGroup,
   removeRemoteFriend,
   requestRemoteSuperNudge,
@@ -149,13 +149,13 @@ export function FriendsDashboard({
   }, [activeTab]);
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
-    const snapshot = await fetchRemoteSocialSnapshot(supabase);
+    const snapshot = await fetchRemoteFriendsSnapshot(supabase);
 
     if (snapshot) {
       const cancellingFriendIds = new Set(
         pendingCancelledRequestsRef.current.values(),
       );
-      cacheRemoteSocialSnapshot(snapshot);
+      cacheRemoteFriendsSnapshot(snapshot);
       setCurrentUserId(snapshot.currentUserId);
       setSocialState(snapshot.socialState);
       setAvailableFriends(
@@ -244,7 +244,7 @@ export function FriendsDashboard({
 
     async function loadInitialState() {
       let supabase: SupabaseClient | null = null;
-      const cachedSocial = getCachedRemoteSocialSnapshot();
+      const cachedSocial = getCachedRemoteFriendsSnapshot();
 
       if (cachedSocial) {
         setCurrentUserId(cachedSocial.currentUserId);
@@ -262,10 +262,10 @@ export function FriendsDashboard({
         if (!cancelled) {
           setRemoteClient(supabase);
         }
-        const snapshot = await fetchRemoteSocialSnapshot(supabase);
+        const snapshot = await fetchRemoteFriendsSnapshot(supabase);
 
         if (!cancelled && snapshot) {
-          cacheRemoteSocialSnapshot(snapshot);
+          cacheRemoteFriendsSnapshot(snapshot);
           setCurrentUserId(snapshot.currentUserId);
           setSocialState(snapshot.socialState);
           setAvailableFriends(sortFriendCandidates(snapshot.availableFriends));

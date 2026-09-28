@@ -733,6 +733,11 @@ isOneToOne: false
 "leave_unit_enrolment":
 { Args: { "input_offering_id": string }; Returns: boolean
                            },
+"list_active_super_nudges":
+{ Args: { "result_limit"?: number,"result_offset"?: number }; Returns: {
+              "created_at": string,"recipient_id": string,"request_id": string,"sender_id": string,"status": string
+            }[]
+                           },
 "list_direct_conversations":
 { Args: { "result_limit"?: number }; Returns: {
               "display_name": string,"friend_id": string,"latest_body": string,"latest_created_at": string,"latest_message_id": string,"latest_sender_id": string,"profile_color": string,"unread_count": number,"username": string
@@ -748,8 +753,18 @@ isOneToOne: false
               "avatar_url": string,"display_name": string,"mutual_friend_count": number,"profile_color": string,"request_direction": string,"study_icon": string,"user_id": string,"username": string
             }[]
                            },
+"list_friend_candidates_page":
+{ Args: { "result_limit"?: number,"result_offset"?: number }; Returns: {
+              "avatar_url": string,"display_name": string,"mutual_friend_count": number,"profile_color": string,"request_direction": string,"study_icon": string,"user_id": string,"username": string
+            }[]
+                           },
 "list_friend_requests":
 { Args: Record<PropertyKey, never>; Returns: {
+              "avatar_url": string,"created_at": string,"direction": string,"display_name": string,"profile_color": string,"request_id": string,"study_icon": string,"user_id": string,"username": string
+            }[]
+                           },
+"list_friend_requests_page":
+{ Args: { "result_limit"?: number,"result_offset"?: number }; Returns: {
               "avatar_url": string,"created_at": string,"direction": string,"display_name": string,"profile_color": string,"request_id": string,"study_icon": string,"user_id": string,"username": string
             }[]
                            },
@@ -763,9 +778,24 @@ isOneToOne: false
               "avatar_url": string,"created_at": string,"direction": string,"display_name": string,"group_id": string,"group_name": string,"invite_id": string,"profile_color": string,"study_icon": string,"user_id": string,"username": string
             }[]
                            },
+"list_group_invites_page":
+{ Args: { "result_limit"?: number,"result_offset"?: number }; Returns: {
+              "avatar_url": string,"created_at": string,"direction": string,"display_name": string,"group_id": string,"group_name": string,"invite_id": string,"profile_color": string,"study_icon": string,"user_id": string,"username": string
+            }[]
+                           },
+"list_my_study_groups":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "current_user_role": string,"group_icon": string,"group_id": string,"group_name": string,"invite_code": string,"member_ids": (string)[],"member_roles": Json,"visibility": string
+            }[]
+                           },
 "list_public_study_groups":
 { Args: Record<PropertyKey, never>; Returns: {
               "group_id": string,"group_name": string,"member_count": number
+            }[]
+                           },
+"list_social_friends":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "active_started_at": string,"all_time_seconds": number,"avatar_url": string,"daily_study_seconds": Json,"day_seconds": number,"display_name": string,"is_friend": boolean,"month_seconds": number,"profile_color": string,"study_icon": string,"user_id": string,"username": string,"week_seconds": number
             }[]
                            },
 "mark_group_chat_read":

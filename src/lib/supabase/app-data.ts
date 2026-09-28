@@ -5,14 +5,16 @@ export type {
   RemoteAppNotification,
   RemoteFriendCandidate,
   RemoteFriendRequest,
+  RemoteFriendsSnapshot,
   RemoteGroupChatMessage,
   RemoteGroupChatPage,
   RemoteGroupInvite,
   RemoteGroupNotificationSettings,
+  RemoteGroupsSnapshot,
   RemoteNotificationPreferences,
   RemoteNudgeDelivery,
   RemoteNudgeNotification,
-  RemoteSocialSnapshot,
+  RemoteSocialStateSnapshot,
   RemoteStoredSession,
   RemoteSubject,
   RemoteSuperNudge,
@@ -42,7 +44,6 @@ export {
 export {
   addRemoteFriend,
   fetchRemoteDirectMessageUnreadCount,
-  fetchRemoteSocialSnapshot,
   removeRemoteFriend,
   requestRemoteSuperNudge,
   sendRemoteFriendRequest,
@@ -50,6 +51,12 @@ export {
   updateRemoteStudyIcon,
   updateRemoteSuperNudge,
 } from "./app-data/friends";
+
+export {
+  fetchRemoteFriendsSnapshot,
+  fetchRemoteGroupsSnapshot,
+  fetchRemoteStudyGroups,
+} from "./app-data/social";
 
 export {
   createRemoteGroup,

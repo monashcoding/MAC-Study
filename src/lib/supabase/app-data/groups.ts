@@ -1,5 +1,6 @@
 import type { AppSupabaseClient as SupabaseClient } from "../types";
 import type { GroupRole } from "@/lib/social-state";
+import { invalidateRemoteCachesForTable } from "@/lib/client-cache";
 import { getResponseError } from "./shared";
 
 export async function createRemoteGroup({
@@ -18,6 +19,7 @@ export async function createRemoteGroup({
     throw error;
   }
 
+  invalidateRemoteCachesForTable("groups");
   return data as string | null;
 }
 
@@ -42,6 +44,8 @@ export async function updateRemoteGroupDetails({
   if (error) {
     throw error;
   }
+
+  invalidateRemoteCachesForTable("groups");
 }
 
 export async function setRemoteGroupMemberRole({
@@ -62,6 +66,7 @@ export async function setRemoteGroupMemberRole({
   });
 
   if (error) throw error;
+  invalidateRemoteCachesForTable("group_members");
 }
 
 export async function transferRemoteGroupLeadership({
@@ -79,6 +84,7 @@ export async function transferRemoteGroupLeadership({
   });
 
   if (error) throw error;
+  invalidateRemoteCachesForTable("group_members");
 }
 
 export async function removeRemoteGroupMember({
@@ -96,6 +102,7 @@ export async function removeRemoteGroupMember({
   });
 
   if (error) throw error;
+  invalidateRemoteCachesForTable("group_members");
 }
 
 export async function leaveRemoteGroup({ groupId }: { groupId: string }) {
@@ -111,6 +118,7 @@ export async function leaveRemoteGroup({ groupId }: { groupId: string }) {
     outcome: "disbanded" | "left";
   };
 
+  invalidateRemoteCachesForTable("group_members");
   return body.outcome;
 }
 
@@ -138,6 +146,8 @@ export async function inviteRemoteFriendToGroup({
   if (!response.ok) {
     throw new Error(body?.message ?? "Could not send that group invitation.");
   }
+
+  invalidateRemoteCachesForTable("group_invites");
 }
 
 export async function joinRemoteGroupByLink({
@@ -166,6 +176,7 @@ export async function joinRemoteGroupByLink({
     throw new Error("This invite link is invalid or has expired.");
   }
 
+  invalidateRemoteCachesForTable("group_members");
   return data;
 }
 
@@ -185,4 +196,6 @@ export async function updateRemoteGroupInvite({
   if (!response.ok) {
     throw new Error(await getResponseError(response));
   }
+
+  invalidateRemoteCachesForTable("group_invites");
 }

@@ -30,13 +30,13 @@ This checklist is the review record for the architecture work. Work stops after 
   - [x] Keep authorization and server-only boundaries explicit.
   - [x] Remove duplicated subject reads and preserve all 69 existing public exports during migration.
   - [x] Review extracted logic and access rules; no new behavior required additional focused tests.
-- [ ] **Phase 5 — Focused reads and cache correctness**
-  - Planned commit: `perf: replace broad reads and harden cache invalidation`
-  - [ ] Inventory every consumer of the broad social snapshot.
-  - [ ] Replace it with focused RPCs, pagination, and aggregate queries.
-  - [ ] Add or verify supporting indexes with query evidence.
-  - [ ] Add freshness timestamps and mutation/realtime invalidation to client caches.
-  - [ ] Verify stale data is not retained after relevant writes.
+- [x] **Phase 5 — Focused reads and cache correctness**
+  - Commit: `perf: replace broad reads and harden cache invalidation`
+  - [x] Inventory every consumer of the broad social snapshot.
+  - [x] Replace it with focused RPCs, pagination, and aggregate queries.
+  - [x] Add or verify supporting indexes with query evidence.
+  - [x] Add freshness timestamps and mutation/realtime invalidation to client caches.
+  - [x] Verify stale data is not retained after relevant writes.
 - [ ] **Phase 6 — Critical browser coverage**
   - Planned commit: `test: add critical Playwright coverage`
   - [ ] Cover authentication routing.
@@ -50,4 +50,5 @@ This checklist is the review record for the architecture work. Work stops after 
 - [x] Review Phase 1 and approve starting Phase 2.
 - [x] Review Phase 2 and approve starting Phase 3.
 - [x] Review Phase 3 and approve starting Phase 4.
-- [ ] Review Phase 4 and approve starting Phase 5.
+- [x] Review Phase 4 and approve starting Phase 5.
+- [ ] Review Phase 5 and approve starting Phase 6.

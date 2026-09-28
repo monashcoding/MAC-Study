@@ -30,7 +30,7 @@ import { PaginatedList } from "@/components/paginated-list";
 import { TransientToast } from "@/components/transient-toast";
 import {
   addRemoteFriend,
-  fetchRemoteSocialSnapshot,
+  fetchRemoteStudyGroups,
   fetchRemoteUnitCohort,
   fetchRemoteUnitState,
   inviteRemoteFriendToGroup,
@@ -168,13 +168,13 @@ export function UnitsDashboard() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const refreshRemote = useCallback(async (supabase: SupabaseClient) => {
-    const [units, social] = await Promise.all([
+    const [units, groups] = await Promise.all([
       fetchRemoteUnitState(supabase),
-      fetchRemoteSocialSnapshot(supabase),
+      fetchRemoteStudyGroups(supabase),
     ]);
 
     if (units) setUnitState(units);
-    if (social) setSocialState(social.socialState);
+    setSocialState({ friends: [], groups });
   }, []);
 
   useEffect(() => {
