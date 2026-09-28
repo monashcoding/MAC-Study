@@ -10,7 +10,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AppSupabaseClient as SupabaseClient } from "@/lib/supabase/types";
 import {
   AlertCircle,
   ArrowDown,

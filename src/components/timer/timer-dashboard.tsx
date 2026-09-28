@@ -9,7 +9,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AppSupabaseClient as SupabaseClient } from "@/lib/supabase/types";
 import {
   BellRing,
   CalendarClock,

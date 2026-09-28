@@ -8,6 +8,8 @@
     "db:start": "supabase db start",
     "db:reset": "supabase db reset --local --no-seed",
     "db:stop": "supabase stop --no-backup",
+    "db:types": "supabase gen types typescript --local --schema public > src/lib/supabase/database.types.ts",
+    "db:types:check": "node scripts/check-database-types.mjs",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

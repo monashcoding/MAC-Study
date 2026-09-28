@@ -18,12 +18,12 @@ This checklist is the review record for the architecture work. Work stops after 
   - [x] Prove all migrations apply to an empty database with `supabase db reset`.
   - [x] Add the migration reset check to CI.
   - [x] Resolve migration ordering, extension, seed, port, or environment assumptions found by the reset.
-- [ ] **Phase 3 — Generated database types**
-  - Planned commit: `refactor: add generated Supabase database types`
-  - [ ] Generate TypeScript types from the reset schema.
-  - [ ] Parameterize browser, server, middleware, and admin Supabase clients.
-  - [ ] Replace handwritten database row types where generated types are authoritative.
-  - [ ] Add a repeatable type-generation command and a stale-types check.
+- [x] **Phase 3 — Generated database types**
+  - Commit: `refactor: add generated Supabase database types`
+  - [x] Generate TypeScript types from the reset schema.
+  - [x] Parameterize every existing browser, server, and admin Supabase client (there is no Supabase middleware client).
+  - [x] Replace handwritten database row types where generated types are authoritative.
+  - [x] Add a repeatable type-generation command and a stale-types check.
 - [ ] **Phase 4 — Feature data modules**
   - Planned commit: `refactor: split app data by feature`
   - [ ] Split `app-data.ts` into timer, units, groups, friends, chat, and notifications modules.
@@ -48,4 +48,5 @@ This checklist is the review record for the architecture work. Work stops after 
 ## Current review gate
 
 - [x] Review Phase 1 and approve starting Phase 2.
-- [ ] Review Phase 2 and approve starting Phase 3.
+- [x] Review Phase 2 and approve starting Phase 3.
+- [ ] Review Phase 3 and approve starting Phase 4.

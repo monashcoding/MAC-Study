@@ -6,6 +6,7 @@ import {
   createSupabaseAdminClient,
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
+import type { Tables } from "@/lib/supabase/types";
 
 export const runtime = "nodejs";
 
@@ -18,13 +19,13 @@ const updateRequestSchema = z.object({
   requestId: z.string().uuid(),
 });
 
-type AppNotificationRow = {
-  body: string;
-  id: string;
-  title: string;
-  type: "friend_accepted" | "friend_request";
-  user_id: string;
-};
+type AppNotificationRow = Omit<
+  Pick<
+    Tables<"app_notifications">,
+    "body" | "id" | "title" | "type" | "user_id"
+  >,
+  "type"
+> & { type: "friend_accepted" | "friend_request" };
 
 export async function POST(request: Request) {
   const context = await getRequestContext();

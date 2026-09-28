@@ -1,20 +1,26 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AppSupabaseClient as SupabaseClient } from "./types";
+import type { Tables } from "./types";
 
 export type AccessStatus = "pending" | "active" | "blocked";
 
-export type Profile = {
-  id: string;
-  display_name: string | null;
-  username: string | null;
-  avatar_url: string | null;
-  course: string | null;
-  study_icon: string;
-  profile_color: string;
-  is_discoverable: boolean;
+type ProfileColumns = Pick<
+  Tables<"profiles">,
+  | "access_granted_at"
+  | "access_status"
+  | "avatar_url"
+  | "course"
+  | "created_at"
+  | "display_name"
+  | "id"
+  | "is_discoverable"
+  | "profile_color"
+  | "study_icon"
+  | "updated_at"
+  | "username"
+>;
+
+export type Profile = Omit<ProfileColumns, "access_status"> & {
   access_status: AccessStatus;
-  access_granted_at: string | null;
-  created_at: string;
-  updated_at: string;
 };
 
 export function needsProfileSetup(profile: Profile | null) {
@@ -31,11 +37,21 @@ export async function getProfileById(
       "id, display_name, username, avatar_url, course, study_icon, profile_color, is_discoverable, access_status, access_granted_at, created_at, updated_at",
     )
     .eq("id", userId)
-    .maybeSingle<Profile>();
+    .maybeSingle();
 
   if (error) {
     throw error;
   }
 
-  return data;
+  if (!data) return null;
+
+  if (!isAccessStatus(data.access_status)) {
+    throw new Error(`Unknown profile access status: ${data.access_status}`);
+  }
+
+  return { ...data, access_status: data.access_status };
+}
+
+function isAccessStatus(value: string): value is AccessStatus {
+  return value === "active" || value === "blocked" || value === "pending";
 }

@@ -70,3 +70,6 @@ jobs:
 
       - name: Replay all migrations
         run: supabase db reset --local --no-seed
+
+      - name: Verify generated database types
+        run: npm run db:types:check

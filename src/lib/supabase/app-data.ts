@@ -1,4 +1,8 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type {
+  AppSupabaseClient as SupabaseClient,
+  Database,
+  Tables,
+} from "./types";
 import { getCurrentStudyUserId } from "@/lib/auth/mac-auth-browser";
 import {
   GROUP_ICON_KEYS,
@@ -179,22 +183,25 @@ export function getNudgeDeliveryMessage(delivery: RemoteNudgeDelivery) {
   return "Push delivery is unavailable.";
 }
 
-type ProfileRow = {
-  id: string;
-  display_name: string | null;
-  username: string | null;
-  avatar_url?: string | null;
-  study_icon?: string | null;
-  profile_color?: string | null;
+type ProfileRow = Pick<
+  Tables<"profiles">,
+  | "avatar_url"
+  | "display_name"
+  | "id"
+  | "profile_color"
+  | "study_icon"
+  | "username"
+>;
+
+type SocialProfileRow = Omit<ProfileRow, "profile_color" | "study_icon"> & {
+  profile_color: string | null;
+  study_icon: string | null;
 };
 
-type SubjectRow = {
-  id: string;
-  code: string;
-  name: string | null;
-  color: string | null;
-  unit_offering_id?: string | null;
-};
+type SubjectRow = Pick<
+  Tables<"subjects">,
+  "code" | "color" | "id" | "name" | "unit_offering_id"
+>;
 
 type UnitEnrollmentRow = {
   joined_at: string;
@@ -217,112 +224,132 @@ type UnitEnrollmentRow = {
       }[];
 };
 
-type UnitCohortRow = {
+type UnitCohortResult =
+  Database["public"]["Functions"]["get_unit_cohort_v2"]["Returns"][number];
+type UnitCohortRow = Omit<
+  UnitCohortResult,
+  | "display_name"
+  | "profile_color"
+  | "shared_group_ids"
+  | "study_icon"
+  | "username"
+> & {
   display_name: string | null;
-  is_friend: boolean;
-  mutual_friend_count: number | string;
   profile_color: string | null;
   shared_group_ids: string[] | null;
   study_icon: string | null;
-  user_id: string;
   username: string | null;
 };
 
-type UnitCohortCountRow = {
-  member_count: number | string;
-  offering_id: string;
-};
+type UnitCohortCountRow =
+  Database["public"]["Functions"]["get_my_unit_cohort_counts"]["Returns"][number];
 
-type GroupRow = {
-  id: string;
-  name: string;
-  icon?: string | null;
-  invite_code?: string;
-  visibility: "invite_only" | "public";
-};
+type GroupRow = Pick<
+  Tables<"groups">,
+  "icon" | "id" | "invite_code" | "name" | "visibility"
+>;
 
-type GroupMemberRow = {
-  group_id: string;
-  user_id: string;
-  role: string;
-  status: string;
-};
+type GroupMemberRow = Pick<
+  Tables<"group_members">,
+  "group_id" | "role" | "status" | "user_id"
+>;
 
-type FriendshipRow = {
-  friend_id: string;
-};
+type FriendshipRow = Pick<Tables<"friendships">, "friend_id">;
 
-type FriendCandidateRow = {
+type FriendCandidateResult =
+  Database["public"]["Functions"]["list_friend_candidates"]["Returns"][number];
+type FriendCandidateRow = Omit<
+  FriendCandidateResult,
+  | "avatar_url"
+  | "display_name"
+  | "profile_color"
+  | "request_direction"
+  | "study_icon"
+  | "username"
+> & {
   avatar_url: string | null;
   display_name: string | null;
-  mutual_friend_count: number | string;
   profile_color: string | null;
   request_direction: "incoming" | "outgoing" | null;
   study_icon: string | null;
-  user_id: string;
   username: string | null;
 };
 
-type FriendRequestRow = {
+type FriendRequestResult =
+  Database["public"]["Functions"]["list_friend_requests"]["Returns"][number];
+type FriendRequestRow = Omit<
+  FriendRequestResult,
+  | "avatar_url"
+  | "display_name"
+  | "direction"
+  | "profile_color"
+  | "study_icon"
+  | "username"
+> & {
   avatar_url: string | null;
-  created_at: string;
   direction: "incoming" | "outgoing";
   display_name: string | null;
   profile_color: string | null;
-  request_id: string;
   study_icon: string | null;
-  user_id: string;
   username: string | null;
 };
 
-type GroupInviteRow = {
+type GroupInviteResult =
+  Database["public"]["Functions"]["list_group_invites"]["Returns"][number];
+type GroupInviteRow = Omit<
+  GroupInviteResult,
+  | "avatar_url"
+  | "display_name"
+  | "direction"
+  | "profile_color"
+  | "study_icon"
+  | "username"
+> & {
   avatar_url: string | null;
-  created_at: string;
   direction: "incoming" | "outgoing";
   display_name: string | null;
-  group_id: string;
-  group_name: string;
-  invite_id: string;
   profile_color: string | null;
   study_icon: string | null;
-  user_id: string;
   username: string | null;
 };
 
-type SuperNudgeRow = {
-  created_at: string;
-  id: string;
-  recipient_id: string;
-  sender_id: string;
-  status: "active" | "pending";
-};
+type SuperNudgeRow = Omit<
+  Pick<
+    Tables<"super_nudge_requests">,
+    "created_at" | "id" | "recipient_id" | "sender_id" | "status"
+  >,
+  "status"
+> & { status: "active" | "pending" };
 
-type NotificationPreferencesRow = {
-  friend_notifications: boolean;
-  nudge_notifications: boolean;
-  other_notifications: boolean;
-};
+type NotificationPreferencesRow =
+  Database["public"]["Functions"]["get_notification_preferences"]["Returns"][number];
 
-type AppNotificationRow = {
-  body: string;
-  created_at: string;
-  entity_id: string | null;
-  id: string;
-  title: string;
-  type: "friend_accepted" | "friend_request" | "other";
-};
+type AppNotificationRow = Omit<
+  Pick<
+    Tables<"app_notifications">,
+    "body" | "created_at" | "entity_id" | "id" | "title" | "type"
+  >,
+  "type"
+> & { type: "friend_accepted" | "friend_request" | "other" };
 
-type SessionRow = {
-  id: string;
-  user_id: string;
-  subject_id: string | null;
-  group_id: string | null;
-  reminder_interval_minutes: number | null;
-  started_at: string;
-  ended_at: string | null;
+type SessionRow = Omit<
+  Pick<
+    Tables<"study_sessions">,
+    | "duration_seconds"
+    | "ended_at"
+    | "group_id"
+    | "id"
+    | "reminder_interval_minutes"
+    | "source"
+    | "started_at"
+    | "status"
+    | "subject_id"
+    | "user_id"
+  >,
+  "source" | "status"
+> & {
   status: "active" | "completed" | "needs_confirmation" | "voided";
   source: "timer" | "manual_adjustment";
-  duration_seconds: number | null;
 };
 
 type SessionRowWithoutReminders = Omit<SessionRow, "reminder_interval_minutes">;
@@ -342,24 +369,21 @@ function isMissingStudyReminderColumn(error: {
   );
 }
 
-type NudgeRow = {
-  id: string;
-  group_id: string | null;
-  sender_id: string;
-  recipient_id: string;
-  message: string | null;
-  created_at: string;
-};
+type NudgeRow = Pick<
+  Tables<"nudges">,
+  "created_at" | "group_id" | "id" | "message" | "recipient_id" | "sender_id"
+>;
 
-type GroupChatRow = {
-  id: string;
-  group_id: string;
-  user_id: string;
-  body: string | null;
-  created_at: string;
-  image_path: string | null;
-  reply_to_id: string | null;
-};
+type GroupChatRow = Pick<
+  Tables<"group_chat_messages">,
+  | "body"
+  | "created_at"
+  | "group_id"
+  | "id"
+  | "image_path"
+  | "reply_to_id"
+  | "user_id"
+>;
 
 const GROUP_CHAT_IMAGE_BUCKET = "group-chat-images";
 const GROUP_CHAT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
@@ -508,7 +532,9 @@ export async function setRemoteActiveStudyReminder({
   supabase: SupabaseClient;
 }) {
   const { error } = await supabase.rpc("set_active_study_reminder", {
-    next_interval_minutes: intervalMinutes,
+    ...(intervalMinutes === null
+      ? {}
+      : { next_interval_minutes: intervalMinutes }),
   });
 
   if (error) throw error;
@@ -841,7 +867,7 @@ export async function setRemoteSubjectUnitOffering({
   supabase: SupabaseClient;
 }) {
   const { data, error } = await supabase.rpc("set_subject_unit_offering", {
-    input_offering_id: offeringId,
+    ...(offeringId ? { input_offering_id: offeringId } : {}),
     input_subject_id: subjectId,
   });
 
@@ -866,7 +892,7 @@ export async function upsertRemoteUnitEnrollment({
   year: number;
 }) {
   const { data, error } = await supabase.rpc("upsert_unit_enrolment", {
-    input_nickname: nickname,
+    ...(nickname ? { input_nickname: nickname } : {}),
     input_study_year: year,
     input_teaching_period: period,
     input_unit_code: code,
@@ -2142,7 +2168,7 @@ function appNotificationFromRow(
 }
 
 function friendFromProfile(
-  profile: ProfileRow,
+  profile: SocialProfileRow,
   sessions: SessionRow[],
 ): SocialFriend {
   const now = new Date();

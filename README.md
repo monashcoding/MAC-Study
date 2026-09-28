@@ -33,12 +33,14 @@ Docker Desktop must be running. The Supabase CLI version is pinned in
 npm install
 npm run db:start
 npm run db:reset
+npm run db:types
 npm run db:stop
 ```
 
 `db:start` creates a fresh local Postgres database and applies every migration.
 `db:reset` drops the local schemas and replays the complete migration history.
-Neither command connects to or modifies the hosted Supabase project.
+`db:types` regenerates the TypeScript database contract after schema changes.
+These commands do not connect to or modify the hosted Supabase project.
 
 ## Deploy And Test On Phone
 

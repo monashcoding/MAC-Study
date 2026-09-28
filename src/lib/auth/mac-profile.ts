@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { MacClaims } from "./mac-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import type { Tables } from "@/lib/supabase/types";
 
-type MacProfile = {
-  id: string;
-  display_name: string | null;
-  username: string | null;
-};
+type MacProfile = Pick<
+  Tables<"profiles">,
+  "display_name" | "id" | "username"
+>;
 
 export async function getOrCreateMacProfile(
   claims: MacClaims,
