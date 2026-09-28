@@ -24,12 +24,12 @@ This checklist is the review record for the architecture work. Work stops after 
   - [x] Parameterize every existing browser, server, and admin Supabase client (there is no Supabase middleware client).
   - [x] Replace handwritten database row types where generated types are authoritative.
   - [x] Add a repeatable type-generation command and a stale-types check.
-- [ ] **Phase 4 — Feature data modules**
-  - Planned commit: `refactor: split app data by feature`
-  - [ ] Split `app-data.ts` into timer, units, groups, friends, chat, and notifications modules.
-  - [ ] Keep authorization and server-only boundaries explicit.
-  - [ ] Remove duplicated queries and preserve current public interfaces during migration.
-  - [ ] Add focused tests where extracted logic or access rules warrant them.
+- [x] **Phase 4 — Feature data modules**
+  - Commit: `refactor: split app data by feature`
+  - [x] Split `app-data.ts` into timer, units, groups, friends, chat, and notifications modules.
+  - [x] Keep authorization and server-only boundaries explicit.
+  - [x] Remove duplicated subject reads and preserve all 69 existing public exports during migration.
+  - [x] Review extracted logic and access rules; no new behavior required additional focused tests.
 - [ ] **Phase 5 — Focused reads and cache correctness**
   - Planned commit: `perf: replace broad reads and harden cache invalidation`
   - [ ] Inventory every consumer of the broad social snapshot.
@@ -49,4 +49,5 @@ This checklist is the review record for the architecture work. Work stops after 
 
 - [x] Review Phase 1 and approve starting Phase 2.
 - [x] Review Phase 2 and approve starting Phase 3.
-- [ ] Review Phase 3 and approve starting Phase 4.
+- [x] Review Phase 3 and approve starting Phase 4.
+- [ ] Review Phase 4 and approve starting Phase 5.
