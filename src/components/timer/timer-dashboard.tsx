@@ -24,6 +24,7 @@ import {
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
 import { EmptyStateCta } from "@/components/empty-state-cta";
+import { GettingStartedCard } from "@/components/onboarding/getting-started-card";
 import { PaginatedList } from "@/components/paginated-list";
 import {
   cacheRemoteTimerState,
@@ -257,6 +258,16 @@ export function TimerDashboard() {
     const url = new URL(window.location.href);
     url.searchParams.delete("study-reminder");
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }, []);
+
+  useEffect(() => {
+    function openStudyChoices() {
+      setIsChoosingStudy(true);
+    }
+
+    window.addEventListener("mac-open-start-study", openStudyChoices);
+    return () =>
+      window.removeEventListener("mac-open-start-study", openStudyChoices);
   }, []);
 
   useEffect(() => {
@@ -748,6 +759,11 @@ export function TimerDashboard() {
 
   return (
     <div className="space-y-5 pt-1 lg:pt-0 xl:grid xl:grid-cols-[minmax(0,0.9fr)_minmax(25rem,1.1fr)] xl:items-stretch xl:gap-6 xl:space-y-0">
+      <GettingStartedCard
+        hasStudySession={Boolean(activeSession) || sessions.length > 0}
+        hasUnit={unitEnrollments.length > 0}
+        onStartSession={() => setIsChoosingStudy(true)}
+      />
       <section className="py-5 text-center lg:flex lg:min-h-[24rem] lg:flex-col lg:items-center lg:justify-center lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(18_18_18/0.52)] lg:px-6 lg:py-10 xl:min-h-[30rem]">
         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[var(--color-mac-yellow)]">
           Studied today

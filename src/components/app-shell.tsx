@@ -27,6 +27,7 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { AppWorkspace } from "@/components/app-workspace";
 import { AppHeaderDetailProvider } from "@/components/app-header-detail";
+import { WelcomeOnboarding } from "@/components/onboarding/welcome-onboarding";
 import { InstallOnboarding } from "@/components/pwa/install-onboarding";
 import { NotificationOnboarding } from "@/components/pwa/notification-onboarding";
 import { AppNotifications } from "@/components/social/app-notifications";
@@ -91,7 +92,7 @@ export function AppShell({
     Record<string, number>
   >({});
   const [navUnread, setNavUnread] = useState({ friends: false, groups: false });
-  const [installOnboardingComplete, setInstallOnboardingComplete] =
+  const [welcomeOnboardingComplete, setWelcomeOnboardingComplete] =
     useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollPositionsRef = useRef<Record<string, number>>({});
@@ -124,8 +125,8 @@ export function AppShell({
     },
     [],
   );
-  const handleInstallOnboardingComplete = useCallback(() => {
-    setInstallOnboardingComplete(true);
+  const handleWelcomeOnboardingComplete = useCallback(() => {
+    setWelcomeOnboardingComplete(true);
   }, []);
 
   useEffect(() => {
@@ -451,12 +452,13 @@ export function AppShell({
           <>
             <AppNotifications userId={authState.user.id} />
             <NudgeNotifications userId={authState.user.id} />
-            <InstallOnboarding
-              onComplete={handleInstallOnboardingComplete}
+            <WelcomeOnboarding
+              onComplete={handleWelcomeOnboardingComplete}
               userId={authState.user.id}
             />
+            <InstallOnboarding enabled={welcomeOnboardingComplete} />
             <NotificationOnboarding
-              enabled={installOnboardingComplete}
+              enabled={welcomeOnboardingComplete}
               userId={authState.user.id}
             />
           </>

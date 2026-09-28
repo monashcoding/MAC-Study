@@ -1,4 +1,6 @@
-import { LogOut, PencilLine, UserRound } from "lucide-react";
+"use client";
+
+import { Download, LogOut, PencilLine, PlayCircle, UserRound } from "lucide-react";
 import { DiscoverabilitySetting } from "@/components/profile/discoverability-setting";
 import { PushNotificationSettings } from "@/components/pwa/push-notification-settings";
 
@@ -53,6 +55,37 @@ export function ProfileDashboard({
             />
           ) : null}
           <PushNotificationSettings />
+          <button
+            className="mac-focus flex w-full items-center justify-between gap-4 rounded-md px-3 py-4 text-left transition hover:bg-[rgb(255_255_255/0.04)]"
+            onClick={() => window.dispatchEvent(new Event("mac-open-welcome"))}
+            type="button"
+          >
+            <span className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+                <PlayCircle aria-hidden size={19} />
+              </span>
+              <span className="font-medium">Replay introduction</span>
+            </span>
+          </button>
+          <button
+            className="mac-focus flex w-full items-center justify-between gap-4 rounded-md px-3 py-4 text-left transition hover:bg-[rgb(255_255_255/0.04)]"
+            onClick={() =>
+              window.dispatchEvent(new Event("mac-open-install-guide"))
+            }
+            type="button"
+          >
+            <span className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+                <Download aria-hidden size={19} />
+              </span>
+              <span>
+                <span className="block font-medium">Install MAC Study</span>
+                <span className="mt-0.5 block text-sm text-[var(--color-text-muted)]">
+                  Add it to this device
+                </span>
+              </span>
+            </span>
+          </button>
           <a
             className="mac-focus flex items-center justify-between gap-4 rounded-md px-3 py-4 transition hover:bg-[rgb(255_255_255/0.04)]"
             href="/auth/logout"

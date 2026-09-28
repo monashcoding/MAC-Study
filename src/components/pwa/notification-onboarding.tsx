@@ -11,7 +11,6 @@ import {
 
 export function NotificationOnboarding({
   enabled = true,
-  userId,
 }: {
   enabled?: boolean;
   userId: string;
@@ -19,26 +18,35 @@ export function NotificationOnboarding({
   const [isOpen, setIsOpen] = useState(false);
   const [isEnabling, setIsEnabling] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const storageKey = `mac-notification-onboarding:${userId}`;
-
   useEffect(() => {
     if (!enabled) return;
 
-    const isMobile = window.matchMedia("(max-width: 63.999rem)").matches;
-    const alreadySeen = window.localStorage.getItem(storageKey) === "seen";
+    function openNotificationOnboarding() {
+      if (!supportsPushNotifications()) {
+        setFeedback("Notifications are unavailable on this device.");
+      } else if (Notification.permission === "default") {
+        setFeedback(null);
+      } else if (Notification.permission === "denied") {
+        setFeedback("Notifications are blocked in your browser settings.");
+      } else {
+        setFeedback("Notifications are already enabled on this device.");
+      }
 
-    if (
-      isMobile &&
-      !alreadySeen &&
-      supportsPushNotifications() &&
-      Notification.permission === "default"
-    ) {
       setIsOpen(true);
     }
-  }, [enabled, storageKey]);
+
+    window.addEventListener(
+      "mac-open-notification-onboarding",
+      openNotificationOnboarding,
+    );
+    return () =>
+      window.removeEventListener(
+        "mac-open-notification-onboarding",
+        openNotificationOnboarding,
+      );
+  }, [enabled]);
 
   function dismiss() {
-    window.localStorage.setItem(storageKey, "seen");
     setIsOpen(false);
   }
 
@@ -57,6 +65,8 @@ export function NotificationOnboarding({
   }
 
   if (!isOpen) return null;
+  const canRequestPermission =
+    supportsPushNotifications() && Notification.permission === "default";
 
   return (
     <AppDialog
@@ -66,7 +76,7 @@ export function NotificationOnboarding({
         <div className="grid gap-2">
           <button
             className="mac-focus h-12 rounded-lg bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] disabled:opacity-45"
-            disabled={isEnabling}
+            disabled={isEnabling || !canRequestPermission}
             onClick={() => void enable()}
             type="button"
           >
@@ -91,10 +101,11 @@ export function NotificationOnboarding({
       </span>
       <div>
         <p className="font-medium">
-          Get friend requests, nudges and study updates.
+          Get friend requests, nudges and study updates when they matter.
         </p>
         <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-          You can enable or disable each alert type in Settings anytime.
+          You can choose alert types in Settings anytime. We only ask after you
+          choose to turn them on.
         </p>
       </div>
       {feedback ? (
