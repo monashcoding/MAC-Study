@@ -9,6 +9,11 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 type Availability =
   "available" | "checking" | "error" | "idle" | "invalid" | "taken";
 
+type AvailabilityResult = {
+  status: "available" | "error" | "taken";
+  username: string;
+};
+
 export function ProfileIdentityForm({
   defaultName,
   defaultUsername,
@@ -27,28 +32,28 @@ export function ProfileIdentityForm({
   userId: string;
 }) {
   const [username, setUsername] = useState(defaultUsername);
-  const [availability, setAvailability] = useState<Availability>("idle");
+  const [availabilityResult, setAvailabilityResult] =
+    useState<AvailabilityResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const normalizedUsername = normalizeUsername(username);
+  const isUnchanged =
+    normalizedUsername === normalizeUsername(defaultUsername);
+  const shouldCheckAvailability =
+    isValidUsername(normalizedUsername) && !isUnchanged;
+  const availability: Availability = !normalizedUsername
+    ? "idle"
+    : !isValidUsername(normalizedUsername)
+      ? "invalid"
+      : isUnchanged
+        ? "available"
+        : availabilityResult?.username === normalizedUsername
+          ? availabilityResult.status
+          : "checking";
 
   useEffect(() => {
-    if (!normalizedUsername) {
-      setAvailability("idle");
-      return;
-    }
-
-    if (!isValidUsername(normalizedUsername)) {
-      setAvailability("invalid");
-      return;
-    }
-
-    if (normalizedUsername === normalizeUsername(defaultUsername)) {
-      setAvailability("available");
-      return;
-    }
+    if (!shouldCheckAvailability) return;
 
     let cancelled = false;
-    setAvailability("checking");
 
     const timeout = window.setTimeout(async () => {
       try {
@@ -61,13 +66,17 @@ export function ProfileIdentityForm({
           .limit(1);
 
         if (!cancelled) {
-          setAvailability(
-            error ? "error" : data?.length ? "taken" : "available",
-          );
+          setAvailabilityResult({
+            status: error ? "error" : data?.length ? "taken" : "available",
+            username: normalizedUsername,
+          });
         }
       } catch {
         if (!cancelled) {
-          setAvailability("error");
+          setAvailabilityResult({
+            status: "error",
+            username: normalizedUsername,
+          });
         }
       }
     }, 350);
@@ -76,7 +85,7 @@ export function ProfileIdentityForm({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [defaultUsername, normalizedUsername, userId]);
+  }, [normalizedUsername, shouldCheckAvailability, userId]);
 
   return (
     <form

@@ -18,8 +18,14 @@ export function TransientToast({
 }) {
   const onDismissRef = useRef(onDismiss);
   const onActionRef = useRef(onAction);
-  onDismissRef.current = onDismiss;
-  onActionRef.current = onAction;
+
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
+
+  useEffect(() => {
+    onActionRef.current = onAction;
+  }, [onAction]);
 
   useEffect(() => {
     if (!message) return;

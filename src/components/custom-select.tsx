@@ -45,14 +45,21 @@ export function CustomSelect<T extends string | number>({
   const listboxId = useId();
   const listboxRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const optionsRef = useRef(options);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const valueRef = useRef(value);
-  optionsRef.current = options;
-  valueRef.current = value;
-  const selectedOption =
-    options.find((option) => option.value === value) ?? null;
+  const selectedIndex = options.findIndex((option) => option.value === value);
+  const selectedOption = selectedIndex >= 0 ? options[selectedIndex] : null;
+
+  const closeMenu = useCallback(() => {
+    setIsOpen(false);
+    setMenuPosition(null);
+  }, []);
+
+  const openMenu = useCallback(() => {
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    setMenuPosition(null);
+    setIsOpen(true);
+  }, [selectedIndex]);
 
   const updateMenuPosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -80,9 +87,9 @@ export function CustomSelect<T extends string | number>({
     const maxHeight = Math.max(80, Math.min(240, available));
     const estimatedMenuHeight = Math.min(
       maxHeight,
-      optionsRef.current.length * 48 + 12,
+      options.length * 48 + 12,
     );
-    const longestLabelLength = optionsRef.current.reduce(
+    const longestLabelLength = options.reduce(
       (longest, option) => Math.max(longest, option.label.length),
       0,
     );
@@ -101,7 +108,7 @@ export function CustomSelect<T extends string | number>({
       : rect.bottom + gap;
 
     setMenuPosition({ left, maxHeight, top, width });
-  }, [placement, size]);
+  }, [options, placement, size]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -112,19 +119,16 @@ export function CustomSelect<T extends string | number>({
         !rootRef.current?.contains(event.target) &&
         !listboxRef.current?.contains(event.target)
       ) {
-        setIsOpen(false);
+        closeMenu();
       }
     }
 
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [isOpen]);
+  }, [closeMenu, isOpen]);
 
   useEffect(() => {
-    if (!isOpen) {
-      setMenuPosition(null);
-      return;
-    }
+    if (!isOpen) return;
 
     updateMenuPosition();
     const viewport = window.visualViewport;
@@ -144,18 +148,12 @@ export function CustomSelect<T extends string | number>({
   useEffect(() => {
     if (!isOpen) return;
 
-    const selectedIndex = optionsRef.current.findIndex(
-      (option) => option.value === valueRef.current,
-    );
-    const nextIndex = selectedIndex >= 0 ? selectedIndex : 0;
-    setActiveIndex(nextIndex);
-
     const frame = window.requestAnimationFrame(() => {
-      optionRefs.current[nextIndex]?.focus();
+      optionRefs.current[activeIndex]?.focus();
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [isOpen]);
+  }, [activeIndex, isOpen]);
 
   return (
     <div
@@ -164,7 +162,7 @@ export function CustomSelect<T extends string | number>({
         if (event.key === "Escape" && isOpen) {
           event.preventDefault();
           event.stopPropagation();
-          setIsOpen(false);
+          closeMenu();
           triggerRef.current?.focus();
           return;
         }
@@ -186,10 +184,10 @@ export function CustomSelect<T extends string | number>({
         } else if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onChange(options[activeIndex].value);
-          setIsOpen(false);
+          closeMenu();
           triggerRef.current?.focus();
         } else if (event.key === "Tab") {
-          setIsOpen(false);
+          closeMenu();
         }
       }}
       ref={rootRef}
@@ -207,11 +205,11 @@ export function CustomSelect<T extends string | number>({
             : "border-[var(--color-border)] hover:border-[rgb(255_255_255/0.18)]",
         )}
         disabled={disabled}
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={() => (isOpen ? closeMenu() : openMenu())}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
-            setIsOpen(true);
+            openMenu();
           }
         }}
         ref={triggerRef}
@@ -275,7 +273,7 @@ export function CustomSelect<T extends string | number>({
                     key={option.value}
                     onClick={() => {
                       onChange(option.value);
-                      setIsOpen(false);
+                      closeMenu();
                       triggerRef.current?.focus();
                     }}
                     onFocus={() => setActiveIndex(optionIndex)}

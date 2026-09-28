@@ -33,7 +33,8 @@ export function NotificationOnboarding({
       supportsPushNotifications() &&
       Notification.permission === "default"
     ) {
-      setIsOpen(true);
+      const frame = window.requestAnimationFrame(() => setIsOpen(true));
+      return () => window.cancelAnimationFrame(frame);
     }
   }, [enabled, storageKey]);
 
