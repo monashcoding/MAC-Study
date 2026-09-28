@@ -24,6 +24,22 @@ npm run dev
 Create `.env.local` from `.env.example` before wiring Supabase auth or database
 features.
 
+## Validate Database Migrations Locally
+
+Docker Desktop must be running. The Supabase CLI version is pinned in
+`package.json`, and the local database settings live in `supabase/config.toml`.
+
+```bash
+npm install
+npm run db:start
+npm run db:reset
+npm run db:stop
+```
+
+`db:start` creates a fresh local Postgres database and applies every migration.
+`db:reset` drops the local schemas and replays the complete migration history.
+Neither command connects to or modifies the hosted Supabase project.
+
 ## Deploy And Test On Phone
 
 The production app is deployed through Dokploy at

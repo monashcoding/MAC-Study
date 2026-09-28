@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
+    "db:start": "supabase db start",
+    "db:reset": "supabase db reset --local --no-seed",
+    "db:stop": "supabase stop --no-backup",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -34,6 +37,7 @@
     "@types/web-push": "^3.6.4",
     "eslint": "latest",
     "eslint-config-next": "latest",
+    "supabase": "2.118.0",
     "tailwindcss": "latest",
     "typescript": "latest",
     "vitest": "latest"
