@@ -4,6 +4,7 @@ import {
   getOptionalSupabaseAdminEnv,
   getOptionalSupabasePublicEnv,
 } from "./env";
+import type { Database } from "./types";
 
 export async function createSupabaseServerClient() {
   const env = getOptionalSupabasePublicEnv();
@@ -14,7 +15,7 @@ export async function createSupabaseServerClient() {
 
   const accessToken = await getServerStudyAccessToken();
 
-  return createClient(
+  return createClient<Database>(
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
@@ -35,7 +36,7 @@ export function createSupabaseAdminClient() {
     return null;
   }
 
-  return createClient(
+  return createClient<Database>(
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.SUPABASE_SERVICE_ROLE_KEY,
     {

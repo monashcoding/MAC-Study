@@ -6,6 +6,7 @@ import {
   createSupabaseAdminClient,
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
+import type { Tables } from "@/lib/supabase/types";
 
 export const runtime = "nodejs";
 
@@ -19,12 +20,10 @@ const responseSchema = z.object({
   requestId: z.string().uuid(),
 });
 
-type GroupNotificationRow = {
-  body: string;
-  id: string;
-  title: string;
-  user_id: string;
-};
+type GroupNotificationRow = Pick<
+  Tables<"app_notifications">,
+  "body" | "id" | "title" | "user_id"
+>;
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();

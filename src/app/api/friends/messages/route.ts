@@ -6,6 +6,7 @@ import {
   createSupabaseAdminClient,
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
+import type { Tables } from "@/lib/supabase/types";
 
 export const runtime = "nodejs";
 
@@ -14,14 +15,10 @@ const messageSchema = z.object({
   friendId: z.string().uuid(),
 });
 
-type DirectMessageRow = {
-  body: string;
-  created_at: string;
-  id: string;
-  read_at: string | null;
-  recipient_id: string;
-  sender_id: string;
-};
+type DirectMessageRow = Pick<
+  Tables<"direct_messages">,
+  "body" | "created_at" | "id" | "read_at" | "recipient_id" | "sender_id"
+>;
 
 export async function POST(request: Request) {
   const [supabase, session] = await Promise.all([

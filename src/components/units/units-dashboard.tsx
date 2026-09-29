@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AppSupabaseClient as SupabaseClient } from "@/lib/supabase/types";
 import {
   ArrowLeft,
   BookOpen,
@@ -29,15 +29,18 @@ import { CustomSelect } from "@/components/custom-select";
 import { PaginatedList } from "@/components/paginated-list";
 import { TransientToast } from "@/components/transient-toast";
 import {
+  dedupeRemoteRequest,
+  subscribeToRemoteTableChanges,
+} from "@/lib/client-cache";
+import {
   addRemoteFriend,
-  fetchRemoteSocialSnapshot,
+  fetchRemoteStudyGroups,
   fetchRemoteUnitCohort,
   fetchRemoteUnitState,
   inviteRemoteFriendToGroup,
   leaveRemoteUnitEnrollment,
   requestRemoteSpecialUnit,
   setRemoteSubjectUnitOffering,
-  subscribeToRemoteAppChanges,
   upsertRemoteUnitEnrollment,
   type RemoteUnitState,
 } from "@/lib/supabase/app-data";
@@ -73,6 +76,14 @@ import { cn } from "@/lib/utils";
 type CohortScope = "all" | "friends";
 const UNLINKED_SUBJECT_VALUE = "__unlinked__";
 const ALL_UNIT_FILTER_VALUE = "all";
+const UNIT_CHANGE_TABLES = new Set([
+  "group_members",
+  "groups",
+  "special_unit_aliases",
+  "special_units",
+  "subjects",
+  "unit_enrolments",
+]);
 
 const demoEnrollments: UnitEnrollment[] = [
   {
@@ -129,7 +140,13 @@ const demoUnitState: RemoteUnitState = {
   ],
 };
 
-export function UnitsDashboard() {
+export function UnitsDashboard({
+  isActive = true,
+  userId = null,
+}: {
+  isActive?: boolean;
+  userId?: string | null;
+} = {}) {
   const [unitState, setUnitState] = useState<RemoteUnitState>({
     enrollments: [],
     specialUnits: [],
@@ -168,16 +185,30 @@ export function UnitsDashboard() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const refreshRemote = useCallback(async (supabase: SupabaseClient) => {
-    const [units, social] = await Promise.all([
-      fetchRemoteUnitState(supabase),
-      fetchRemoteSocialSnapshot(supabase),
+    const [units, groups] = await Promise.all([
+      userId
+        ? dedupeRemoteRequest({
+            key: "units",
+            load: () => fetchRemoteUnitState(supabase),
+            userId,
+          })
+        : fetchRemoteUnitState(supabase),
+      userId
+        ? dedupeRemoteRequest({
+            key: "study-groups",
+            load: () => fetchRemoteStudyGroups(supabase),
+            userId,
+          })
+        : fetchRemoteStudyGroups(supabase),
     ]);
 
     if (units) setUnitState(units);
-    if (social) setSocialState(social.socialState);
-  }, []);
+    setSocialState({ friends: [], groups });
+  }, [userId]);
 
   useEffect(() => {
+    if (!isActive) return;
+
     let cancelled = false;
     let supabase: SupabaseClient;
 
@@ -214,19 +245,15 @@ export function UnitsDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [refreshRemote]);
+  }, [isActive, refreshRemote]);
 
   useEffect(() => {
-    if (!remoteClient || dataMode !== "remote") return;
+    if (!isActive || !remoteClient || dataMode !== "remote") return;
 
-    return subscribeToRemoteAppChanges(remoteClient, (table) => {
-      if (table === "friend_requests" || table === "app_notifications") {
-        return;
-      }
-
-      void refreshRemote(remoteClient);
+    return subscribeToRemoteTableChanges((table) => {
+      if (UNIT_CHANGE_TABLES.has(table)) void refreshRemote(remoteClient);
     });
-  }, [dataMode, refreshRemote, remoteClient]);
+  }, [dataMode, isActive, refreshRemote, remoteClient]);
 
   const selectedEnrollment = unitState.enrollments.find(
     (enrollment) => enrollment.offeringId === selectedOfferingId,
@@ -234,7 +261,7 @@ export function UnitsDashboard() {
   useAppHeaderDetail("/app/units", selectedEnrollment?.code ?? null);
 
   useEffect(() => {
-    if (!selectedOfferingId) {
+    if (!isActive || !selectedOfferingId) {
       return;
     }
 
@@ -267,7 +294,13 @@ export function UnitsDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [dataMode, remoteClient, selectedOfferingId, socialState.groups]);
+  }, [
+    dataMode,
+    isActive,
+    remoteClient,
+    selectedOfferingId,
+    socialState.groups,
+  ]);
 
   const manageableGroups = socialState.groups;
   const filteredCohort = useMemo(() => {

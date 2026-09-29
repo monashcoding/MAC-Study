@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AppSupabaseClient as SupabaseClient } from "@/lib/supabase/types";
 import {
   ArrowLeft,
   BellOff,
@@ -32,10 +32,12 @@ import { EmptyStateCta } from "@/components/empty-state-cta";
 import { PaginatedList } from "@/components/paginated-list";
 import { useAppHeaderDetail } from "@/components/app-header-detail";
 import {
-  cacheRemoteSocialSnapshot,
+  cacheRemoteGroupsSnapshot,
   cacheRemoteTimerState,
-  getCachedRemoteSocialSnapshot,
+  dedupeRemoteRequest,
+  getCachedRemoteGroupsSnapshot,
   getCachedRemoteTimerState,
+  subscribeToRemoteTableChanges,
 } from "@/lib/client-cache";
 import {
   SOCIAL_STORAGE_KEY,
@@ -53,7 +55,7 @@ import {
   fetchRemoteGroupNotificationSettings,
   fetchRemoteUserNudgeMute,
   fetchRemoteTimerState,
-  fetchRemoteSocialSnapshot,
+  fetchRemoteGroupsSnapshot,
   inviteRemoteFriendToGroup,
   joinRemoteGroupByLink,
   leaveRemoteGroup,
@@ -63,7 +65,6 @@ import {
   setRemoteUserNudgeMute,
   startRemoteStudySession,
   stopRemoteStudySession,
-  subscribeToRemoteAppChanges,
   transferRemoteGroupLeadership,
   updateRemoteGroupInvite,
   type RemoteActiveSession,
@@ -96,12 +97,33 @@ const MEMBER_INACTIVE_COLOR = "#737b91";
 const emptySocialState: SocialState = { friends: [], groups: [] };
 const TIMER_STORAGE_KEY = "mac-study-demo-state";
 const fallbackStudySubjects: RemoteSubject[] = [];
+const GROUP_SOCIAL_CHANGE_TABLES = new Set([
+  "friendships",
+  "group_invites",
+  "group_members",
+  "groups",
+  "profiles",
+  "study_sessions",
+]);
+const GROUP_TIMER_CHANGE_TABLES = new Set([
+  "study_sessions",
+  "subjects",
+  "unit_enrolments",
+]);
+const GROUP_CHAT_CHANGE_TABLES = new Set([
+  "group_chat_messages",
+  "group_chat_read_receipts",
+]);
 
 export function GroupsDashboard({
+  isActive = true,
   onUnreadChange,
+  userId = null,
 }: {
+  isActive?: boolean;
   onUnreadChange?: (hasUnread: boolean) => void;
-}) {
+  userId?: string | null;
+} = {}) {
   const [socialState, setSocialState] = useState<SocialState>(emptySocialState);
   const [timerSubjects, setTimerSubjects] = useState<RemoteSubject[]>(
     fallbackStudySubjects,
@@ -147,32 +169,50 @@ export function GroupsDashboard({
   }, [groupUnreadCounts, onUnreadChange]);
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
-    const snapshot = await fetchRemoteSocialSnapshot(supabase);
+    const snapshot = userId
+      ? await dedupeRemoteRequest({
+          key: "groups",
+          load: () => fetchRemoteGroupsSnapshot(supabase),
+          userId,
+        })
+      : await fetchRemoteGroupsSnapshot(supabase);
 
     if (snapshot) {
-      cacheRemoteSocialSnapshot(snapshot);
+      cacheRemoteGroupsSnapshot(snapshot);
       setCurrentUserId(snapshot.currentUserId);
       setSocialState(snapshot.socialState);
       setGroupInvites(snapshot.groupInvites ?? []);
     }
-  }, []);
+  }, [userId]);
 
   const refreshRemoteTimer = useCallback(async (supabase: SupabaseClient) => {
-    const timerState = await fetchRemoteTimerState(supabase);
+    const timerState = userId
+      ? await dedupeRemoteRequest({
+          key: "timer",
+          load: () => fetchRemoteTimerState(supabase),
+          userId,
+        })
+      : await fetchRemoteTimerState(supabase);
 
     if (timerState) {
       cacheRemoteTimerState(timerState);
       setTimerSubjects(timerState.subjects);
       setActiveStudySession(timerState.activeSession);
     }
-  }, []);
+  }, [userId]);
 
   const refreshGroupUnreadCounts = useCallback(
     async (supabase: SupabaseClient) => {
-      const counts = await fetchGroupChatUnreadCounts(supabase);
+      const counts = userId
+        ? await dedupeRemoteRequest({
+            key: "group-chat-unread",
+            load: () => fetchGroupChatUnreadCounts(supabase),
+            userId,
+          })
+        : await fetchGroupChatUnreadCounts(supabase);
       setGroupUnreadCounts(counts);
     },
-    [],
+    [userId],
   );
   const clearGroupUnreadCount = useCallback((groupId: string) => {
     setGroupUnreadCounts((current) => ({
@@ -182,13 +222,15 @@ export function GroupsDashboard({
   }, []);
 
   useEffect(() => {
+    if (!isActive) return;
+
     const interval = window.setInterval(() => setNow(new Date()), 1000);
 
     return () => window.clearInterval(interval);
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
-    if (previousStudyDateKeyRef.current === studyDateKey) return;
+    if (!isActive || previousStudyDateKeyRef.current === studyDateKey) return;
 
     previousStudyDateKeyRef.current = studyDateKey;
     if (remoteClient) {
@@ -197,15 +239,23 @@ export function GroupsDashboard({
         void refreshRemoteTimer(remoteClient);
       });
     }
-  }, [refreshRemoteSocial, refreshRemoteTimer, remoteClient, studyDateKey]);
+  }, [
+    isActive,
+    refreshRemoteSocial,
+    refreshRemoteTimer,
+    remoteClient,
+    studyDateKey,
+  ]);
 
   useEffect(() => {
+    if (!isActive) return;
+
     let cancelled = false;
 
     async function loadInitialState() {
       let supabase: SupabaseClient | null = null;
-      const cachedSocial = getCachedRemoteSocialSnapshot();
-      const cachedTimer = getCachedRemoteTimerState();
+      const cachedSocial = getCachedRemoteGroupsSnapshot(userId);
+      const cachedTimer = getCachedRemoteTimerState(userId);
 
       if (cachedSocial) {
         setCurrentUserId(cachedSocial.currentUserId);
@@ -220,18 +270,38 @@ export function GroupsDashboard({
       }
 
       try {
-        supabase = createSupabaseBrowserClient();
+        const client = createSupabaseBrowserClient();
+        supabase = client;
         if (!cancelled) {
-          setRemoteClient(supabase);
+          setRemoteClient(client);
         }
         const [snapshot, timerState, unreadCounts] = await Promise.all([
-          fetchRemoteSocialSnapshot(supabase),
-          fetchRemoteTimerState(supabase),
-          fetchGroupChatUnreadCounts(supabase).catch(() => ({})),
+          userId
+            ? dedupeRemoteRequest({
+                key: "groups",
+                load: () => fetchRemoteGroupsSnapshot(client),
+                userId,
+              })
+            : fetchRemoteGroupsSnapshot(client),
+          userId
+            ? dedupeRemoteRequest({
+                key: "timer",
+                load: () => fetchRemoteTimerState(client),
+                userId,
+              })
+            : fetchRemoteTimerState(client),
+          (userId
+            ? dedupeRemoteRequest({
+                key: "group-chat-unread",
+                load: () => fetchGroupChatUnreadCounts(client),
+                userId,
+              })
+            : fetchGroupChatUnreadCounts(client)
+          ).catch(() => ({})),
         ]);
 
         if (!cancelled && snapshot) {
-          cacheRemoteSocialSnapshot(snapshot);
+          cacheRemoteGroupsSnapshot(snapshot);
           setCurrentUserId(snapshot.currentUserId);
           setSocialState(snapshot.socialState);
           setGroupInvites(snapshot.groupInvites ?? []);
@@ -284,7 +354,7 @@ export function GroupsDashboard({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isActive, userId]);
 
   useEffect(() => {
     if (!isLoaded || remoteClient) {
@@ -298,23 +368,25 @@ export function GroupsDashboard({
   }, [isLoaded, remoteClient, socialState]);
 
   useEffect(() => {
-    if (!remoteClient) {
+    if (!isActive || !remoteClient) {
       return;
     }
 
-    return subscribeToRemoteAppChanges(remoteClient, (table) => {
-      if (
-        table === "group_chat_messages" ||
-        table === "group_chat_read_receipts"
-      ) {
+    return subscribeToRemoteTableChanges((table) => {
+      if (GROUP_CHAT_CHANGE_TABLES.has(table)) {
         void refreshGroupUnreadCounts(remoteClient);
         return;
       }
 
-      void refreshRemoteSocial(remoteClient);
-      void refreshRemoteTimer(remoteClient);
+      if (GROUP_SOCIAL_CHANGE_TABLES.has(table)) {
+        void refreshRemoteSocial(remoteClient);
+      }
+      if (GROUP_TIMER_CHANGE_TABLES.has(table)) {
+        void refreshRemoteTimer(remoteClient);
+      }
     });
   }, [
+    isActive,
     refreshGroupUnreadCounts,
     refreshRemoteSocial,
     refreshRemoteTimer,
@@ -325,6 +397,7 @@ export function GroupsDashboard({
     (group) => group.id === selectedGroupId,
   );
   useEffect(() => {
+    if (!isActive) return;
     if (joinLinkHandledRef.current) return;
 
     const url = new URL(window.location.href);
@@ -346,7 +419,7 @@ export function GroupsDashboard({
       "",
       `${url.pathname}${url.search}${url.hash}`,
     );
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);

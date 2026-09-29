@@ -66,35 +66,46 @@ export function AppWorkspace({
         id="home"
         key={`home:${resetKeys["/app"] ?? 0}`}
       >
-        <TimerDashboard />
+        <TimerDashboard isActive={activeView === "home"} userId={userId} />
       </WorkspacePanel>
       <WorkspacePanel
         active={activeView === "groups"}
         id="groups"
         key={`groups:${resetKeys["/app/groups"] ?? 0}`}
       >
-        <GroupsDashboard onUnreadChange={onGroupChatUnreadChange} />
+        <GroupsDashboard
+          isActive={activeView === "groups"}
+          onUnreadChange={onGroupChatUnreadChange}
+          userId={userId}
+        />
       </WorkspacePanel>
       <WorkspacePanel
         active={activeView === "friends"}
         id="friends"
         key={`friends:${resetKeys["/app/friends"] ?? 0}`}
       >
-        <FriendsDashboard onUnreadChange={onDirectMessageUnreadChange} />
+        <FriendsDashboard
+          isActive={activeView === "friends"}
+          onUnreadChange={onDirectMessageUnreadChange}
+          userId={userId}
+        />
       </WorkspacePanel>
       <WorkspacePanel
         active={activeView === "units"}
         id="units"
         key={`units:${resetKeys["/app/units"] ?? 0}`}
       >
-        <UnitsDashboard />
+        <UnitsDashboard isActive={activeView === "units"} userId={userId} />
       </WorkspacePanel>
       <WorkspacePanel
         active={activeView === "statistics"}
         id="statistics"
         key={`statistics:${resetKeys["/app/statistics"] ?? 0}`}
       >
-        <StatisticsDashboard />
+        <StatisticsDashboard
+          isActive={activeView === "statistics"}
+          userId={userId}
+        />
       </WorkspacePanel>
       <WorkspacePanel
         active={activeView === "profile"}

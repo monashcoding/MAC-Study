@@ -1,6 +1,7 @@
 import webpush from "web-push";
 import { getOptionalWebPushEnv } from "@/lib/supabase/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import type { Tables } from "@/lib/supabase/types";
 
 export type NotificationCategory =
   | "friend"
@@ -8,11 +9,10 @@ export type NotificationCategory =
   | "other"
   | "study_reminder";
 
-type PushSubscriptionRow = {
-  auth: string;
-  endpoint: string;
-  p256dh: string;
-};
+type PushSubscriptionRow = Pick<
+  Tables<"push_subscriptions">,
+  "auth" | "endpoint" | "p256dh"
+>;
 
 export type PushDelivery = {
   sent: number;
@@ -82,7 +82,7 @@ export async function sendWebPush({
     return { sent: 0, skipped: "subscriptions_unavailable" };
   }
 
-  const subscriptions = (data ?? []) as PushSubscriptionRow[];
+  const subscriptions: PushSubscriptionRow[] = data ?? [];
 
   if (!subscriptions.length) {
     return { sent: 0, skipped: "no_subscriptions" };

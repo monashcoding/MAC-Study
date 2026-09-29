@@ -6,6 +6,7 @@ import {
   createSupabaseAdminClient,
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
+import type { Tables } from "@/lib/supabase/types";
 
 export const runtime = "nodejs";
 
@@ -20,23 +21,22 @@ const messageSchema = z
     message: "A message or photo is required.",
   });
 
-type GroupMemberRow = {
-  user_id: string;
-};
+type GroupMemberRow = Pick<Tables<"group_members">, "user_id">;
 
-type GroupMuteRow = {
-  user_id: string;
-};
+type GroupMuteRow = Pick<
+  Tables<"user_group_notification_settings">,
+  "user_id"
+>;
 
-type NotificationPreferenceRow = {
-  other_notifications: boolean;
-  user_id: string;
-};
+type NotificationPreferenceRow = Pick<
+  Tables<"user_notification_preferences">,
+  "other_notifications" | "user_id"
+>;
 
-type CreatedNotificationRow = {
-  id: string;
-  user_id: string;
-};
+type CreatedNotificationRow = Pick<
+  Tables<"app_notifications">,
+  "id" | "user_id"
+>;
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();

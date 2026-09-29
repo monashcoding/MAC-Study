@@ -5,6 +5,7 @@ import {
   createSupabaseAdminClient,
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
+import type { Tables } from "@/lib/supabase/types";
 
 export const runtime = "nodejs";
 
@@ -15,9 +16,7 @@ const leaveGroupSchema = z.object({
   groupId: z.string().uuid(),
 });
 
-type GroupImageRow = {
-  image_path: string | null;
-};
+type GroupImageRow = Pick<Tables<"group_chat_messages">, "image_path">;
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
