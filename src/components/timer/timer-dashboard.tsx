@@ -789,7 +789,7 @@ export function TimerDashboard({
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <button
             className={cn(
-              "mac-focus inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition hover:brightness-105 active:scale-[0.99] lg:h-12 lg:min-w-44",
+              "mac-focus inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition hover:brightness-105 active:scale-[0.99] disabled:cursor-wait disabled:opacity-55 lg:h-12 lg:min-w-44",
               activeSession
                 ? "bg-[var(--color-danger)] text-white"
                 : "bg-[var(--color-mac-yellow)] text-[#141414]",
@@ -797,6 +797,7 @@ export function TimerDashboard({
             onClick={() =>
               void (activeSession ? stopStudy() : setIsChoosingStudy(true))
             }
+            disabled={!isLoaded}
             type="button"
           >
             {activeSession ? (
@@ -866,7 +867,9 @@ export function TimerDashboard({
                       "mac-focus inline-flex h-10 w-10 items-center justify-center rounded-full font-semibold text-[#141414] shadow-[0_10px_24px_rgb(0_0_0/0.22)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-35",
                       isActive ? "bg-[var(--color-danger)] text-white" : "",
                     )}
-                    disabled={Boolean(activeSession) && !isActive}
+                    disabled={
+                      !isLoaded || (Boolean(activeSession) && !isActive)
+                    }
                     onClick={() =>
                       void (isActive ? stopStudy() : startStudy(subject.id))
                     }

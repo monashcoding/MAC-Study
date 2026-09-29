@@ -44,13 +44,13 @@ This checklist is the review record for the architecture work. Work stops after 
   - [x] Follow-up: notify the active consumer after mutations and realtime changes.
   - [x] Follow-up: keep navigation unread badges current at the app-shell level.
   - [x] Follow-up commit: `fix: scope and coordinate client data caching`
-- [ ] **Phase 6 — Critical browser coverage**
-  - Planned commit: `test: add critical Playwright coverage`
-  - [ ] Cover authentication routing.
-  - [ ] Cover starting a timer.
-  - [ ] Cover creating a group.
-  - [ ] Cover an RLS-sensitive access denial.
-  - [ ] Run the Playwright suite in CI and document required test data/environment.
+- [x] **Phase 6 — Critical browser coverage**
+  - Commit: `test: add critical Playwright coverage`
+  - [x] Cover authentication routing.
+  - [x] Cover starting a timer.
+  - [x] Cover creating a group.
+  - [x] Cover an RLS-sensitive access denial.
+  - [x] Run the Playwright suite in CI and document required test data/environment.
 
 ## Current review gate
 
@@ -58,4 +58,5 @@ This checklist is the review record for the architecture work. Work stops after 
 - [x] Review Phase 2 and approve starting Phase 3.
 - [x] Review Phase 3 and approve starting Phase 4.
 - [x] Review Phase 4 and approve starting Phase 5.
-- [ ] Review Phase 5 and approve starting Phase 6.
+- [x] Review Phase 5 and approve starting Phase 6.
+- [ ] Review Phase 6.
