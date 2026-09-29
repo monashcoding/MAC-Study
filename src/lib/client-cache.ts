@@ -8,57 +8,69 @@ import type {
 
 export const REMOTE_CACHE_MAX_AGE_MS = 2 * 60 * 1000;
 
-const REMOTE_TIMER_CACHE_KEY = "mac-study-remote-timer-cache-v2";
-const REMOTE_FRIENDS_CACHE_KEY = "mac-study-remote-friends-cache-v2";
-const REMOTE_GROUPS_CACHE_KEY = "mac-study-remote-groups-cache-v2";
+const REMOTE_TIMER_CACHE_KEY = "mac-study-remote-timer-cache-v3";
+const REMOTE_FRIENDS_CACHE_KEY = "mac-study-remote-friends-cache-v3";
+const REMOTE_GROUPS_CACHE_KEY = "mac-study-remote-groups-cache-v3";
 const LEGACY_CACHE_KEYS = [
   "mac-study-remote-timer-cache",
   "mac-study-remote-social-cache",
+  "mac-study-remote-timer-cache-v2",
+  "mac-study-remote-friends-cache-v2",
+  "mac-study-remote-groups-cache-v2",
 ];
 
 type CacheEnvelope<T> = {
   cachedAt: number;
+  userId: string;
   value: T;
-  version: 2;
+  version: 3;
 };
+
+type RemoteTableChangeListener = (table: string) => void;
 
 let timerCache: CacheEnvelope<RemoteTimerState> | null = null;
 let friendsCache: CacheEnvelope<RemoteFriendsSnapshot> | null = null;
 let groupsCache: CacheEnvelope<RemoteGroupsSnapshot> | null = null;
 
-export function getCachedRemoteTimerState() {
+const inFlightRemoteRequests = new Map<string, Promise<unknown>>();
+const remoteTableChangeListeners = new Set<RemoteTableChangeListener>();
+
+export function getCachedRemoteTimerState(userId: string | null) {
+  if (!userId) return null;
   timerCache ??= readCache<RemoteTimerState>(REMOTE_TIMER_CACHE_KEY);
-  const value = getFreshValue(timerCache, REMOTE_TIMER_CACHE_KEY);
+  const value = getFreshValue(timerCache, REMOTE_TIMER_CACHE_KEY, userId);
   if (!value) timerCache = null;
   return value;
 }
 
 export function cacheRemoteTimerState(state: RemoteTimerState) {
-  timerCache = createEnvelope(state);
+  timerCache = createEnvelope(state, state.currentUserId);
   writeCache(REMOTE_TIMER_CACHE_KEY, timerCache);
 }
 
-export function getCachedRemoteFriendsSnapshot() {
+export function getCachedRemoteFriendsSnapshot(userId: string | null) {
+  if (!userId) return null;
   friendsCache ??= readCache<RemoteFriendsSnapshot>(REMOTE_FRIENDS_CACHE_KEY);
-  const value = getFreshValue(friendsCache, REMOTE_FRIENDS_CACHE_KEY);
+  const value = getFreshValue(friendsCache, REMOTE_FRIENDS_CACHE_KEY, userId);
   if (!value) friendsCache = null;
   return value;
 }
 
 export function cacheRemoteFriendsSnapshot(state: RemoteFriendsSnapshot) {
-  friendsCache = createEnvelope(state);
+  friendsCache = createEnvelope(state, state.currentUserId);
   writeCache(REMOTE_FRIENDS_CACHE_KEY, friendsCache);
 }
 
-export function getCachedRemoteGroupsSnapshot() {
+export function getCachedRemoteGroupsSnapshot(userId: string | null) {
+  if (!userId) return null;
   groupsCache ??= readCache<RemoteGroupsSnapshot>(REMOTE_GROUPS_CACHE_KEY);
-  const value = getFreshValue(groupsCache, REMOTE_GROUPS_CACHE_KEY);
+  const value = getFreshValue(groupsCache, REMOTE_GROUPS_CACHE_KEY, userId);
   if (!value) groupsCache = null;
   return value;
 }
 
 export function cacheRemoteGroupsSnapshot(state: RemoteGroupsSnapshot) {
-  groupsCache = createEnvelope(state);
+  groupsCache = createEnvelope(state, state.currentUserId);
   writeCache(REMOTE_GROUPS_CACHE_KEY, groupsCache);
 }
 
@@ -103,25 +115,76 @@ export function invalidateRemoteCachesForTable(table?: string) {
   ) {
     invalidateRemoteSocialCaches();
   }
+
+  remoteTableChangeListeners.forEach((listener) => {
+    try {
+      listener(table);
+    } catch {
+      // A mounted consumer must not block cache invalidation or a mutation.
+    }
+  });
+}
+
+export function subscribeToRemoteTableChanges(
+  listener: RemoteTableChangeListener,
+) {
+  remoteTableChangeListeners.add(listener);
+  return () => {
+    remoteTableChangeListeners.delete(listener);
+  };
+}
+
+export function dedupeRemoteRequest<T>({
+  key,
+  load,
+  userId,
+}: {
+  key: string;
+  load: () => Promise<T>;
+  userId: string;
+}): Promise<T> {
+  const scopedKey = `${userId}:${key}`;
+  const existing = inFlightRemoteRequests.get(scopedKey) as
+    | Promise<T>
+    | undefined;
+
+  if (existing) return existing;
+
+  const request = Promise.resolve().then(load);
+  inFlightRemoteRequests.set(scopedKey, request);
+
+  const clearRequest = () => {
+    if (inFlightRemoteRequests.get(scopedKey) === request) {
+      inFlightRemoteRequests.delete(scopedKey);
+    }
+  };
+
+  void request.then(clearRequest, clearRequest);
+  return request;
 }
 
 export function clearRemoteClientCache() {
   invalidateRemoteTimerCache();
   invalidateRemoteSocialCaches();
+  inFlightRemoteRequests.clear();
   LEGACY_CACHE_KEYS.forEach(removeCache);
 }
 
-function createEnvelope<T>(value: T): CacheEnvelope<T> {
-  return { cachedAt: Date.now(), value, version: 2 };
+function createEnvelope<T>(value: T, userId: string): CacheEnvelope<T> {
+  return { cachedAt: Date.now(), userId, value, version: 3 };
 }
 
 function getFreshValue<T>(
   envelope: CacheEnvelope<T> | null,
   key: string,
+  userId: string,
 ): T | null {
   if (!envelope) return null;
 
-  if (Date.now() - envelope.cachedAt > REMOTE_CACHE_MAX_AGE_MS) {
+  if (
+    envelope.userId !== userId ||
+    Date.now() - envelope.cachedAt > REMOTE_CACHE_MAX_AGE_MS
+  ) {
     removeCache(key);
     return null;
   }
@@ -138,8 +201,9 @@ function readCache<T>(key: string): CacheEnvelope<T> | null {
 
     const parsed = JSON.parse(raw) as Partial<CacheEnvelope<T>>;
     if (
-      parsed.version !== 2 ||
+      parsed.version !== 3 ||
       typeof parsed.cachedAt !== "number" ||
+      typeof parsed.userId !== "string" ||
       parsed.value === undefined
     ) {
       removeCache(key);

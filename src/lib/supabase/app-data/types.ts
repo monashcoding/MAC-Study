@@ -38,6 +38,7 @@ export type RemoteStoredSession = {
 };
 
 export type RemoteTimerState = {
+  currentUserId: string;
   subjects: RemoteSubject[];
   unitEnrollments: UnitEnrollment[];
   activeSession: RemoteActiveSession | null;

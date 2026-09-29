@@ -10,14 +10,17 @@ import {
   cacheRemoteGroupsSnapshot,
   cacheRemoteTimerState,
   clearRemoteClientCache,
+  dedupeRemoteRequest,
   getCachedRemoteFriendsSnapshot,
   getCachedRemoteGroupsSnapshot,
   getCachedRemoteTimerState,
   invalidateRemoteCachesForTable,
+  subscribeToRemoteTableChanges,
 } from "./client-cache";
 
 const timerState: RemoteTimerState = {
   activeSession: null,
+  currentUserId: "viewer",
   sessions: [],
   subjects: [],
   unitEnrollments: [],
@@ -62,12 +65,12 @@ afterEach(() => {
 describe("remote client cache freshness", () => {
   it("expires cached data and removes it from persistent storage", () => {
     cacheRemoteFriendsSnapshot(friendsSnapshot);
-    expect(getCachedRemoteFriendsSnapshot()).toEqual(friendsSnapshot);
+    expect(getCachedRemoteFriendsSnapshot("viewer")).toEqual(friendsSnapshot);
     expect(storage.size).toBe(1);
 
     vi.advanceTimersByTime(REMOTE_CACHE_MAX_AGE_MS + 1);
 
-    expect(getCachedRemoteFriendsSnapshot()).toBeNull();
+    expect(getCachedRemoteFriendsSnapshot("viewer")).toBeNull();
     expect(storage.size).toBe(0);
   });
 
@@ -78,9 +81,9 @@ describe("remote client cache freshness", () => {
 
     invalidateRemoteCachesForTable("friendships");
 
-    expect(getCachedRemoteTimerState()).toEqual(timerState);
-    expect(getCachedRemoteFriendsSnapshot()).toBeNull();
-    expect(getCachedRemoteGroupsSnapshot()).toBeNull();
+    expect(getCachedRemoteTimerState("viewer")).toEqual(timerState);
+    expect(getCachedRemoteFriendsSnapshot("viewer")).toBeNull();
+    expect(getCachedRemoteGroupsSnapshot("viewer")).toBeNull();
   });
 
   it("invalidates every derived cache when study sessions change", () => {
@@ -90,8 +93,44 @@ describe("remote client cache freshness", () => {
 
     invalidateRemoteCachesForTable("study_sessions");
 
-    expect(getCachedRemoteTimerState()).toBeNull();
-    expect(getCachedRemoteFriendsSnapshot()).toBeNull();
-    expect(getCachedRemoteGroupsSnapshot()).toBeNull();
+    expect(getCachedRemoteTimerState("viewer")).toBeNull();
+    expect(getCachedRemoteFriendsSnapshot("viewer")).toBeNull();
+    expect(getCachedRemoteGroupsSnapshot("viewer")).toBeNull();
+  });
+
+  it("rejects every cache entry when the signed-in account changes", () => {
+    cacheRemoteTimerState(timerState);
+    cacheRemoteFriendsSnapshot(friendsSnapshot);
+    cacheRemoteGroupsSnapshot(groupsSnapshot);
+
+    expect(getCachedRemoteTimerState("another-user")).toBeNull();
+    expect(getCachedRemoteFriendsSnapshot("another-user")).toBeNull();
+    expect(getCachedRemoteGroupsSnapshot("another-user")).toBeNull();
+    expect(storage.size).toBe(0);
+  });
+
+  it("deduplicates simultaneous requests within one account", async () => {
+    const load = vi.fn().mockResolvedValue({ value: "fresh" });
+    const first = dedupeRemoteRequest({ key: "timer", load, userId: "viewer" });
+    const second = dedupeRemoteRequest({ key: "timer", load, userId: "viewer" });
+
+    expect(first).toBe(second);
+    await expect(first).resolves.toEqual({ value: "fresh" });
+    expect(load).toHaveBeenCalledOnce();
+
+    await dedupeRemoteRequest({ key: "timer", load, userId: "viewer" });
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("notifies mounted consumers when a relevant table changes", () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeToRemoteTableChanges(listener);
+
+    invalidateRemoteCachesForTable("study_sessions");
+    expect(listener).toHaveBeenCalledWith("study_sessions");
+
+    unsubscribe();
+    invalidateRemoteCachesForTable("friendships");
+    expect(listener).toHaveBeenCalledOnce();
   });
 });

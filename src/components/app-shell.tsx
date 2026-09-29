@@ -16,9 +16,17 @@ import {
   Users,
 } from "lucide-react";
 import type { AppAuthState } from "@/lib/auth/app-auth";
-import { cacheRemoteTimerState } from "@/lib/client-cache";
-import { fetchRemoteTimerState } from "@/lib/supabase/app-data";
+import {
+  cacheRemoteTimerState,
+  dedupeRemoteRequest,
+} from "@/lib/client-cache";
+import {
+  fetchRemoteDirectMessageUnreadCount,
+  fetchRemoteTimerState,
+  subscribeToRemoteAppChanges,
+} from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { fetchGroupChatUnreadCounts } from "@/lib/supabase/group-chat-read-receipts";
 import { AppWorkspace } from "@/components/app-workspace";
 import { AppHeaderDetailProvider } from "@/components/app-header-detail";
 import { InstallOnboarding } from "@/components/pwa/install-onboarding";
@@ -99,6 +107,8 @@ export function AppShell({
       isActive(displayPathname, "/app/units"));
   const currentTitle = isNestedDetail ? headerDetail : currentNav.title;
   const isFriendsView = isActive(displayPathname, "/app/friends");
+  const currentUserId =
+    authState.mode === "authenticated" ? authState.user.id : null;
   const accountName =
     authState.mode === "authenticated"
       ? authState.profile.display_name?.trim() || "Student"
@@ -167,17 +177,31 @@ export function AppShell({
       });
     }
 
-    if (authState.mode !== "authenticated") {
+    if (authState.mode !== "authenticated" || !currentUserId) {
       revealApp();
       return () => window.cancelAnimationFrame(readyFrame);
     }
 
+    const shouldWarmTimer =
+      pathname === "/app" ||
+      isActive(pathname, "/app/groups") ||
+      isActive(pathname, "/app/statistics");
+    if (!shouldWarmTimer) {
+      revealApp();
+      return () => window.cancelAnimationFrame(readyFrame);
+    }
+
+    const cacheUserId = currentUserId;
     let cancelled = false;
 
     async function warmAppData() {
       try {
         const supabase = createSupabaseBrowserClient();
-        const timerResult = await fetchRemoteTimerState(supabase);
+        const timerResult = await dedupeRemoteRequest({
+          key: "timer",
+          load: () => fetchRemoteTimerState(supabase),
+          userId: cacheUserId,
+        });
 
         if (cancelled) {
           return;
@@ -197,7 +221,63 @@ export function AppShell({
       cancelled = true;
       window.cancelAnimationFrame(readyFrame);
     };
-  }, [authState.mode]);
+  }, [authState.mode, currentUserId, pathname]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    let supabase;
+    try {
+      supabase = createSupabaseBrowserClient();
+    } catch {
+      return;
+    }
+
+    const refreshFriendUnread = async () => {
+      try {
+        const count = await dedupeRemoteRequest({
+          key: "direct-message-unread",
+          load: () =>
+            fetchRemoteDirectMessageUnreadCount({
+              supabase,
+              userId: currentUserId,
+            }),
+          userId: currentUserId,
+        });
+        setNavUnread((current) => ({ ...current, friends: count > 0 }));
+      } catch {
+        // Preserve the last known badge while the network is unavailable.
+      }
+    };
+    const refreshGroupUnread = async () => {
+      try {
+        const counts = await dedupeRemoteRequest({
+          key: "group-chat-unread",
+          load: () => fetchGroupChatUnreadCounts(supabase),
+          userId: currentUserId,
+        });
+        setNavUnread((current) => ({
+          ...current,
+          groups: Object.values(counts).some((count) => count > 0),
+        }));
+      } catch {
+        // Preserve the last known badge while the network is unavailable.
+      }
+    };
+
+    void refreshFriendUnread();
+    void refreshGroupUnread();
+
+    return subscribeToRemoteAppChanges(supabase, (table) => {
+      if (table === "direct_messages") void refreshFriendUnread();
+      if (
+        table === "group_chat_messages" ||
+        table === "group_chat_read_receipts"
+      ) {
+        void refreshGroupUnread();
+      }
+    });
+  }, [currentUserId]);
 
   useEffect(() => {
     navItems.forEach((item) => {
@@ -370,6 +450,7 @@ export function AppShell({
                     activePathname={displayPathname}
                     authState={authState}
                     fallback={children}
+                    key={currentUserId ?? "demo"}
                     onDirectMessageUnreadChange={(hasUnread) =>
                       setNavUnread((current) =>
                         current.friends === hasUnread

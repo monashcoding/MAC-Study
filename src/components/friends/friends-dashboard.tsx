@@ -41,7 +41,9 @@ import {
 } from "@/lib/social-state";
 import {
   cacheRemoteFriendsSnapshot,
+  dedupeRemoteRequest,
   getCachedRemoteFriendsSnapshot,
+  subscribeToRemoteTableChanges,
 } from "@/lib/client-cache";
 import {
   addRemoteFriend,
@@ -52,7 +54,6 @@ import {
   removeRemoteFriend,
   requestRemoteSuperNudge,
   setRemoteUserNudgeMute,
-  subscribeToRemoteAppChanges,
   updateRemoteFriendRequest,
   updateRemoteSuperNudge,
   type RemoteFriendCandidate,
@@ -67,6 +68,15 @@ import { addDateKeyDays, formatDuration, getLocalDateKey } from "@/lib/timer";
 import { cn } from "@/lib/utils";
 
 const emptySocialState: SocialState = { friends: [], groups: [] };
+const FRIEND_SOCIAL_CHANGE_TABLES = new Set([
+  "friend_requests",
+  "friendships",
+  "group_members",
+  "groups",
+  "profiles",
+  "study_sessions",
+  "super_nudge_requests",
+]);
 const friendTimeOptions = [
   { label: "Today", value: "today" },
   { label: "This week", value: "thisWeek" },
@@ -78,10 +88,14 @@ const friendTimeOptions = [
 type FriendTimeRange = (typeof friendTimeOptions)[number]["value"];
 
 export function FriendsDashboard({
+  isActive = true,
   onUnreadChange,
+  userId = null,
 }: {
+  isActive?: boolean;
   onUnreadChange?: (hasUnread: boolean) => void;
-}) {
+  userId?: string | null;
+} = {}) {
   const [socialState, setSocialState] = useState<SocialState>(emptySocialState);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
@@ -149,7 +163,13 @@ export function FriendsDashboard({
   }, [activeTab]);
 
   const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
-    const snapshot = await fetchRemoteFriendsSnapshot(supabase);
+    const snapshot = userId
+      ? await dedupeRemoteRequest({
+          key: "friends",
+          load: () => fetchRemoteFriendsSnapshot(supabase),
+          userId,
+        })
+      : await fetchRemoteFriendsSnapshot(supabase);
 
     if (snapshot) {
       const cancellingFriendIds = new Set(
@@ -189,7 +209,7 @@ export function FriendsDashboard({
       });
       setSuperNudges(snapshot.superNudges ?? []);
     }
-  }, []);
+  }, [userId]);
 
   const refreshDirectMessageUnreadCount = useCallback(
     async (supabase: SupabaseClient, userId: string | null) => {
@@ -197,7 +217,12 @@ export function FriendsDashboard({
 
       try {
         setDirectMessageUnreadCount(
-          await fetchRemoteDirectMessageUnreadCount({ supabase, userId }),
+          await dedupeRemoteRequest({
+            key: "direct-message-unread",
+            load: () =>
+              fetchRemoteDirectMessageUnreadCount({ supabase, userId }),
+            userId,
+          }),
         );
       } catch {
         // Keep the last known count when realtime or the network is unavailable.
@@ -207,24 +232,24 @@ export function FriendsDashboard({
   );
 
   useEffect(() => {
-    if (activeTab !== "friends") return;
+    if (!isActive || activeTab !== "friends") return;
 
     const interval = window.setInterval(() => setNow(new Date()), 1000);
 
     return () => window.clearInterval(interval);
-  }, [activeTab]);
+  }, [activeTab, isActive]);
 
   useEffect(() => {
-    if (previousStudyDateKeyRef.current === studyDateKey) return;
+    if (!isActive || previousStudyDateKeyRef.current === studyDateKey) return;
 
     previousStudyDateKeyRef.current = studyDateKey;
     if (remoteClient) {
       window.queueMicrotask(() => void refreshRemoteSocial(remoteClient));
     }
-  }, [refreshRemoteSocial, remoteClient, studyDateKey]);
+  }, [isActive, refreshRemoteSocial, remoteClient, studyDateKey]);
 
   useEffect(() => {
-    if (!remoteClient) return;
+    if (!isActive || !remoteClient) return;
 
     let cancelled = false;
 
@@ -237,14 +262,16 @@ export function FriendsDashboard({
     return () => {
       cancelled = true;
     };
-  }, [remoteClient]);
+  }, [isActive, remoteClient]);
 
   useEffect(() => {
+    if (!isActive) return;
+
     let cancelled = false;
 
     async function loadInitialState() {
       let supabase: SupabaseClient | null = null;
-      const cachedSocial = getCachedRemoteFriendsSnapshot();
+      const cachedSocial = getCachedRemoteFriendsSnapshot(userId);
 
       if (cachedSocial) {
         setCurrentUserId(cachedSocial.currentUserId);
@@ -258,11 +285,18 @@ export function FriendsDashboard({
       }
 
       try {
-        supabase = createSupabaseBrowserClient();
+        const client = createSupabaseBrowserClient();
+        supabase = client;
         if (!cancelled) {
-          setRemoteClient(supabase);
+          setRemoteClient(client);
         }
-        const snapshot = await fetchRemoteFriendsSnapshot(supabase);
+        const snapshot = userId
+          ? await dedupeRemoteRequest({
+              key: "friends",
+              load: () => fetchRemoteFriendsSnapshot(client),
+              userId,
+            })
+          : await fetchRemoteFriendsSnapshot(client);
 
         if (!cancelled && snapshot) {
           cacheRemoteFriendsSnapshot(snapshot);
@@ -273,7 +307,7 @@ export function FriendsDashboard({
           setSuperNudges(snapshot.superNudges ?? []);
           setIsLoaded(true);
           void refreshDirectMessageUnreadCount(
-            supabase,
+            client,
             snapshot.currentUserId,
           );
           return;
@@ -316,7 +350,7 @@ export function FriendsDashboard({
     return () => {
       cancelled = true;
     };
-  }, [refreshDirectMessageUnreadCount]);
+  }, [isActive, refreshDirectMessageUnreadCount, userId]);
 
   useEffect(() => {
     if (!isLoaded || remoteClient) {
@@ -330,20 +364,23 @@ export function FriendsDashboard({
   }, [isLoaded, remoteClient, socialState]);
 
   useEffect(() => {
-    if (!remoteClient) {
+    if (!isActive || !remoteClient) {
       return;
     }
 
-    return subscribeToRemoteAppChanges(remoteClient, (table) => {
+    return subscribeToRemoteTableChanges((table) => {
       if (table === "direct_messages") {
         void refreshDirectMessageUnreadCount(remoteClient, currentUserId);
         return;
       }
 
-      void refreshRemoteSocial(remoteClient);
+      if (FRIEND_SOCIAL_CHANGE_TABLES.has(table)) {
+        void refreshRemoteSocial(remoteClient);
+      }
     });
   }, [
     currentUserId,
+    isActive,
     refreshDirectMessageUnreadCount,
     refreshRemoteSocial,
     remoteClient,

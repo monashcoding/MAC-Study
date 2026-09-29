@@ -318,11 +318,11 @@ export async function markRemoteAppNotificationRead({
 
 export function subscribeToRemoteAppChanges(
   supabase: SupabaseClient,
-  onChange: (table?: string) => void,
+  onChange?: (table: string) => void,
 ) {
   const handleChange = (table: string) => {
     invalidateRemoteCachesForTable(table);
-    onChange(table);
+    onChange?.(table);
   };
 
   const channel = supabase

@@ -27,7 +27,9 @@ import { EmptyStateCta } from "@/components/empty-state-cta";
 import { PaginatedList } from "@/components/paginated-list";
 import {
   cacheRemoteTimerState,
+  dedupeRemoteRequest,
   getCachedRemoteTimerState,
+  subscribeToRemoteTableChanges,
 } from "@/lib/client-cache";
 import {
   fetchRemoteTimerState,
@@ -36,7 +38,6 @@ import {
   setRemoteActiveStudyReminder,
   startRemoteStudySession,
   stopRemoteStudySession,
-  subscribeToRemoteAppChanges,
   updateRemoteStudySession,
   type RemoteTimerState,
 } from "@/lib/supabase/app-data";
@@ -76,6 +77,11 @@ const SUBJECT_COLORS: string[] = SUBJECT_COLOR_OPTIONS.map(
 );
 const defaultStudySubjects: StudySubject[] = [];
 const REMINDER_INTERVALS = [25, 30, 45, 60, 90, 120] as const;
+const TIMER_CHANGE_TABLES = new Set([
+  "study_sessions",
+  "subjects",
+  "unit_enrolments",
+]);
 
 type StudySubject = {
   id: string;
@@ -114,7 +120,13 @@ type StoredState = {
 
 type DataMode = "local" | "remote";
 
-export function TimerDashboard() {
+export function TimerDashboard({
+  isActive = true,
+  userId = null,
+}: {
+  isActive?: boolean;
+  userId?: string | null;
+} = {}) {
   const [subjects, setSubjects] =
     useState<StudySubject[]>(defaultStudySubjects);
   const [draftSubjects, setDraftSubjects] =
@@ -187,21 +199,29 @@ export function TimerDashboard() {
 
   const refreshRemoteTimer = useCallback(
     async (supabase: SupabaseClient) => {
-      const remoteState = await fetchRemoteTimerState(supabase);
+      const remoteState = userId
+        ? await dedupeRemoteRequest({
+            key: "timer",
+            load: () => fetchRemoteTimerState(supabase),
+            userId,
+          })
+        : await fetchRemoteTimerState(supabase);
 
       if (remoteState) {
         cacheRemoteTimerState(remoteState);
         applyRemoteTimerState(remoteState);
       }
     },
-    [applyRemoteTimerState],
+    [applyRemoteTimerState, userId],
   );
 
   useEffect(() => {
+    if (!isActive) return;
+
     let cancelled = false;
 
     async function loadInitialState() {
-      const cachedRemoteState = getCachedRemoteTimerState();
+      const cachedRemoteState = getCachedRemoteTimerState(userId);
 
       if (cachedRemoteState) {
         applyRemoteTimerState(cachedRemoteState);
@@ -214,7 +234,13 @@ export function TimerDashboard() {
         if (!cancelled) {
           setRemoteClient(supabase);
         }
-        const remoteState = await fetchRemoteTimerState(supabase);
+        const remoteState = userId
+          ? await dedupeRemoteRequest({
+              key: "timer",
+              load: () => fetchRemoteTimerState(supabase),
+              userId,
+            })
+          : await fetchRemoteTimerState(supabase);
 
         if (!cancelled && remoteState) {
           cacheRemoteTimerState(remoteState);
@@ -243,9 +269,11 @@ export function TimerDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [applyRemoteTimerState, loadLocalTimerState]);
+  }, [applyRemoteTimerState, isActive, loadLocalTimerState, userId]);
 
   useEffect(() => {
+    if (!isActive) return;
+
     if (
       new URLSearchParams(window.location.search).get("study-reminder") !==
       "check"
@@ -257,7 +285,7 @@ export function TimerDashboard() {
     const url = new URL(window.location.href);
     url.searchParams.delete("study-reminder");
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
     if (!isLoaded || dataMode !== "local") {
@@ -271,25 +299,28 @@ export function TimerDashboard() {
   }, [activeSession, dataMode, isLoaded, sessions, subjects]);
 
   useEffect(() => {
-    if (!remoteClient) {
+    if (!isActive || !remoteClient) {
       return;
     }
 
-    return subscribeToRemoteAppChanges(remoteClient, () => {
+    return subscribeToRemoteTableChanges((table) => {
+      if (!TIMER_CHANGE_TABLES.has(table)) return;
       if (isSavingSubjectsRef.current || isSessionMutationInFlightRef.current) {
         return;
       }
       void refreshRemoteTimer(remoteClient);
     });
-  }, [refreshRemoteTimer, remoteClient]);
+  }, [isActive, refreshRemoteTimer, remoteClient]);
 
   useEffect(() => {
+    if (!isActive) return;
+
     const interval = window.setInterval(() => {
       setNow(new Date());
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, []);
+  }, [isActive]);
 
   const todayKey = getLocalDateKey(now);
   const todayStart = useMemo(

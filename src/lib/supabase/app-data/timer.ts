@@ -114,6 +114,7 @@ export async function fetchRemoteTimerState(
   );
 
   return {
+    currentUserId: userId,
     subjects,
     unitEnrollments: ((enrolmentsResult.data ?? []) as UnitEnrollmentRow[])
       .map(unitEnrollmentFromRow)

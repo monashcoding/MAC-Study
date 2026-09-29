@@ -37,6 +37,13 @@ This checklist is the review record for the architecture work. Work stops after 
   - [x] Add or verify supporting indexes with query evidence.
   - [x] Add freshness timestamps and mutation/realtime invalidation to client caches.
   - [x] Verify stale data is not retained after relevant writes.
+  - [x] Follow-up: scope every persisted cache entry to its signed-in user.
+  - [x] Follow-up: deduplicate concurrent remote requests per user and feature.
+  - [x] Follow-up: replace per-dashboard realtime channels with one app channel.
+  - [x] Follow-up: pause remote loading and refresh listeners for hidden dashboards.
+  - [x] Follow-up: notify the active consumer after mutations and realtime changes.
+  - [x] Follow-up: keep navigation unread badges current at the app-shell level.
+  - [x] Follow-up commit: `fix: scope and coordinate client data caching`
 - [ ] **Phase 6 — Critical browser coverage**
   - Planned commit: `test: add critical Playwright coverage`
   - [ ] Cover authentication routing.
