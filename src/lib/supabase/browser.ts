@@ -1,8 +1,9 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import { getStudySessionAccessToken } from "@/lib/auth/mac-auth-browser";
 import { getOptionalSupabasePublicEnv } from "./env";
+import type { AppSupabaseClient, Database } from "./types";
 
-let browserClient: SupabaseClient | null = null;
+let browserClient: AppSupabaseClient | null = null;
 
 export function createSupabaseBrowserClient() {
   const env = getOptionalSupabasePublicEnv();
@@ -15,7 +16,7 @@ export function createSupabaseBrowserClient() {
     return browserClient;
   }
 
-  browserClient = createClient(
+  browserClient = createClient<Database>(
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {

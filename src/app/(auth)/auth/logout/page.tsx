@@ -6,11 +6,13 @@ import {
   clearCachedStudySession,
   MAC_AUTH_BROWSER_URL,
 } from "@/lib/auth/mac-auth-browser";
+import { clearRemoteClientCache } from "@/lib/client-cache";
 
 export default function LogoutPage() {
   useEffect(() => {
     async function signOut() {
       clearCachedStudySession();
+      clearRemoteClientCache();
 
       await Promise.allSettled([
         fetch("/api/auth/mac/session", { method: "DELETE" }),

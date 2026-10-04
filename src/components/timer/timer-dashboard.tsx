@@ -9,7 +9,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AppSupabaseClient as SupabaseClient } from "@/lib/supabase/types";
 import {
   BellRing,
   CalendarClock,
@@ -28,7 +28,9 @@ import { GettingStartedCard } from "@/components/onboarding/getting-started-card
 import { PaginatedList } from "@/components/paginated-list";
 import {
   cacheRemoteTimerState,
+  dedupeRemoteRequest,
   getCachedRemoteTimerState,
+  subscribeToRemoteTableChanges,
 } from "@/lib/client-cache";
 import {
   fetchRemoteTimerState,
@@ -37,7 +39,6 @@ import {
   setRemoteActiveStudyReminder,
   startRemoteStudySession,
   stopRemoteStudySession,
-  subscribeToRemoteAppChanges,
   updateRemoteStudySession,
   type RemoteTimerState,
 } from "@/lib/supabase/app-data";
@@ -77,6 +78,11 @@ const SUBJECT_COLORS: string[] = SUBJECT_COLOR_OPTIONS.map(
 );
 const defaultStudySubjects: StudySubject[] = [];
 const REMINDER_INTERVALS = [25, 30, 45, 60, 90, 120] as const;
+const TIMER_CHANGE_TABLES = new Set([
+  "study_sessions",
+  "subjects",
+  "unit_enrolments",
+]);
 
 type StudySubject = {
   id: string;
@@ -115,7 +121,13 @@ type StoredState = {
 
 type DataMode = "local" | "remote";
 
-export function TimerDashboard() {
+export function TimerDashboard({
+  isActive = true,
+  userId = null,
+}: {
+  isActive?: boolean;
+  userId?: string | null;
+} = {}) {
   const [subjects, setSubjects] =
     useState<StudySubject[]>(defaultStudySubjects);
   const [draftSubjects, setDraftSubjects] =
@@ -188,21 +200,29 @@ export function TimerDashboard() {
 
   const refreshRemoteTimer = useCallback(
     async (supabase: SupabaseClient) => {
-      const remoteState = await fetchRemoteTimerState(supabase);
+      const remoteState = userId
+        ? await dedupeRemoteRequest({
+            key: "timer",
+            load: () => fetchRemoteTimerState(supabase),
+            userId,
+          })
+        : await fetchRemoteTimerState(supabase);
 
       if (remoteState) {
         cacheRemoteTimerState(remoteState);
         applyRemoteTimerState(remoteState);
       }
     },
-    [applyRemoteTimerState],
+    [applyRemoteTimerState, userId],
   );
 
   useEffect(() => {
+    if (!isActive) return;
+
     let cancelled = false;
 
     async function loadInitialState() {
-      const cachedRemoteState = getCachedRemoteTimerState();
+      const cachedRemoteState = getCachedRemoteTimerState(userId);
 
       if (cachedRemoteState) {
         applyRemoteTimerState(cachedRemoteState);
@@ -215,7 +235,13 @@ export function TimerDashboard() {
         if (!cancelled) {
           setRemoteClient(supabase);
         }
-        const remoteState = await fetchRemoteTimerState(supabase);
+        const remoteState = userId
+          ? await dedupeRemoteRequest({
+              key: "timer",
+              load: () => fetchRemoteTimerState(supabase),
+              userId,
+            })
+          : await fetchRemoteTimerState(supabase);
 
         if (!cancelled && remoteState) {
           cacheRemoteTimerState(remoteState);
@@ -244,9 +270,11 @@ export function TimerDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [applyRemoteTimerState, loadLocalTimerState]);
+  }, [applyRemoteTimerState, isActive, loadLocalTimerState, userId]);
 
   useEffect(() => {
+    if (!isActive) return;
+
     if (
       new URLSearchParams(window.location.search).get("study-reminder") !==
       "check"
@@ -258,7 +286,7 @@ export function TimerDashboard() {
     const url = new URL(window.location.href);
     url.searchParams.delete("study-reminder");
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
     function openStudyChoices() {
@@ -282,25 +310,28 @@ export function TimerDashboard() {
   }, [activeSession, dataMode, isLoaded, sessions, subjects]);
 
   useEffect(() => {
-    if (!remoteClient) {
+    if (!isActive || !remoteClient) {
       return;
     }
 
-    return subscribeToRemoteAppChanges(remoteClient, () => {
+    return subscribeToRemoteTableChanges((table) => {
+      if (!TIMER_CHANGE_TABLES.has(table)) return;
       if (isSavingSubjectsRef.current || isSessionMutationInFlightRef.current) {
         return;
       }
       void refreshRemoteTimer(remoteClient);
     });
-  }, [refreshRemoteTimer, remoteClient]);
+  }, [isActive, refreshRemoteTimer, remoteClient]);
 
   useEffect(() => {
+    if (!isActive) return;
+
     const interval = window.setInterval(() => {
       setNow(new Date());
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, []);
+  }, [isActive]);
 
   const todayKey = getLocalDateKey(now);
   const todayStart = useMemo(
@@ -774,7 +805,7 @@ export function TimerDashboard() {
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <button
             className={cn(
-              "mac-focus inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition hover:brightness-105 active:scale-[0.99] lg:h-12 lg:min-w-44",
+              "mac-focus inline-flex h-11 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition hover:brightness-105 active:scale-[0.99] disabled:cursor-wait disabled:opacity-55 lg:h-12 lg:min-w-44",
               activeSession
                 ? "bg-[var(--color-danger)] text-white"
                 : "bg-[var(--color-mac-yellow)] text-[#141414]",
@@ -782,6 +813,7 @@ export function TimerDashboard() {
             onClick={() =>
               void (activeSession ? stopStudy() : setIsChoosingStudy(true))
             }
+            disabled={!isLoaded}
             type="button"
           >
             {activeSession ? (
@@ -851,7 +883,9 @@ export function TimerDashboard() {
                       "mac-focus inline-flex h-10 w-10 items-center justify-center rounded-full font-semibold text-[#141414] shadow-[0_10px_24px_rgb(0_0_0/0.22)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-35",
                       isActive ? "bg-[var(--color-danger)] text-white" : "",
                     )}
-                    disabled={Boolean(activeSession) && !isActive}
+                    disabled={
+                      !isLoaded || (Boolean(activeSession) && !isActive)
+                    }
                     onClick={() =>
                       void (isActive ? stopStudy() : startStudy(subject.id))
                     }

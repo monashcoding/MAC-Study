@@ -8,7 +8,11 @@ import {
   useRef,
   useState,
 } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type {
+  AppSupabaseClient as SupabaseClient,
+  Database,
+  Tables,
+} from "@/lib/supabase/types";
 import { AlertCircle, ArrowLeft, MessageCircle, Send } from "lucide-react";
 import { PaginatedList } from "@/components/paginated-list";
 import type { SocialFriend } from "@/lib/social-state";
@@ -27,31 +31,30 @@ type DirectMessage = {
   senderId: string;
 };
 
-type DirectMessageRow = {
-  body: string;
-  created_at: string;
-  message_id: string;
+type DirectMessageResult =
+  Database["public"]["Functions"]["list_direct_messages"]["Returns"][number];
+type DirectMessageRow = Omit<DirectMessageResult, "read_at"> & {
   read_at: string | null;
-  recipient_id: string;
-  sender_id: string;
 };
 
-type DirectMessageInsertRow = {
-  body: string;
-  created_at: string;
-  id: string;
-  read_at: string | null;
-  recipient_id: string;
-  sender_id: string;
-};
+type DirectMessageInsertRow = Pick<
+  Tables<"direct_messages">,
+  "body" | "created_at" | "id" | "read_at" | "recipient_id" | "sender_id"
+>;
 
-type ConversationRow = {
-  friend_id: string;
+type ConversationResult =
+  Database["public"]["Functions"]["list_direct_conversations"]["Returns"][number];
+type ConversationRow = Omit<
+  ConversationResult,
+  | "latest_body"
+  | "latest_created_at"
+  | "latest_message_id"
+  | "latest_sender_id"
+> & {
   latest_body: string | null;
   latest_created_at: string | null;
   latest_message_id: string | null;
   latest_sender_id: string | null;
-  unread_count: number | string;
 };
 
 type Conversation = {
@@ -227,8 +230,12 @@ export function DirectMessages({
       if (!remoteClient) return;
 
       const { data, error } = await remoteClient.rpc("list_direct_messages", {
-        before_created_at: before?.createdAt ?? null,
-        before_message_id: before?.id ?? null,
+        ...(before
+          ? {
+              before_created_at: before.createdAt,
+              before_message_id: before.id,
+            }
+          : {}),
         result_limit: HISTORY_PAGE_SIZE + 1,
         target_friend_id: friendId,
       });

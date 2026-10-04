@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AppSupabaseClient as SupabaseClient } from "@/lib/supabase/types";
 import {
   ArrowLeft,
   BookOpen,
@@ -16,26 +16,31 @@ import {
   Check,
   Info,
   Link2,
+  ListFilter,
   LoaderCircle,
   Plus,
   Search,
   Send,
   UserPlus,
+  UsersRound,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
 import { PaginatedList } from "@/components/paginated-list";
 import { TransientToast } from "@/components/transient-toast";
 import {
+  dedupeRemoteRequest,
+  subscribeToRemoteTableChanges,
+} from "@/lib/client-cache";
+import {
   addRemoteFriend,
-  fetchRemoteSocialSnapshot,
+  fetchRemoteStudyGroups,
   fetchRemoteUnitCohort,
   fetchRemoteUnitState,
   inviteRemoteFriendToGroup,
   leaveRemoteUnitEnrollment,
   requestRemoteSpecialUnit,
   setRemoteSubjectUnitOffering,
-  subscribeToRemoteAppChanges,
   upsertRemoteUnitEnrollment,
   type RemoteUnitState,
 } from "@/lib/supabase/app-data";
@@ -49,10 +54,12 @@ import {
 import {
   TEACHING_PERIODS,
   findSpecialUnitByAlias,
+  filterUnitEnrollments,
   getCohortLabel,
   getDefaultTeachingPeriod,
   getTeachingPeriodLabel,
   getTeachingPeriodShortLabel,
+  getUnitMemberCountLabel,
   getUnitYearOptions,
   isPastUnitEnrollment,
   isValidUnitCode,
@@ -62,16 +69,27 @@ import {
   type TeachingPeriod,
   type UnitCohortMember,
   type UnitEnrollment,
+  type UnitEnrollmentFilter,
 } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 type CohortScope = "all" | "friends";
 const UNLINKED_SUBJECT_VALUE = "__unlinked__";
+const ALL_UNIT_FILTER_VALUE = "all";
+const UNIT_CHANGE_TABLES = new Set([
+  "group_members",
+  "groups",
+  "special_unit_aliases",
+  "special_units",
+  "subjects",
+  "unit_enrolments",
+]);
 
 const demoEnrollments: UnitEnrollment[] = [
   {
     code: "FIT3077",
     joinedAt: new Date().toISOString(),
+    memberCount: 18,
     nickname: "Software architecture",
     offeringId: "demo-fit3077-2027-s1",
     period: "semester_1",
@@ -81,6 +99,7 @@ const demoEnrollments: UnitEnrollment[] = [
   {
     code: "FIT3159",
     joinedAt: new Date().toISOString(),
+    memberCount: 7,
     nickname: null,
     offeringId: "demo-fit3159-2027-s1",
     period: "semester_1",
@@ -121,7 +140,13 @@ const demoUnitState: RemoteUnitState = {
   ],
 };
 
-export function UnitsDashboard() {
+export function UnitsDashboard({
+  isActive = true,
+  userId = null,
+}: {
+  isActive?: boolean;
+  userId?: string | null;
+} = {}) {
   const [unitState, setUnitState] = useState<RemoteUnitState>({
     enrollments: [],
     specialUnits: [],
@@ -140,6 +165,11 @@ export function UnitsDashboard() {
   const [cohort, setCohort] = useState<UnitCohortMember[]>([]);
   const [cohortLoading, setCohortLoading] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [unitFilter, setUnitFilter] = useState<UnitEnrollmentFilter>({
+    period: null,
+    year: null,
+  });
   const [isRequestingUnit, setIsRequestingUnit] = useState(false);
   const [isSpecialUnitsOpen, setIsSpecialUnitsOpen] = useState(false);
   const [selectedSpecialUnit, setSelectedSpecialUnit] =
@@ -155,16 +185,30 @@ export function UnitsDashboard() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const refreshRemote = useCallback(async (supabase: SupabaseClient) => {
-    const [units, social] = await Promise.all([
-      fetchRemoteUnitState(supabase),
-      fetchRemoteSocialSnapshot(supabase),
+    const [units, groups] = await Promise.all([
+      userId
+        ? dedupeRemoteRequest({
+            key: "units",
+            load: () => fetchRemoteUnitState(supabase),
+            userId,
+          })
+        : fetchRemoteUnitState(supabase),
+      userId
+        ? dedupeRemoteRequest({
+            key: "study-groups",
+            load: () => fetchRemoteStudyGroups(supabase),
+            userId,
+          })
+        : fetchRemoteStudyGroups(supabase),
     ]);
 
     if (units) setUnitState(units);
-    if (social) setSocialState(social.socialState);
-  }, []);
+    setSocialState({ friends: [], groups });
+  }, [userId]);
 
   useEffect(() => {
+    if (!isActive) return;
+
     let cancelled = false;
     let supabase: SupabaseClient;
 
@@ -201,19 +245,15 @@ export function UnitsDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [refreshRemote]);
+  }, [isActive, refreshRemote]);
 
   useEffect(() => {
-    if (!remoteClient || dataMode !== "remote") return;
+    if (!isActive || !remoteClient || dataMode !== "remote") return;
 
-    return subscribeToRemoteAppChanges(remoteClient, (table) => {
-      if (table === "friend_requests" || table === "app_notifications") {
-        return;
-      }
-
-      void refreshRemote(remoteClient);
+    return subscribeToRemoteTableChanges((table) => {
+      if (UNIT_CHANGE_TABLES.has(table)) void refreshRemote(remoteClient);
     });
-  }, [dataMode, refreshRemote, remoteClient]);
+  }, [dataMode, isActive, refreshRemote, remoteClient]);
 
   const selectedEnrollment = unitState.enrollments.find(
     (enrollment) => enrollment.offeringId === selectedOfferingId,
@@ -221,7 +261,7 @@ export function UnitsDashboard() {
   useAppHeaderDetail("/app/units", selectedEnrollment?.code ?? null);
 
   useEffect(() => {
-    if (!selectedOfferingId) {
+    if (!isActive || !selectedOfferingId) {
       return;
     }
 
@@ -254,7 +294,13 @@ export function UnitsDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [dataMode, remoteClient, selectedOfferingId, socialState.groups]);
+  }, [
+    dataMode,
+    isActive,
+    remoteClient,
+    selectedOfferingId,
+    socialState.groups,
+  ]);
 
   const manageableGroups = socialState.groups;
   const filteredCohort = useMemo(() => {
@@ -304,6 +350,7 @@ export function UnitsDashboard() {
             {
               ...input,
               joinedAt: new Date().toISOString(),
+              memberCount: 1,
               offeringId,
               unitId: `demo-${input.code}`,
             },
@@ -367,6 +414,7 @@ export function UnitsDashboard() {
       }
 
       setSelectedOfferingId(null);
+      setUnitFilter({ period: null, year: null });
       setToastMessage("Unit left");
     } catch (error) {
       setFeedback(getErrorMessage(error, "Could not leave this cohort."));
@@ -526,32 +574,82 @@ export function UnitsDashboard() {
     );
   }
 
-  const current = unitState.enrollments
+  const filterYears = Array.from(
+    new Set(unitState.enrollments.map((enrollment) => enrollment.year)),
+  ).sort((first, second) => second - first);
+  const filterPeriods = TEACHING_PERIODS.filter((period) =>
+    unitState.enrollments.some((enrollment) => enrollment.period === period),
+  );
+  const effectiveUnitFilter: UnitEnrollmentFilter = {
+    period:
+      unitFilter.period !== null && filterPeriods.includes(unitFilter.period)
+        ? unitFilter.period
+        : null,
+    year:
+      unitFilter.year !== null && filterYears.includes(unitFilter.year)
+        ? unitFilter.year
+        : null,
+  };
+  const canFilter = filterYears.length > 1 || filterPeriods.length > 1;
+  const activeFilterCount =
+    Number(effectiveUnitFilter.year !== null) +
+    Number(effectiveUnitFilter.period !== null);
+  const visibleEnrollments = filterUnitEnrollments(
+    unitState.enrollments,
+    effectiveUnitFilter,
+  );
+  const current = visibleEnrollments
     .filter((enrollment) => !isPastUnitEnrollment(enrollment))
     .sort(compareUnitEnrollments);
-  const past = unitState.enrollments
+  const past = visibleEnrollments
     .filter((enrollment) => isPastUnitEnrollment(enrollment))
     .sort((first, second) => compareUnitEnrollments(second, first));
+  const hasEnrollments = unitState.enrollments.length > 0;
+  const hasVisibleEnrollments = current.length > 0 || past.length > 0;
 
   return (
     <div className="space-y-6">
       <section className="space-y-3">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="truncate text-base font-semibold sm:text-lg">
             Current and upcoming
           </h2>
-          {current.length ? (
-            <button
-              className="mac-focus inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
-              onClick={() => {
-                setSelectedSpecialUnit(null);
-                setIsAdding(true);
-              }}
-              type="button"
-            >
-              <Plus aria-hidden size={17} />
-              Add unit
-            </button>
+          {hasEnrollments ? (
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {canFilter ? (
+                <button
+                  aria-label="Filter units"
+                  aria-pressed={activeFilterCount > 0}
+                  className={cn(
+                    "mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition",
+                    activeFilterCount
+                      ? "border-[rgb(255_227_48/0.46)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
+                      : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]",
+                  )}
+                  onClick={() => setIsFilterOpen(true)}
+                  type="button"
+                >
+                  <ListFilter aria-hidden size={17} />
+                  <span className="hidden sm:inline">Filter</span>
+                  {activeFilterCount ? (
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] px-1 text-[11px] font-bold text-[#141414]">
+                      {activeFilterCount}
+                    </span>
+                  ) : null}
+                </button>
+              ) : null}
+              <button
+                className="mac-focus inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+                onClick={() => {
+                  setSelectedSpecialUnit(null);
+                  setIsAdding(true);
+                }}
+                type="button"
+              >
+                <Plus aria-hidden size={17} />
+                Add unit
+              </button>
+            </div>
           ) : null}
         </div>
 
@@ -561,7 +659,7 @@ export function UnitsDashboard() {
             onOpen={setSelectedOfferingId}
             title={null}
           />
-        ) : dataMode !== "loading" ? (
+        ) : dataMode !== "loading" && !hasEnrollments ? (
           <button
             className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"
             onClick={() => {
@@ -573,6 +671,21 @@ export function UnitsDashboard() {
             <Plus aria-hidden size={17} />
             Add unit
           </button>
+        ) : null}
+
+        {dataMode !== "loading" &&
+        hasEnrollments &&
+        !hasVisibleEnrollments ? (
+          <div className="flex min-h-20 flex-col items-start justify-center gap-2 rounded-md bg-[rgb(255_255_255/0.03)] px-4 py-3 text-sm text-[var(--color-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+            <p>No units match these filters.</p>
+            <button
+              className="mac-focus h-9 rounded-md px-2.5 font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
+              onClick={() => setUnitFilter({ period: null, year: null })}
+              type="button"
+            >
+              Clear filters
+            </button>
+          </div>
         ) : null}
 
         {dataMode !== "loading" ? (
@@ -618,6 +731,18 @@ export function UnitsDashboard() {
           }}
           specialUnits={unitState.specialUnits}
           suggestions={unitState.suggestions}
+        />
+      ) : null}
+      {isFilterOpen ? (
+        <UnitFilterDialog
+          filter={effectiveUnitFilter}
+          onApply={(filter) => {
+            setUnitFilter(filter);
+            setIsFilterOpen(false);
+          }}
+          onClose={() => setIsFilterOpen(false)}
+          periods={filterPeriods}
+          years={filterYears}
         />
       ) : null}
       {isSpecialUnitsOpen ? (
@@ -698,6 +823,10 @@ function EnrollmentSection({
                 <span className="mt-1 block">
                   {getTeachingPeriodLabel(enrollment.period)}
                 </span>
+                <span className="mt-2 flex items-center justify-end gap-1 font-medium text-[var(--color-text-muted)]">
+                  <UsersRound aria-hidden size={13} />
+                  {getUnitMemberCountLabel(enrollment.memberCount)}
+                </span>
               </span>
             </button>
           )}
@@ -705,6 +834,102 @@ function EnrollmentSection({
         />
       ) : null}
     </section>
+  );
+}
+
+function UnitFilterDialog({
+  filter,
+  onApply,
+  onClose,
+  periods,
+  years,
+}: {
+  filter: UnitEnrollmentFilter;
+  onApply: (filter: UnitEnrollmentFilter) => void;
+  onClose: () => void;
+  periods: TeachingPeriod[];
+  years: number[];
+}) {
+  const [year, setYear] = useState(
+    filter.year === null ? ALL_UNIT_FILTER_VALUE : String(filter.year),
+  );
+  const [period, setPeriod] = useState(
+    filter.period ?? ALL_UNIT_FILTER_VALUE,
+  );
+  const nextFilter: UnitEnrollmentFilter = {
+    period:
+      period === ALL_UNIT_FILTER_VALUE
+        ? null
+        : (period as TeachingPeriod),
+    year: year === ALL_UNIT_FILTER_VALUE ? null : Number(year),
+  };
+  const isDirty =
+    nextFilter.year !== filter.year || nextFilter.period !== filter.period;
+
+  return (
+    <AppDialog
+      bodyClassName="space-y-5"
+      closeLabel="Close unit filters"
+      confirmDiscard={false}
+      footer={
+        <div className="grid grid-cols-[1fr_2fr] gap-2">
+          <button
+            className="mac-focus h-11 rounded-md border border-[var(--color-border)] text-sm font-semibold text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]"
+            onClick={() => onApply({ period: null, year: null })}
+            type="button"
+          >
+            Reset
+          </button>
+          <button
+            className="mac-focus h-11 rounded-md bg-[var(--color-mac-yellow)] text-sm font-semibold text-[#141414]"
+            onClick={() => onApply(nextFilter)}
+            type="button"
+          >
+            Show units
+          </button>
+        </div>
+      }
+      isDirty={isDirty}
+      maxWidthClassName="max-w-md"
+      onClose={onClose}
+      title="Filter units"
+    >
+      {years.length > 1 ? (
+        <div className="text-sm font-medium">
+          <p className="mb-2">Year</p>
+          <CustomSelect
+            ariaLabel="Filter units by year"
+            onChange={setYear}
+            options={[
+              { label: "All years", value: ALL_UNIT_FILTER_VALUE },
+              ...years.map((optionYear) => ({
+                label: String(optionYear),
+                value: String(optionYear),
+              })),
+            ]}
+            value={year}
+          />
+        </div>
+      ) : null}
+
+      {periods.length > 1 ? (
+        <div className="text-sm font-medium">
+          <p className="mb-2">Teaching period</p>
+          <CustomSelect
+            ariaLabel="Filter units by teaching period"
+            onChange={setPeriod}
+            options={[
+              { label: "All teaching periods", value: ALL_UNIT_FILTER_VALUE },
+              ...periods.map((optionPeriod) => ({
+                label: getTeachingPeriodLabel(optionPeriod),
+                value: optionPeriod,
+              })),
+            ]}
+            value={period}
+          />
+        </div>
+      ) : null}
+    </AppDialog>
   );
 }
 
@@ -1170,12 +1395,12 @@ function AddUnitDialog({
   const initialNickname = initialSpecialUnit?.name ?? "";
   const [codeInput, setCodeInput] = useState(initialCode);
   const [nickname, setNickname] = useState(initialNickname);
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [period, setPeriod] = useState<TeachingPeriod>(
+  const [initialYear] = useState(() => new Date().getFullYear());
+  const [initialPeriod] = useState<TeachingPeriod>(() =>
     getDefaultTeachingPeriod(),
   );
-  const initialYearRef = useRef(year);
-  const initialPeriodRef = useRef(period);
+  const [year, setYear] = useState(initialYear);
+  const [period, setPeriod] = useState<TeachingPeriod>(initialPeriod);
   const normalizedCode = normalizeUnitCode(codeInput);
   const aliasSpecialUnit = findSpecialUnitByAlias(specialUnits, normalizedCode);
   const valid = isValidUnitCode(
@@ -1185,8 +1410,8 @@ function AddUnitDialog({
   const isDirty = Boolean(
     codeInput.trim() !== initialCode ||
     nickname.trim() !== initialNickname ||
-    year !== initialYearRef.current ||
-    period !== initialPeriodRef.current,
+    year !== initialYear ||
+    period !== initialPeriod,
   );
   const offeringOptions = years.flatMap((optionYear) =>
     TEACHING_PERIODS.map((optionPeriod) => ({

@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BarChart3, CalendarDays } from "lucide-react";
 import { PaginatedList } from "@/components/paginated-list";
 import { StudyHeatmap } from "@/components/study-heatmap";
 import {
   cacheRemoteTimerState,
+  dedupeRemoteRequest,
   getCachedRemoteTimerState,
+  subscribeToRemoteTableChanges,
 } from "@/lib/client-cache";
 import { fetchRemoteTimerState } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -33,6 +35,11 @@ const MONTH_LABELS = [
   "Nov",
   "Dec",
 ];
+const STATISTICS_CHANGE_TABLES = new Set([
+  "study_sessions",
+  "subjects",
+  "unit_enrolments",
+]);
 
 type StudySubject = {
   id: string;
@@ -93,7 +100,13 @@ const chartOptions = [
   { id: "pie", label: "Subjects" },
 ] satisfies { id: ChartView; label: string }[];
 
-export function StatisticsDashboard() {
+export function StatisticsDashboard({
+  isActive = true,
+  userId = null,
+}: {
+  isActive?: boolean;
+  userId?: string | null;
+} = {}) {
   const [subjects, setSubjects] = useState<StudySubject[]>(fallbackSubjects);
   const [sessions, setSessions] = useState<StoredSession[]>([]);
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(
@@ -105,11 +118,36 @@ export function StatisticsDashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState<StatsPeriod>("week");
   const [chartView, setChartView] = useState<ChartView>("column");
 
+  const fetchLatestStats = useCallback(async () => {
+    const supabase = createSupabaseBrowserClient();
+    return userId
+      ? dedupeRemoteRequest({
+          key: "timer",
+          load: () => fetchRemoteTimerState(supabase),
+          userId,
+        })
+      : fetchRemoteTimerState(supabase);
+  }, [userId]);
+
+  const applyRemoteStats = useCallback(
+    (remoteState: NonNullable<Awaited<ReturnType<typeof fetchRemoteTimerState>>>) => {
+      cacheRemoteTimerState(remoteState);
+      setSubjects(remoteState.subjects);
+      setSessions(remoteState.sessions);
+      setActiveSession(remoteState.activeSession);
+      setUseDemoData(false);
+      setIsLoaded(true);
+    },
+    [],
+  );
+
   useEffect(() => {
+    if (!isActive) return;
+
     let cancelled = false;
 
     async function loadStats() {
-      const cachedRemoteState = getCachedRemoteTimerState();
+      const cachedRemoteState = getCachedRemoteTimerState(userId);
 
       if (cachedRemoteState) {
         setSubjects(cachedRemoteState.subjects);
@@ -120,16 +158,10 @@ export function StatisticsDashboard() {
       }
 
       try {
-        const supabase = createSupabaseBrowserClient();
-        const remoteState = await fetchRemoteTimerState(supabase);
+        const remoteState = await fetchLatestStats();
 
         if (!cancelled && remoteState) {
-          cacheRemoteTimerState(remoteState);
-          setSubjects(remoteState.subjects);
-          setSessions(remoteState.sessions);
-          setActiveSession(remoteState.activeSession);
-          setUseDemoData(false);
-          setIsLoaded(true);
+          applyRemoteStats(remoteState);
           return;
         }
       } catch {
@@ -161,13 +193,29 @@ export function StatisticsDashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyRemoteStats, fetchLatestStats, isActive, userId]);
 
   useEffect(() => {
+    if (!isActive) return;
+
+    return subscribeToRemoteTableChanges((table) => {
+      if (!STATISTICS_CHANGE_TABLES.has(table)) return;
+
+      void fetchLatestStats()
+        .then((remoteState) => {
+          if (remoteState) applyRemoteStats(remoteState);
+        })
+        .catch(() => undefined);
+    });
+  }, [applyRemoteStats, fetchLatestStats, isActive]);
+
+  useEffect(() => {
+    if (!isActive) return;
+
     const interval = window.setInterval(() => setNow(new Date()), 1000);
 
     return () => window.clearInterval(interval);
-  }, []);
+  }, [isActive]);
 
   const stats = useMemo(() => {
     const periodStats = buildPeriodStats({

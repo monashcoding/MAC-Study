@@ -1,4 +1,5 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AppSupabaseClient as SupabaseClient } from "./types";
+import type { Database, Tables } from "./types";
 
 export type GroupChatReadReceipt = {
   groupId: string;
@@ -6,16 +7,13 @@ export type GroupChatReadReceipt = {
   userId: string;
 };
 
-type GroupChatReadReceiptRow = {
-  group_id: string;
-  last_read_at: string;
-  user_id: string;
-};
+type GroupChatReadReceiptRow = Pick<
+  Tables<"group_chat_read_receipts">,
+  "group_id" | "last_read_at" | "user_id"
+>;
 
-type GroupChatUnreadCountRow = {
-  group_id: string;
-  unread_count: number | string;
-};
+type GroupChatUnreadCountRow =
+  Database["public"]["Functions"]["list_group_chat_unread_counts"]["Returns"][number];
 
 export async function fetchGroupChatUnreadCounts(supabase: SupabaseClient) {
   const { data, error } = await supabase.rpc("list_group_chat_unread_counts");
@@ -23,7 +21,7 @@ export async function fetchGroupChatUnreadCounts(supabase: SupabaseClient) {
   if (error) throw error;
 
   return Object.fromEntries(
-    ((data ?? []) as GroupChatUnreadCountRow[]).map((row) => [
+    (data ?? []).map((row: GroupChatUnreadCountRow) => [
       row.group_id,
       Number(row.unread_count) || 0,
     ]),
@@ -41,9 +39,7 @@ export async function fetchGroupChatReadReceipts(
 
   if (error) throw error;
 
-  return ((data ?? []) as GroupChatReadReceiptRow[]).map(
-    groupChatReadReceiptFromRow,
-  );
+  return (data ?? []).map(groupChatReadReceiptFromRow);
 }
 
 export async function markGroupChatRead({

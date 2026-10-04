@@ -1,0 +1,144 @@
+import type { AppSupabaseClient as SupabaseClient } from "../types";
+import type { PersonIconKey } from "@/lib/social-state";
+import { invalidateRemoteCachesForTable } from "@/lib/client-cache";
+import { getRemoteUserId, getResponseError } from "./shared";
+
+export async function updateRemoteStudyIcon({
+  icon,
+  supabase,
+  userId,
+}: {
+  icon: PersonIconKey;
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const currentUserId = await getRemoteUserId();
+
+  if (!currentUserId || currentUserId !== userId) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ study_icon: icon })
+    .eq("id", userId);
+
+  if (error) {
+    throw error;
+  }
+
+  invalidateRemoteCachesForTable("profiles");
+}
+
+export async function addRemoteFriend({
+  friendId,
+}: {
+  friendId: string;
+  supabase: SupabaseClient;
+}) {
+  return sendRemoteFriendRequest(friendId);
+}
+
+export async function sendRemoteFriendRequest(friendId: string) {
+  const response = await fetch("/api/friends/requests", {
+    body: JSON.stringify({ recipientId: friendId }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(await getResponseError(response));
+  }
+
+  invalidateRemoteCachesForTable("friend_requests");
+}
+
+export async function updateRemoteFriendRequest({
+  action,
+  requestId,
+}: {
+  action: "accept" | "cancel" | "decline";
+  requestId: string;
+}) {
+  const response = await fetch("/api/friends/requests", {
+    body: JSON.stringify({ action, requestId }),
+    headers: { "Content-Type": "application/json" },
+    method: "PATCH",
+  });
+
+  if (!response.ok) {
+    throw new Error(await getResponseError(response));
+  }
+
+  invalidateRemoteCachesForTable("friend_requests");
+}
+
+export async function requestRemoteSuperNudge({
+  friendId,
+  supabase,
+}: {
+  friendId: string;
+  supabase: SupabaseClient;
+}) {
+  const { data, error } = await supabase.rpc("request_super_nudge", {
+    target_user_id: friendId,
+  });
+
+  if (error) throw error;
+  invalidateRemoteCachesForTable("super_nudge_requests");
+  return data as string;
+}
+
+export async function updateRemoteSuperNudge({
+  action,
+  requestId,
+  supabase,
+}: {
+  action: "accept" | "cancel" | "decline" | "disable";
+  requestId: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("respond_super_nudge", {
+    request_id: requestId,
+    response_action: action,
+  });
+
+  if (error) throw error;
+  invalidateRemoteCachesForTable("super_nudge_requests");
+}
+
+export async function removeRemoteFriend({
+  friendId,
+  supabase,
+}: {
+  friendId: string;
+  supabase: SupabaseClient;
+}) {
+  const { error } = await supabase.rpc("remove_friend", {
+    target_user_id: friendId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  invalidateRemoteCachesForTable("friendships");
+}
+
+export async function fetchRemoteDirectMessageUnreadCount({
+  supabase,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const { count, error } = await supabase
+    .from("direct_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("recipient_id", userId)
+    .is("read_at", null);
+
+  if (error) throw error;
+
+  return count ?? 0;
+}

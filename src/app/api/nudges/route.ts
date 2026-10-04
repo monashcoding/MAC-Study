@@ -6,6 +6,7 @@ import {
   createSupabaseAdminClient,
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
+import type { Tables } from "@/lib/supabase/types";
 
 export const runtime = "nodejs";
 
@@ -14,12 +15,10 @@ const nudgeSchema = z.object({
   recipientId: z.string().uuid(),
 });
 
-type NudgeRow = {
-  group_id: string | null;
-  id: string;
-  message: string | null;
-  recipient_id: string;
-};
+type NudgeRow = Pick<
+  Tables<"nudges">,
+  "group_id" | "id" | "message" | "recipient_id"
+>;
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
@@ -63,7 +62,7 @@ export async function POST(request: Request) {
   const { data: nudgeId, error: nudgeError } = await supabase.rpc(
     "send_nudge",
     {
-      target_group_id: groupId,
+      ...(groupId ? { target_group_id: groupId } : {}),
       target_user_id: parsed.data.recipientId,
     },
   );
