@@ -17,7 +17,7 @@ test.describe("authentication routing", () => {
     await page.goto("/app");
 
     await expect(page).toHaveURL(/\/auth\/login\?next=%2Fapp$/);
-    await expect(page.getByRole("heading", { name: "MAC Study" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   });
 });
 
