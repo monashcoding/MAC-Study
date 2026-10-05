@@ -1,7 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { BellRing, Check, Download, Plus, X } from "lucide-react";
+import {
+  BellRing,
+  BookPlus,
+  Check,
+  Download,
+  Play,
+  Plus,
+  X,
+} from "lucide-react";
 
 const STORAGE_KEY = "mac-getting-started-card-hidden";
 
@@ -31,8 +40,11 @@ export function GettingStartedCard({
     setHidden(true);
   }
 
+  const completedEssentials = Number(hasStudySession) + Number(hasUnit);
+  const progressWidth = `${(completedEssentials / 2) * 100}%`;
+
   return (
-    <section className="relative overflow-hidden rounded-lg border border-[rgb(255_227_48/0.28)] bg-[rgb(255_227_48/0.055)] p-4 sm:p-5 xl:col-span-2">
+    <section className="relative hidden overflow-hidden rounded-xl lg:block border border-[rgb(255_227_48/0.24)] bg-[#1d1c16] p-4 sm:p-5 xl:col-span-2">
       <button
         aria-label="Dismiss getting started"
         className="mac-focus absolute right-2 top-2 inline-flex h-10 w-10 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.06)] hover:text-[var(--color-text)]"
@@ -41,32 +53,52 @@ export function GettingStartedCard({
       >
         <X aria-hidden size={18} />
       </button>
-      <p className="pr-10 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-mac-yellow)]">
-        Getting started
-      </p>
-      <h2 className="mt-1 text-xl font-semibold">Make MAC Study yours</h2>
+      <div className="flex flex-wrap items-end justify-between gap-3 pr-10">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.015em] sm:text-xl">
+            Set up your study space
+          </h2>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)] sm:text-sm">
+            {completedEssentials} of 2 essentials complete
+          </p>
+        </div>
+        <div
+          aria-label={`${completedEssentials} of 2 essentials complete`}
+          className="h-1.5 w-32 overflow-hidden rounded-full bg-[rgb(255_255_255/0.1)] sm:w-40"
+          role="progressbar"
+          aria-valuemax={2}
+          aria-valuemin={0}
+          aria-valuenow={completedEssentials}
+        >
+          <span
+            className="block h-full rounded-full bg-[var(--color-mac-yellow)] transition-[width] duration-300"
+            style={{ width: progressWidth }}
+          />
+        </div>
+      </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <ChecklistAction
           complete={hasStudySession}
-          icon={Plus}
-          label="Start a study session"
+          icon={Play}
+          label="Start a session"
           onClick={onStartSession}
         />
-        <a
-          className="mac-focus flex min-h-12 items-center gap-3 rounded-md border border-[var(--color-border)] bg-[rgb(23_23_23/0.72)] px-3 text-left text-sm font-semibold transition hover:bg-[rgb(255_255_255/0.05)]"
+        <Link
+          className="mac-focus flex min-h-12 items-center gap-3 rounded-lg bg-[rgb(255_255_255/0.04)] px-3 text-left text-sm font-semibold transition hover:bg-[rgb(255_255_255/0.07)]"
           href="/app/units"
+          prefetch
         >
-          <StatusIcon complete={hasUnit} icon={Plus} />
+          <StatusIcon complete={hasUnit} icon={BookPlus} />
           <span>Add your units</span>
-        </a>
+        </Link>
         <ChecklistAction
           icon={Download}
-          label="Add the app to this device"
+          label="Install the app"
           onClick={() => window.dispatchEvent(new Event("mac-open-install-guide"))}
         />
         <ChecklistAction
           icon={BellRing}
-          label="Turn on useful alerts"
+          label="Turn on alerts"
           onClick={() =>
             window.dispatchEvent(new Event("mac-open-notification-onboarding"))
           }
@@ -89,7 +121,7 @@ function ChecklistAction({
 }) {
   return (
     <button
-      className="mac-focus flex min-h-12 items-center gap-3 rounded-md border border-[var(--color-border)] bg-[rgb(23_23_23/0.72)] px-3 text-left text-sm font-semibold transition hover:bg-[rgb(255_255_255/0.05)]"
+      className="mac-focus flex min-h-12 items-center gap-3 rounded-lg bg-[rgb(255_255_255/0.04)] px-3 text-left text-sm font-semibold transition hover:bg-[rgb(255_255_255/0.07)]"
       onClick={onClick}
       type="button"
     >
@@ -111,7 +143,7 @@ function StatusIcon({
       className={
         complete
           ? "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-success)] text-[#141414]"
-          : "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]"
+          : "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[rgb(255_227_48/0.11)] text-[var(--color-mac-yellow)]"
       }
     >
       {complete ? <Check aria-hidden size={16} /> : <Icon aria-hidden size={16} />}

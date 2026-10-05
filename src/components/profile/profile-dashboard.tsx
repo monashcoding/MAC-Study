@@ -1,8 +1,17 @@
 "use client";
 
-import { Download, LogOut, PencilLine, PlayCircle, UserRound } from "lucide-react";
+import {
+  LogOut,
+  MonitorDown,
+  PencilLine,
+  PlayCircle,
+  Smartphone,
+  UserRound,
+} from "lucide-react";
 import { DiscoverabilitySetting } from "@/components/profile/discoverability-setting";
+import type { InstallGuideTarget } from "@/components/pwa/install-onboarding";
 import { PushNotificationSettings } from "@/components/pwa/push-notification-settings";
+import { cn } from "@/lib/utils";
 
 export function ProfileDashboard({
   displayName,
@@ -45,7 +54,7 @@ export function ProfileDashboard({
 
       <section className="overflow-hidden rounded-lg border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.022)]">
         <div className="px-5 pb-3 pt-5">
-          <h2 className="text-lg font-semibold">Settings</h2>
+          <h2 className="text-lg font-semibold">Preferences</h2>
         </div>
         <div className="divide-y divide-[rgb(255_255_255/0.07)] px-2 pb-2">
           {userId ? (
@@ -67,25 +76,19 @@ export function ProfileDashboard({
               <span className="font-medium">Replay introduction</span>
             </span>
           </button>
-          <button
-            className="mac-focus flex w-full items-center justify-between gap-4 rounded-md px-3 py-4 text-left transition hover:bg-[rgb(255_255_255/0.04)]"
-            onClick={() =>
-              window.dispatchEvent(new Event("mac-open-install-guide"))
-            }
-            type="button"
-          >
-            <span className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
-                <Download aria-hidden size={19} />
-              </span>
-              <span>
-                <span className="block font-medium">Install MAC Study</span>
-                <span className="mt-0.5 block text-sm text-[var(--color-text-muted)]">
-                  Add it to this device
-                </span>
-              </span>
-            </span>
-          </button>
+          <InstallGuideRow
+            className="hidden lg:flex"
+            detail="Its own window and a spot on your taskbar"
+            icon={MonitorDown}
+            label="Install on your PC"
+            target="pc"
+          />
+          <InstallGuideRow
+            detail="Open it from your Home Screen like any app"
+            icon={Smartphone}
+            label="Add to your phone"
+            target="phone"
+          />
           <a
             className="mac-focus flex items-center justify-between gap-4 rounded-md px-3 py-4 transition hover:bg-[rgb(255_255_255/0.04)]"
             href="/auth/logout"
@@ -100,6 +103,49 @@ export function ProfileDashboard({
         </div>
       </section>
     </div>
+  );
+}
+
+function InstallGuideRow({
+  className,
+  detail,
+  icon: Icon,
+  label,
+  target,
+}: {
+  className?: string;
+  detail: string;
+  icon: typeof Smartphone;
+  label: string;
+  target: InstallGuideTarget;
+}) {
+  return (
+    <button
+      className={cn(
+        "mac-focus flex w-full items-center justify-between gap-4 rounded-md px-3 py-4 text-left transition hover:bg-[rgb(255_255_255/0.04)]",
+        className,
+      )}
+      onClick={() =>
+        window.dispatchEvent(
+          new CustomEvent<InstallGuideTarget>("mac-open-install-guide", {
+            detail: target,
+          }),
+        )
+      }
+      type="button"
+    >
+      <span className="flex items-center gap-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
+          <Icon aria-hidden size={19} />
+        </span>
+        <span>
+          <span className="block font-medium">{label}</span>
+          <span className="mt-0.5 block text-sm text-[var(--color-text-muted)]">
+            {detail}
+          </span>
+        </span>
+      </span>
+    </button>
   );
 }
 

@@ -154,7 +154,7 @@ function SigningInState({ checkingSession }: { checkingSession: boolean }) {
       className="mac-auth-loading fixed inset-0 z-50 flex h-[var(--app-viewport-height)] min-h-0 items-center justify-center overflow-hidden overscroll-none bg-[var(--color-background)] px-6 pb-[var(--safe-area-bottom)] pt-[var(--safe-area-top)]"
       role="status"
     >
-      <div className="mac-auth-pulse flex flex-col items-center text-center">
+      <div className="flex flex-col items-center text-center">
         <Image
           alt="MAC Study"
           className="rounded-xl"

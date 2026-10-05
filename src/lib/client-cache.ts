@@ -4,6 +4,7 @@ import type {
   RemoteFriendsSnapshot,
   RemoteGroupsSnapshot,
   RemoteTimerState,
+  RemoteUnitState,
 } from "@/lib/supabase/app-data/types";
 
 export const REMOTE_CACHE_MAX_AGE_MS = 2 * 60 * 1000;
@@ -11,6 +12,7 @@ export const REMOTE_CACHE_MAX_AGE_MS = 2 * 60 * 1000;
 const REMOTE_TIMER_CACHE_KEY = "mac-study-remote-timer-cache-v3";
 const REMOTE_FRIENDS_CACHE_KEY = "mac-study-remote-friends-cache-v3";
 const REMOTE_GROUPS_CACHE_KEY = "mac-study-remote-groups-cache-v3";
+const REMOTE_UNITS_CACHE_KEY = "mac-study-remote-units-cache-v3";
 const LEGACY_CACHE_KEYS = [
   "mac-study-remote-timer-cache",
   "mac-study-remote-social-cache",
@@ -31,6 +33,7 @@ type RemoteTableChangeListener = (table: string) => void;
 let timerCache: CacheEnvelope<RemoteTimerState> | null = null;
 let friendsCache: CacheEnvelope<RemoteFriendsSnapshot> | null = null;
 let groupsCache: CacheEnvelope<RemoteGroupsSnapshot> | null = null;
+let unitsCache: CacheEnvelope<RemoteUnitState> | null = null;
 
 const inFlightRemoteRequests = new Map<string, Promise<unknown>>();
 const remoteTableChangeListeners = new Set<RemoteTableChangeListener>();
@@ -74,6 +77,19 @@ export function cacheRemoteGroupsSnapshot(state: RemoteGroupsSnapshot) {
   writeCache(REMOTE_GROUPS_CACHE_KEY, groupsCache);
 }
 
+export function getCachedRemoteUnitState(userId: string | null) {
+  if (!userId) return null;
+  unitsCache ??= readCache<RemoteUnitState>(REMOTE_UNITS_CACHE_KEY);
+  const value = getFreshValue(unitsCache, REMOTE_UNITS_CACHE_KEY, userId);
+  if (!value) unitsCache = null;
+  return value;
+}
+
+export function cacheRemoteUnitState(state: RemoteUnitState, userId: string) {
+  unitsCache = createEnvelope(state, userId);
+  writeCache(REMOTE_UNITS_CACHE_KEY, unitsCache);
+}
+
 export function invalidateRemoteTimerCache() {
   timerCache = null;
   removeCache(REMOTE_TIMER_CACHE_KEY);
@@ -86,10 +102,16 @@ export function invalidateRemoteSocialCaches() {
   removeCache(REMOTE_GROUPS_CACHE_KEY);
 }
 
+export function invalidateRemoteUnitCache() {
+  unitsCache = null;
+  removeCache(REMOTE_UNITS_CACHE_KEY);
+}
+
 export function invalidateRemoteCachesForTable(table?: string) {
   if (!table) {
     invalidateRemoteTimerCache();
     invalidateRemoteSocialCaches();
+    invalidateRemoteUnitCache();
     return;
   }
 
@@ -101,6 +123,17 @@ export function invalidateRemoteCachesForTable(table?: string) {
     table === "special_unit_aliases"
   ) {
     invalidateRemoteTimerCache();
+  }
+
+  if (
+    table === "subjects" ||
+    table === "unit_enrolments" ||
+    table === "units" ||
+    table === "unit_offerings" ||
+    table === "special_units" ||
+    table === "special_unit_aliases"
+  ) {
+    invalidateRemoteUnitCache();
   }
 
   if (
@@ -166,6 +199,7 @@ export function dedupeRemoteRequest<T>({
 export function clearRemoteClientCache() {
   invalidateRemoteTimerCache();
   invalidateRemoteSocialCaches();
+  invalidateRemoteUnitCache();
   inFlightRemoteRequests.clear();
   LEGACY_CACHE_KEYS.forEach(removeCache);
 }

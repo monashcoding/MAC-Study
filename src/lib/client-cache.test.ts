@@ -3,17 +3,20 @@ import type {
   RemoteFriendsSnapshot,
   RemoteGroupsSnapshot,
   RemoteTimerState,
+  RemoteUnitState,
 } from "./supabase/app-data/types";
 import {
   REMOTE_CACHE_MAX_AGE_MS,
   cacheRemoteFriendsSnapshot,
   cacheRemoteGroupsSnapshot,
   cacheRemoteTimerState,
+  cacheRemoteUnitState,
   clearRemoteClientCache,
   dedupeRemoteRequest,
   getCachedRemoteFriendsSnapshot,
   getCachedRemoteGroupsSnapshot,
   getCachedRemoteTimerState,
+  getCachedRemoteUnitState,
   invalidateRemoteCachesForTable,
   subscribeToRemoteTableChanges,
 } from "./client-cache";
@@ -38,6 +41,13 @@ const groupsSnapshot: RemoteGroupsSnapshot = {
   currentUserId: "viewer",
   groupInvites: [],
   socialState: { friends: [], groups: [] },
+};
+
+const unitState: RemoteUnitState = {
+  enrollments: [],
+  specialUnits: [],
+  subjects: [],
+  suggestions: [],
 };
 
 let storage: Map<string, string>;
@@ -78,34 +88,48 @@ describe("remote client cache freshness", () => {
     cacheRemoteTimerState(timerState);
     cacheRemoteFriendsSnapshot(friendsSnapshot);
     cacheRemoteGroupsSnapshot(groupsSnapshot);
+    cacheRemoteUnitState(unitState, "viewer");
 
     invalidateRemoteCachesForTable("friendships");
 
     expect(getCachedRemoteTimerState("viewer")).toEqual(timerState);
     expect(getCachedRemoteFriendsSnapshot("viewer")).toBeNull();
     expect(getCachedRemoteGroupsSnapshot("viewer")).toBeNull();
+    expect(getCachedRemoteUnitState("viewer")).toEqual(unitState);
   });
 
   it("invalidates every derived cache when study sessions change", () => {
     cacheRemoteTimerState(timerState);
     cacheRemoteFriendsSnapshot(friendsSnapshot);
     cacheRemoteGroupsSnapshot(groupsSnapshot);
+    cacheRemoteUnitState(unitState, "viewer");
 
     invalidateRemoteCachesForTable("study_sessions");
 
     expect(getCachedRemoteTimerState("viewer")).toBeNull();
     expect(getCachedRemoteFriendsSnapshot("viewer")).toBeNull();
     expect(getCachedRemoteGroupsSnapshot("viewer")).toBeNull();
+    expect(getCachedRemoteUnitState("viewer")).toEqual(unitState);
+  });
+
+  it("invalidates the units cache when an enrolment changes", () => {
+    cacheRemoteUnitState(unitState, "viewer");
+
+    invalidateRemoteCachesForTable("unit_enrolments");
+
+    expect(getCachedRemoteUnitState("viewer")).toBeNull();
   });
 
   it("rejects every cache entry when the signed-in account changes", () => {
     cacheRemoteTimerState(timerState);
     cacheRemoteFriendsSnapshot(friendsSnapshot);
     cacheRemoteGroupsSnapshot(groupsSnapshot);
+    cacheRemoteUnitState(unitState, "viewer");
 
     expect(getCachedRemoteTimerState("another-user")).toBeNull();
     expect(getCachedRemoteFriendsSnapshot("another-user")).toBeNull();
     expect(getCachedRemoteGroupsSnapshot("another-user")).toBeNull();
+    expect(getCachedRemoteUnitState("another-user")).toBeNull();
     expect(storage.size).toBe(0);
   });
 

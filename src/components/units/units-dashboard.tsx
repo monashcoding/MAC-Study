@@ -29,7 +29,9 @@ import { CustomSelect } from "@/components/custom-select";
 import { PaginatedList } from "@/components/paginated-list";
 import { TransientToast } from "@/components/transient-toast";
 import {
+  cacheRemoteUnitState,
   dedupeRemoteRequest,
+  getCachedRemoteUnitState,
   subscribeToRemoteTableChanges,
 } from "@/lib/client-cache";
 import {
@@ -202,7 +204,10 @@ export function UnitsDashboard({
         : fetchRemoteStudyGroups(supabase),
     ]);
 
-    if (units) setUnitState(units);
+    if (units) {
+      setUnitState(units);
+      if (userId) cacheRemoteUnitState(units, userId);
+    }
     setSocialState({ friends: [], groups });
   }, [userId]);
 
@@ -211,6 +216,15 @@ export function UnitsDashboard({
 
     let cancelled = false;
     let supabase: SupabaseClient;
+    const cachedUnits = getCachedRemoteUnitState(userId);
+
+    if (cachedUnits) {
+      void Promise.resolve().then(() => {
+        if (cancelled) return;
+        setUnitState(cachedUnits);
+        setDataMode("remote");
+      });
+    }
 
     try {
       supabase = createSupabaseBrowserClient();
@@ -245,7 +259,7 @@ export function UnitsDashboard({
     return () => {
       cancelled = true;
     };
-  }, [isActive, refreshRemote]);
+  }, [isActive, refreshRemote, userId]);
 
   useEffect(() => {
     if (!isActive || !remoteClient || dataMode !== "remote") return;
@@ -610,11 +624,21 @@ export function UnitsDashboard({
   return (
     <div className="space-y-6">
       <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="truncate text-base font-semibold sm:text-lg">
-            Current and upcoming
-          </h2>
-          {hasEnrollments ? (
+        {dataMode === "loading" ? (
+          <UnitsLoadingState />
+        ) : !hasEnrollments ? (
+          <UnitsEmptyState
+            onAdd={() => {
+              setSelectedSpecialUnit(null);
+              setIsAdding(true);
+            }}
+          />
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="truncate text-base font-semibold sm:text-lg">
+                Current and upcoming
+              </h2>
             <div className="ml-auto flex shrink-0 items-center gap-2">
               {canFilter ? (
                 <button
@@ -650,63 +674,42 @@ export function UnitsDashboard({
                 Add unit
               </button>
             </div>
-          ) : null}
-        </div>
+            </div>
 
-        {dataMode !== "loading" && current.length ? (
-          <EnrollmentSection
-            enrollments={current}
-            onOpen={setSelectedOfferingId}
-            title={null}
-          />
-        ) : dataMode !== "loading" && !hasEnrollments ? (
-          <button
-            className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"
-            onClick={() => {
-              setSelectedSpecialUnit(null);
-              setIsAdding(true);
-            }}
-            type="button"
-          >
-            <Plus aria-hidden size={17} />
-            Add unit
-          </button>
-        ) : null}
+            {current.length ? (
+              <EnrollmentSection
+                enrollments={current}
+                onOpen={setSelectedOfferingId}
+                title={null}
+              />
+            ) : null}
 
-        {dataMode !== "loading" &&
-        hasEnrollments &&
-        !hasVisibleEnrollments ? (
-          <div className="flex min-h-20 flex-col items-start justify-center gap-2 rounded-md bg-[rgb(255_255_255/0.03)] px-4 py-3 text-sm text-[var(--color-text-muted)] sm:flex-row sm:items-center sm:justify-between">
-            <p>No units match these filters.</p>
-            <button
-              className="mac-focus h-9 rounded-md px-2.5 font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
-              onClick={() => setUnitFilter({ period: null, year: null })}
-              type="button"
-            >
-              Clear filters
-            </button>
-          </div>
-        ) : null}
+            {!hasVisibleEnrollments ? (
+              <div className="flex min-h-20 flex-col items-start justify-center gap-2 rounded-md bg-[rgb(255_255_255/0.03)] px-4 py-3 text-sm text-[var(--color-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+                <p>No units match these filters.</p>
+                <button
+                  className="mac-focus h-9 rounded-md px-2.5 font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
+                  onClick={() => setUnitFilter({ period: null, year: null })}
+                  type="button"
+                >
+                  Clear filters
+                </button>
+              </div>
+            ) : null}
 
-        {dataMode !== "loading" ? (
-          <div
-            className="flex max-w-xl items-start gap-2.5 rounded-md border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.03)] px-3 py-2.5 text-sm leading-5 text-[var(--color-text-muted)]"
-            role="note"
-          >
-            <Info
-              aria-hidden
-              className="mt-0.5 shrink-0 text-[var(--color-mac-yellow)]"
-              size={16}
-            />
-            <p>Find and add friends who are studying the same units as you.</p>
-          </div>
-        ) : null}
+            <p className="flex max-w-xl items-center gap-2 text-sm leading-5 text-[var(--color-text-muted)]">
+              <Info
+                aria-hidden
+                className="shrink-0 text-[var(--color-mac-yellow)]"
+                size={16}
+              />
+              Open a unit to find classmates in the same cohort.
+            </p>
+          </>
+        )}
       </section>
 
       {feedback ? <Feedback message={feedback} /> : null}
-      {dataMode === "loading" ? (
-        <p className="text-sm text-[var(--color-text-muted)]">Loading units…</p>
-      ) : null}
 
       {dataMode !== "loading" && past.length ? (
         <EnrollmentSection
@@ -777,6 +780,85 @@ export function UnitsDashboard({
         message={toastMessage}
         onDismiss={() => setToastMessage(null)}
       />
+    </div>
+  );
+}
+
+function UnitsEmptyState({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-[rgb(255_255_255/0.08)] bg-[var(--color-surface)] px-5 py-7 sm:px-8 sm:py-8">
+      <BookOpen
+        aria-hidden
+        className="pointer-events-none absolute -right-5 -top-7 text-[rgb(255_227_48/0.035)]"
+        size={150}
+        strokeWidth={1.4}
+      />
+      <div className="relative grid items-center gap-7 md:grid-cols-[minmax(0,1fr)_17rem] md:gap-10">
+        <div className="max-w-xl">
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-mac-yellow)] text-[#141414]">
+            <UsersRound aria-hidden size={22} />
+          </span>
+          <h2 className="mt-5 text-2xl font-semibold tracking-[-0.025em] sm:text-3xl">
+            Find your classmates
+          </h2>
+          <p className="mt-2 max-w-md text-sm leading-6 text-[var(--color-text-muted)] sm:text-base">
+            Add a unit to meet classmates and connect it to your study subjects.
+          </p>
+          <button
+            className="mac-focus mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-mac-yellow)] px-5 text-sm font-semibold text-[#141414] sm:w-auto"
+            onClick={onAdd}
+            type="button"
+          >
+            <Plus aria-hidden size={18} />
+            Add your first unit
+          </button>
+        </div>
+
+        <div
+          aria-hidden
+          className="border-t border-[var(--color-border)] pt-5 md:border-l md:border-t-0 md:pl-7 md:pt-0"
+        >
+          <div className="rounded-lg bg-[rgb(255_255_255/0.045)] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-mac-yellow)]">
+              FIT2004
+            </p>
+            <p className="mt-1 text-sm font-semibold">
+              Algorithms &amp; data structures
+            </p>
+          </div>
+          <div className="mt-4 flex items-center">
+            {["#FFE330", "#6CB6FF", "#42D392"].map((color, index) => (
+              <span
+                className={cn(
+                  "h-9 w-9 rounded-full border-2 border-[var(--color-surface)]",
+                  index > 0 && "-ml-3",
+                )}
+                key={color}
+                style={{ backgroundColor: color }}
+              />
+            ))}
+            <span className="ml-3 text-xs text-[var(--color-text-muted)]">
+              Your cohort appears here
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UnitsLoadingState() {
+  return (
+    <div
+      aria-label="Loading units"
+      className="animate-pulse rounded-xl border border-[rgb(255_255_255/0.07)] bg-[var(--color-surface)] px-5 py-7 sm:px-8 sm:py-8"
+      role="status"
+    >
+      <span className="block h-12 w-12 rounded-xl bg-[rgb(255_227_48/0.12)]" />
+      <span className="mt-5 block h-7 w-52 rounded bg-[rgb(255_255_255/0.08)]" />
+      <span className="mt-3 block h-4 w-full max-w-sm rounded bg-[rgb(255_255_255/0.055)]" />
+      <span className="mt-6 block h-12 w-full rounded-lg bg-[rgb(255_227_48/0.1)] sm:w-44" />
+      <span className="sr-only">Loading units…</span>
     </div>
   );
 }

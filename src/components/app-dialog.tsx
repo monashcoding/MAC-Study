@@ -46,7 +46,7 @@ export function AppDialog({
   isDirty?: boolean;
   maxWidthClassName?: string;
   onClose: () => void;
-  title: string;
+  title: ReactNode;
   titleClassName?: string;
   variant?: "confirmation" | "default";
 }) {

@@ -18,11 +18,13 @@ import {
 import type { AppAuthState } from "@/lib/auth/app-auth";
 import {
   cacheRemoteTimerState,
+  cacheRemoteUnitState,
   dedupeRemoteRequest,
 } from "@/lib/client-cache";
 import {
   fetchRemoteDirectMessageUnreadCount,
   fetchRemoteTimerState,
+  fetchRemoteUnitState,
   subscribeToRemoteAppChanges,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -70,8 +72,8 @@ const navItems = [
   },
   {
     href: "/app/profile",
-    label: "Profile",
-    title: "Profile",
+    label: "Settings",
+    title: "Settings",
     icon: Settings,
   },
 ];
@@ -166,6 +168,36 @@ export function AppShell({
 
     return () => window.clearTimeout(timeout);
   }, [router]);
+
+  useEffect(() => {
+    if (authState.mode !== "authenticated" || !currentUserId) return;
+
+    const cacheUserId = currentUserId;
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const supabase = createSupabaseBrowserClient();
+          const unitState = await dedupeRemoteRequest({
+            key: "units",
+            load: () => fetchRemoteUnitState(supabase),
+            userId: cacheUserId,
+          });
+
+          if (!cancelled && unitState) {
+            cacheRemoteUnitState(unitState, cacheUserId);
+          }
+        } catch {
+          // Preloading is opportunistic; the Units view can retry on demand.
+        }
+      })();
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [authState.mode, currentUserId]);
 
   useEffect(() => {
     let readyFrame = 0;

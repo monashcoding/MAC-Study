@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "install-guide": {
+      "targetKind": "existing-ui",
+      "projectId": "723fb83d-19ac-4fc6-98e0-055c99f9e7f3",
+      "baselineDraftId": "09f624ef-03c3-4cb9-8fd5-8dfdaf118627",
+      "activeDraftId": "09f624ef-03c3-4cb9-8fd5-8dfdaf118627",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "d6872450-be05-4601-b884-d5e25af7aa9c"
+      ],
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/app/globals.css",
+        "src/components/app-dialog.tsx",
+        "src/components/pwa/install-onboarding.tsx"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "2f221064e62d4fcbf8266ade1fb4bd6abeb1e27fcfcc1666cea1923aba531524",
+        "src/app/globals.css": "1544df4326ed4c82a7ea40b2ab5a4d55cd1735aaf2ab5121fa0002d7f96181cf",
+        "src/components/app-dialog.tsx": "104151c5f4fae85ec296a5f6c7e81cd3d2afb3b84c7802a4e5dd7e2ca247fd2e",
+        "src/components/pwa/install-onboarding.tsx": "1cc2bbb99e4157f34e6766e5525c1149ad2293458c8ddcd6fba49006ed6c63a0"
+      },
+      "drafts": {
+        "09f624ef-03c3-4cb9-8fd5-8dfdaf118627": {
+          "title": "MAC Study PC Install Guide",
+          "visualDirection": "Two flat instruction columns above a separate full-width Windows Search preview with compact footer actions",
+          "parentDraftId": null,
+          "currentVersion": 3
+        }
+      },
+      "updatedAt": "2026-10-05T04:18:25.6783209Z"
+    }
+  }
+}

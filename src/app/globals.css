@@ -358,18 +358,6 @@ body {
   animation: mac-study-period-back 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@keyframes mac-auth-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.88;
-    transform: scale(0.985);
-  }
-}
-
 @keyframes mac-auth-progress {
   from {
     transform: translateX(-110%);
@@ -379,17 +367,12 @@ body {
   }
 }
 
-.mac-auth-pulse {
-  animation: mac-auth-pulse 1.8s ease-in-out infinite;
-}
-
 .mac-auth-progress {
   animation: mac-auth-progress 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .mac-auth-progress,
-  .mac-auth-pulse,
   .mac-chat-screen-enter,
   .mac-chat-screen-exit,
   .mac-study-period-back,

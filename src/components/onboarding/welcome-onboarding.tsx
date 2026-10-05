@@ -2,13 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  BarChart3,
-  BookOpen,
-  ChevronRight,
-  Play,
-  UsersRound,
-} from "lucide-react";
+import { BookOpen, Clock3, Play, UsersRound } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import {
   ONBOARDING_VERSION,
@@ -129,21 +123,21 @@ export function WelcomeOnboarding({
 
   return (
     <AppDialog
-      bodyClassName="space-y-5 sm:p-5"
+      bodyClassName="space-y-4 sm:p-5"
       closeLabel="Explore MAC Study"
       footer={
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-2">
           <button
-            className="mac-focus inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414]"
+            className="mac-focus inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] sm:px-4 sm:text-base"
             data-dialog-autofocus
             onClick={startFirstSession}
             type="button"
           >
             <Play aria-hidden size={18} />
-            Start your first session
+            Start studying
           </button>
           <button
-            className="mac-focus h-12 rounded-lg border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]"
+            className="mac-focus h-12 rounded-lg border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)] sm:px-4"
             onClick={() => closeWelcome("completed")}
             type="button"
           >
@@ -151,154 +145,47 @@ export function WelcomeOnboarding({
           </button>
         </div>
       }
-      maxWidthClassName="max-w-3xl"
+      maxWidthClassName="max-w-2xl"
       onClose={() => closeWelcome("dismissed")}
-      title="Your study space, with your people"
-      titleClassName="whitespace-normal text-xl leading-6 sm:text-2xl"
+      title={
+        <span>
+          Study with your friends.{" "}
+          <span className="text-[var(--color-mac-yellow)]">
+            Track your progress.
+          </span>
+        </span>
+      }
+      titleClassName="whitespace-normal text-xl leading-6 tracking-[-0.02em] sm:text-2xl sm:leading-7"
     >
-      <div data-dialog-autofocus tabIndex={-1}>
-        <p className="max-w-2xl text-sm leading-6 text-[var(--color-text-muted)]">
-          Keep your study time visible, find people taking the same units, and
-          make it easier to keep each other going.
-        </p>
+      <p className="max-w-xl text-sm leading-6 text-[var(--color-text-muted)]">
+        Make study time visible and keep each other going.
+      </p>
+      <div className="grid grid-cols-3 divide-x divide-[var(--color-border)] rounded-xl bg-[rgb(255_255_255/0.035)] py-3 sm:py-4">
+        <WelcomeBenefit icon={Clock3} label="Track your time" />
+        <WelcomeBenefit icon={BookOpen} label="Find classmates" />
+        <WelcomeBenefit icon={UsersRound} label="Study together" />
       </div>
-      <div className="grid gap-3 md:grid-cols-3">
-        <WelcomePreview
-          description="See who&apos;s studying, compare time and give friends a nudge when they need it."
-          icon={UsersRound}
-          label="Study with your people"
-          preview={<PeoplePreview />}
-        />
-        <WelcomePreview
-          description="Add your units and connect with classmates who are learning the same things."
-          icon={BookOpen}
-          label="Find your classmates"
-          preview={<UnitsPreview />}
-        />
-        <WelcomePreview
-          description="Start a session in a tap and build a picture of your study habits over time."
-          icon={BarChart3}
-          label="See your progress"
-          preview={<ProgressPreview />}
-        />
-      </div>
-      <button
-        className="mac-focus inline-flex min-h-10 items-center gap-1.5 rounded-md text-sm font-semibold text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
-        onClick={() => closeWelcome("dismissed")}
-        type="button"
-      >
-        I&apos;ll look around first
-        <ChevronRight aria-hidden size={16} />
-      </button>
     </AppDialog>
   );
 }
 
-function WelcomePreview({
-  description,
+function WelcomeBenefit({
   icon: Icon,
   label,
-  preview,
 }: {
-  description: string;
   icon: typeof UsersRound;
   label: string;
-  preview: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.018)] p-3">
-      <div className="flex items-center gap-2 text-[var(--color-mac-yellow)]">
-        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[rgb(255_227_48/0.1)]">
-          <Icon aria-hidden size={17} />
-        </span>
-        <h3 className="text-sm font-semibold text-[var(--color-text)]">
-          {label}
-        </h3>
-      </div>
-      <div className="mt-3">{preview}</div>
-      <p className="mt-3 text-sm leading-5 text-[var(--color-text-muted)]">
-        {description}
-      </p>
-    </section>
-  );
-}
-
-function PeoplePreview() {
-  return (
-    <div className="rounded-lg border border-[rgb(255_255_255/0.08)] bg-[#191919] p-3">
-      <div className="flex items-center justify-between text-xs font-semibold">
-        <span>Group study</span>
-        <span className="flex items-center gap-1 text-[var(--color-success)]">
-          <span className="h-2 w-2 rounded-full bg-[var(--color-success)]" />
-          Studying
-        </span>
-      </div>
-      <div className="mt-3 flex -space-x-2" aria-hidden>
-        {["#FFE330", "#6CB6FF", "#42D392"].map((color) => (
-          <span
-            className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#191919] text-[0.58rem] font-bold text-[#141414]"
-            key={color}
-            style={{ backgroundColor: color }}
-          >
-            •
-          </span>
-        ))}
-      </div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[rgb(255_255_255/0.08)]">
-        <span className="block h-full w-2/3 rounded-full bg-[var(--color-mac-yellow)]" />
-      </div>
-    </div>
-  );
-}
-
-function UnitsPreview() {
-  return (
-    <div className="rounded-lg border border-[rgb(255_255_255/0.08)] bg-[#191919] p-3">
-      <p className="text-xs font-semibold text-[var(--color-text)]">Your units</p>
-      <div className="mt-2 grid gap-1.5">
-        {["Add a unit", "Meet your cohort"].map((label, index) => (
-          <div
-            className="flex items-center gap-2 rounded-md bg-[rgb(255_255_255/0.04)] px-2 py-2 text-xs text-[var(--color-text-muted)]"
-            key={label}
-          >
-            <span
-              className={
-                index === 0
-                  ? "h-2 w-2 rounded-full bg-[var(--color-mac-yellow)]"
-                  : "h-2 w-2 rounded-full bg-[var(--color-info)]"
-              }
-            />
-            {label}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ProgressPreview() {
-  return (
-    <div className="rounded-lg border border-[rgb(255_255_255/0.08)] bg-[#191919] p-3">
-      <div className="flex items-end justify-between gap-2">
-        <div>
-          <p className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-mac-yellow)]">
-            Studied today
-          </p>
-          <p className="mt-1 font-mono text-xl font-semibold tabular-nums">00:00:00</p>
-        </div>
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] text-[#141414]">
-          <Play aria-hidden size={15} />
-        </span>
-      </div>
-      <div className="mt-4 flex h-8 items-end gap-1.5" aria-hidden>
-        {[35, 65, 45, 88, 55, 76].map((height) => (
-          <span
-            className="flex-1 rounded-t bg-[rgb(255_227_48/0.36)]"
-            key={height}
-            style={{ height: `${height}%` }}
-          />
-        ))}
-      </div>
+    <div className="flex min-w-0 flex-col items-center gap-2 px-2 text-center sm:flex-row sm:justify-center sm:px-3 sm:text-left">
+      <Icon
+        aria-hidden
+        className="shrink-0 text-[var(--color-mac-yellow)]"
+        size={20}
+      />
+      <span className="text-xs font-semibold leading-4 text-[var(--color-text)] sm:text-sm">
+        {label}
+      </span>
     </div>
   );
 }

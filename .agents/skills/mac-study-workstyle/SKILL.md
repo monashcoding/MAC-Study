@@ -11,6 +11,8 @@ description: Project-wide workstyle for MAC Study. Use for every task in this re
 - Prefer it for redesigns, screenshot-driven visual feedback, layouts, responsive behavior, design systems, visual variants, reusable components, and multi-page flows.
 - Skip it for implementation-only fixes with an already-decided design, tiny copy edits, or nonvisual bugs.
 - Once selected, follow the Superdesign skill workflow fully.
+- Use `$impeccable` when implementing, refining, auditing, or polishing frontend UI.
+- When both skills apply, use Superdesign to explore and choose the visual direction, then use Impeccable to implement, harden, and verify the result.
 
 ## Communication
 
