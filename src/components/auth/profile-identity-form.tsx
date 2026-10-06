@@ -14,30 +14,20 @@ type AvailabilityResult = {
   username: string;
 };
 
-export function ProfileIdentityForm({
-  defaultName,
+export type UsernameField = ReturnType<typeof useUsernameAvailability>;
+
+export function useUsernameAvailability({
   defaultUsername,
-  errorText,
-  isEditing,
-  next,
-  submitLabel,
   userId,
 }: {
-  defaultName: string;
   defaultUsername: string;
-  errorText: string | null;
-  isEditing: boolean;
-  next: string;
-  submitLabel: string;
   userId: string;
 }) {
   const [username, setUsername] = useState(defaultUsername);
   const [availabilityResult, setAvailabilityResult] =
     useState<AvailabilityResult | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const normalizedUsername = normalizeUsername(username);
-  const isUnchanged =
-    normalizedUsername === normalizeUsername(defaultUsername);
+  const isUnchanged = normalizedUsername === normalizeUsername(defaultUsername);
   const shouldCheckAvailability =
     isValidUsername(normalizedUsername) && !isUnchanged;
   const availability: Availability = !normalizedUsername
@@ -87,6 +77,39 @@ export function ProfileIdentityForm({
     };
   }, [normalizedUsername, shouldCheckAvailability, userId]);
 
+  return {
+    availability,
+    defaultUsername,
+    isBlocked:
+      availability === "checking" ||
+      availability === "invalid" ||
+      availability === "taken",
+    normalizedUsername,
+    setUsername,
+    username,
+  };
+}
+
+export function ProfileIdentityForm({
+  defaultName,
+  defaultUsername,
+  errorText,
+  isEditing,
+  next,
+  submitLabel,
+  userId,
+}: {
+  defaultName: string;
+  defaultUsername: string;
+  errorText: string | null;
+  isEditing: boolean;
+  next: string;
+  submitLabel: string;
+  userId: string;
+}) {
+  const usernameField = useUsernameAvailability({ defaultUsername, userId });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   return (
     <form
       action={saveProfileIdentity}
@@ -96,6 +119,35 @@ export function ProfileIdentityForm({
       <input name="edit" type="hidden" value={isEditing ? "1" : "0"} />
       <input name="next" type="hidden" value={next} />
 
+      <ProfileIdentityFields
+        defaultName={defaultName}
+        usernameField={usernameField}
+      />
+
+      <SubmitButton
+        disabled={usernameField.isBlocked}
+        label={submitLabel}
+        submitting={isSubmitting}
+      />
+
+      {errorText ? (
+        <p className="rounded-md border border-[rgb(255_107_107/0.45)] bg-[rgb(255_107_107/0.08)] p-3 text-sm text-[var(--color-danger)]">
+          {errorText}
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
+export function ProfileIdentityFields({
+  defaultName,
+  usernameField,
+}: {
+  defaultName: string;
+  usernameField: UsernameField;
+}) {
+  return (
+    <>
       <div>
         <label className="block text-sm font-medium" htmlFor="displayName">
           Name
@@ -139,13 +191,13 @@ export function ProfileIdentityForm({
             maxLength={24}
             minLength={3}
             name="username"
-            onChange={(event) => setUsername(event.target.value)}
+            onChange={(event) => usernameField.setUsername(event.target.value)}
             pattern="[a-zA-Z0-9_]+"
             placeholder="stevenphanny"
             required
-            value={username}
+            value={usernameField.username}
           />
-          {availability === "checking" ? (
+          {usernameField.availability === "checking" ? (
             <LoaderCircle
               aria-hidden
               className="shrink-0 animate-spin text-[var(--color-text-muted)]"
@@ -154,28 +206,12 @@ export function ProfileIdentityForm({
           ) : null}
         </div>
         <UsernameStatus
-          availability={availability}
-          defaultUsername={defaultUsername}
-          normalizedUsername={normalizedUsername}
+          availability={usernameField.availability}
+          defaultUsername={usernameField.defaultUsername}
+          normalizedUsername={usernameField.normalizedUsername}
         />
       </div>
-
-      <SubmitButton
-        disabled={
-          availability === "checking" ||
-          availability === "invalid" ||
-          availability === "taken"
-        }
-        label={submitLabel}
-        submitting={isSubmitting}
-      />
-
-      {errorText ? (
-        <p className="rounded-md border border-[rgb(255_107_107/0.45)] bg-[rgb(255_107_107/0.08)] p-3 text-sm text-[var(--color-danger)]">
-          {errorText}
-        </p>
-      ) : null}
-    </form>
+    </>
   );
 }
 
@@ -250,7 +286,7 @@ function SubmitButton({
   );
 }
 
-function normalizeUsername(value: string) {
+export function normalizeUsername(value: string) {
   return value.trim().replace(/^@+/, "").toLowerCase();
 }
 

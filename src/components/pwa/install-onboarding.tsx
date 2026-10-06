@@ -13,6 +13,7 @@ import {
   Download,
   MonitorDown,
   MoreVertical,
+  Pin,
   Share,
   Smartphone,
   SquarePlus,
@@ -32,8 +33,10 @@ type NavigatorWithUserAgentData = Navigator & {
 };
 
 type InstallStep = {
+  action?: ReactNode;
   detail?: string;
   glyph?: typeof Share;
+  media?: ReactNode;
   title: string;
 };
 
@@ -203,18 +206,34 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
   const desktopSteps: InstallStep[] = [
     canInstall
       ? {
-          detail: "Select Install app below. It opens in its own window.",
+          action: (
+            <button
+              className="mac-focus inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-45"
+              disabled={isInstalling}
+              onClick={() => void install()}
+              type="button"
+            >
+              <Download aria-hidden size={15} />
+              {isInstalling ? "Installing…" : "Install app"}
+            </button>
+          ),
           title: "Install the app",
         }
-      : {
-          detail:
-            "In Chrome or Edge, click the install icon at the right of the address bar",
-          glyph: MonitorDown,
-          title: "Install from your browser",
-        },
-    { detail: "Search for MAC Study in Start", title: "Open it from Start" },
+      : { glyph: MonitorDown, title: "Click install in the address bar" },
     {
-      detail: "Right-click its icon and choose Pin to taskbar",
+      glyph: Pin,
+      media: (
+        <div className="relative mt-3 aspect-[346/63] w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-black">
+          <Image
+            alt="MAC Study pinned alongside other apps on the Windows taskbar"
+            className="object-cover"
+            fill
+            loading="eager"
+            sizes="(max-width: 672px) calc(100vw - 90px), 560px"
+            src="/images/onboarding/mac-study-windows-taskbar.png"
+          />
+        </div>
+      ),
       title: "Pin it to your taskbar",
     },
   ];
@@ -335,45 +354,17 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
           }
           footerClassName="border-t-0 px-4 pb-4 pt-0 sm:px-6 sm:pb-6"
           headerClassName="border-b-0 px-4 pb-0 pt-4 sm:px-6 sm:pt-5"
-          maxWidthClassName="max-w-4xl"
+          maxWidthClassName="max-w-xl"
           onClose={closeGuides}
           title="Install MAC Study on your PC"
           titleClassName="whitespace-normal text-xl leading-7 sm:text-2xl"
         >
-          <div className="grid gap-6 md:grid-cols-[16rem_minmax(0,1fr)] md:gap-8">
-            <div className="space-y-5">
-              <p className="text-sm leading-6 text-[var(--color-text-muted)]">
-                Get its own window and a spot on your taskbar, without the
-                browser tabs.
-              </p>
-              <InstallSteps steps={desktopSteps} />
-            </div>
-
-            <div className="grid content-start gap-3">
-              <StepFigure step={2}>
-                <Image
-                  alt="MAC Study as the best match in Windows Search"
-                  className="h-auto w-full"
-                  height={403}
-                  loading="eager"
-                  sizes="(max-width: 768px) calc(100vw - 58px), 560px"
-                  src="/images/onboarding/mac-study-windows-search.png"
-                  width={1210}
-                />
-              </StepFigure>
-              <StepFigure step={3}>
-                <div className="relative aspect-[346/63] w-full">
-                  <Image
-                    alt="MAC Study pinned alongside other apps on the Windows taskbar"
-                    className="object-cover"
-                    fill
-                    loading="eager"
-                    sizes="(max-width: 768px) calc(100vw - 58px), 560px"
-                    src="/images/onboarding/mac-study-windows-taskbar.png"
-                  />
-                </div>
-              </StepFigure>
-            </div>
+          <div className="space-y-5">
+            <p className="text-sm leading-6 text-[var(--color-text-muted)]">
+              Get its own window and a spot on your taskbar, without the browser
+              tabs.
+            </p>
+            <InstallSteps steps={desktopSteps} />
           </div>
         </AppDialog>
       ) : null}
@@ -402,13 +393,14 @@ function InstallSteps({ steps }: { steps: InstallStep[] }) {
             <span className="min-w-0 pt-0.5">
               <span
                 className={cn(
-                  "flex items-center gap-2 font-semibold text-[var(--color-text)]",
+                  "flex flex-wrap items-center gap-2 font-semibold text-[var(--color-text)]",
                   step.detail
                     ? "text-sm leading-5"
                     : "text-[0.95rem] leading-6",
                 )}
               >
                 {step.title}
+                {step.action}
                 {Glyph ? (
                   <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[rgb(255_255_255/0.06)] text-[var(--color-text)]">
                     <Glyph aria-hidden size={14} strokeWidth={2.2} />
@@ -420,6 +412,7 @@ function InstallSteps({ steps }: { steps: InstallStep[] }) {
                   {step.detail}
                 </span>
               ) : null}
+              {step.media}
             </span>
           </li>
         );
@@ -465,6 +458,7 @@ function InstallFooter({
             ? "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]"
             : "min-w-28 bg-[rgb(255_255_255/0.06)] text-[var(--color-text)] hover:bg-[rgb(255_255_255/0.1)]",
         )}
+        data-dialog-autofocus={canInstall ? undefined : true}
         disabled={isInstalling}
         onClick={onDismiss}
         type="button"
@@ -474,6 +468,7 @@ function InstallFooter({
       {canInstall ? (
         <button
           className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[var(--color-mac-yellow)] px-5 text-sm font-semibold text-[#141414] disabled:opacity-45"
+          data-dialog-autofocus
           disabled={isInstalling}
           onClick={onInstall}
           type="button"
@@ -483,20 +478,6 @@ function InstallFooter({
         </button>
       ) : null}
     </div>
-  );
-}
-
-function StepFigure({ children, step }: { children: ReactNode; step: number }) {
-  return (
-    <figure className="grid grid-cols-[1.625rem_minmax(0,1fr)] items-start gap-3">
-      <figcaption className="flex h-[1.625rem] w-[1.625rem] items-center justify-center rounded-full border border-[rgb(255_227_48/0.5)] text-xs font-bold text-[var(--color-mac-yellow)]">
-        <span className="sr-only">Step </span>
-        {step}
-      </figcaption>
-      <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-black">
-        {children}
-      </div>
-    </figure>
   );
 }
 

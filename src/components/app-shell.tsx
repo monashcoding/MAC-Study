@@ -10,7 +10,6 @@ import {
   BookOpen,
   ChevronRight,
   House,
-  LogOut,
   Settings,
   UserRound,
   Users,
@@ -451,18 +450,7 @@ export function AppShell({
                       {currentTitle}
                     </h1>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {authState.mode === "authenticated" &&
-                    currentNav.href === "/app/profile" ? (
-                      <a
-                        className="mac-focus hidden h-10 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-muted)] transition hover:border-[rgb(255_255_255/0.2)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)] lg:inline-flex"
-                        href="/auth/logout"
-                      >
-                        <LogOut aria-hidden size={17} />
-                        <span>Sign out</span>
-                      </a>
-                    ) : null}
-                  </div>
+                  <div className="flex items-center gap-2" />
                 </div>
               </header>
 

@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -79,6 +80,7 @@ import { getGroupLeaveAvailability } from "@/lib/group-membership";
 import { NudgePill } from "@/components/social/nudge-pill";
 import { useNudgeQueue } from "@/components/social/use-nudge-queue";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
+import { Switch } from "@/components/ui/switch";
 import { formatDuration, getLocalDateKey, isLongSession } from "@/lib/timer";
 import { cn } from "@/lib/utils";
 import {
@@ -2665,34 +2667,22 @@ function GroupNotificationRow({
   onToggle: () => void;
   saving: boolean;
 }) {
+  const switchId = useId();
+
   return (
-    <button
-      aria-checked={enabled}
-      className="mac-focus flex min-h-12 w-full items-center gap-3 border-b border-[var(--color-border)] px-3 text-left last:border-b-0"
-      disabled={saving}
-      onClick={onToggle}
-      role="switch"
-      type="button"
+    <label
+      className="flex min-h-12 w-full cursor-pointer items-center gap-3 border-b border-[var(--color-border)] px-3 last:border-b-0"
+      htmlFor={switchId}
     >
       <span className="text-[var(--color-mac-yellow)]">{icon}</span>
       <span className="min-w-0 flex-1 text-sm font-medium">{label}</span>
-      <span
-        aria-hidden
-        className={cn(
-          "relative h-7 w-12 rounded-full border transition",
-          enabled
-            ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)]"
-            : "border-[var(--color-border)] bg-[var(--color-surface-raised)]",
-        )}
-      >
-        <span
-          className={cn(
-            "absolute top-0.5 h-5 w-5 rounded-full bg-[#f7f7f2] transition",
-            enabled ? "left-[1.35rem]" : "left-0.5",
-          )}
-        />
-      </span>
-    </button>
+      <Switch
+        checked={enabled}
+        disabled={saving}
+        id={switchId}
+        onCheckedChange={onToggle}
+      />
+    </label>
   );
 }
 

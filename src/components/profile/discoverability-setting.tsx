@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { UserSearch } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { cn } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
 
 export function DiscoverabilitySetting({
   initialDiscoverable,
@@ -60,9 +60,9 @@ export function DiscoverabilitySetting({
   }
 
   return (
-    <div className="px-3 py-4">
+    <div className="px-4 py-3 lg:px-5">
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[rgb(255_255_255/0.045)] text-[var(--color-mac-yellow)]">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
           <UserSearch aria-hidden size={19} />
         </span>
         <span className="min-w-0 flex-1">
@@ -71,28 +71,12 @@ export function DiscoverabilitySetting({
             Let people find you when adding friends.
           </span>
         </span>
-        <button
-          aria-checked={enabled}
+        <Switch
           aria-label="Allow people to find you"
-          className={cn(
-            "mac-focus relative h-8 w-14 shrink-0 rounded-full border transition disabled:opacity-55",
-            enabled
-              ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)]"
-              : "border-[var(--color-border)] bg-[var(--color-surface-raised)]",
-          )}
+          checked={enabled}
           disabled={saving}
-          onClick={() => void toggleDiscoverability()}
-          role="switch"
-          type="button"
-        >
-          <span
-            aria-hidden
-            className={cn(
-              "absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow transition-transform",
-              enabled ? "translate-x-6" : "translate-x-0",
-            )}
-          />
-        </button>
+          onCheckedChange={() => void toggleDiscoverability()}
+        />
       </div>
       {error ? (
         <p className="mt-2 pl-[3.25rem] text-xs text-[var(--color-danger)]">
