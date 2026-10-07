@@ -73,40 +73,6 @@ export async function updateRemoteFriendRequest({
   invalidateRemoteCachesForTable("friend_requests");
 }
 
-export async function requestRemoteSuperNudge({
-  friendId,
-  supabase,
-}: {
-  friendId: string;
-  supabase: SupabaseClient;
-}) {
-  const { data, error } = await supabase.rpc("request_super_nudge", {
-    target_user_id: friendId,
-  });
-
-  if (error) throw error;
-  invalidateRemoteCachesForTable("super_nudge_requests");
-  return data as string;
-}
-
-export async function updateRemoteSuperNudge({
-  action,
-  requestId,
-  supabase,
-}: {
-  action: "accept" | "cancel" | "decline" | "disable";
-  requestId: string;
-  supabase: SupabaseClient;
-}) {
-  const { error } = await supabase.rpc("respond_super_nudge", {
-    request_id: requestId,
-    response_action: action,
-  });
-
-  if (error) throw error;
-  invalidateRemoteCachesForTable("super_nudge_requests");
-}
-
 export async function removeRemoteFriend({
   friendId,
   supabase,

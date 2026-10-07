@@ -42,9 +42,10 @@ export function ProfileDashboard({
   const [isEditing, setIsEditing] = useState(false);
 
   return (
-    <div className="space-y-4 lg:grid lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)] lg:items-start lg:gap-6 lg:space-y-0">
-      <div className="space-y-4">
-        <section className={cardClassName}>
+    <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)] lg:items-start lg:gap-6">
+      {/* Mobile order: profile, privacy, notifications, getting started. */}
+      <div className="contents lg:block lg:space-y-4">
+        <section className={cn(cardClassName, "order-1")}>
           <div className="flex items-center gap-3 p-4 lg:p-5">
             <ProfileAvatar displayName={profile.displayName} />
             <div className="min-w-0">
@@ -81,7 +82,7 @@ export function ProfileDashboard({
           ) : null}
         </section>
 
-        <SettingsSection title="Getting started">
+        <SettingsSection className="order-4" title="Getting started">
           <ActionRow
             icon={PlayCircle}
             label="Replay introduction"
@@ -111,13 +112,13 @@ export function ProfileDashboard({
         </SettingsSection>
       </div>
 
-      <div className="space-y-4">
-        <SettingsSection title="Notifications">
+      <div className="contents lg:block lg:space-y-4">
+        <SettingsSection className="order-3" title="Notifications">
           <PushNotificationSettings />
         </SettingsSection>
 
         {userId ? (
-          <SettingsSection title="Privacy">
+          <SettingsSection className="order-2" title="Privacy">
             <DiscoverabilitySetting
               initialDiscoverable={initialDiscoverable}
               userId={userId}
@@ -126,7 +127,7 @@ export function ProfileDashboard({
         ) : null}
 
         <a
-          className="mac-focus flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-[rgb(255_107_107/0.35)] bg-[rgb(255_107_107/0.06)] font-semibold text-[var(--color-danger)] transition hover:border-[rgb(255_107_107/0.55)] hover:bg-[rgb(255_107_107/0.12)]"
+          className="mac-focus order-5 flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-[rgb(255_107_107/0.35)] bg-[rgb(255_107_107/0.06)] font-semibold text-[var(--color-danger)] transition hover:border-[rgb(255_107_107/0.55)] hover:bg-[rgb(255_107_107/0.12)]"
           href="/auth/logout"
         >
           <LogOut aria-hidden size={18} />
@@ -142,13 +143,15 @@ const cardClassName =
 
 function SettingsSection({
   children,
+  className,
   title,
 }: {
   children: ReactNode;
+  className?: string;
   title: string;
 }) {
   return (
-    <section className={cardClassName}>
+    <section className={cn(cardClassName, className)}>
       <h2 className="px-4 pb-1 pt-4 text-base font-semibold lg:px-5">
         {title}
       </h2>

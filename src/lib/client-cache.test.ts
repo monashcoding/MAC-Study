@@ -34,7 +34,6 @@ const friendsSnapshot: RemoteFriendsSnapshot = {
   currentUserId: "viewer",
   friendRequests: [],
   socialState: { friends: [], groups: [] },
-  superNudges: [],
 };
 
 const groupsSnapshot: RemoteGroupsSnapshot = {
@@ -150,7 +149,11 @@ describe("remote client cache freshness", () => {
   it("deduplicates simultaneous requests within one account", async () => {
     const load = vi.fn().mockResolvedValue({ value: "fresh" });
     const first = dedupeRemoteRequest({ key: "timer", load, userId: "viewer" });
-    const second = dedupeRemoteRequest({ key: "timer", load, userId: "viewer" });
+    const second = dedupeRemoteRequest({
+      key: "timer",
+      load,
+      userId: "viewer",
+    });
 
     expect(first).toBe(second);
     await expect(first).resolves.toEqual({ value: "fresh" });

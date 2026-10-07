@@ -34,6 +34,13 @@ export type UnitCohortMember = {
   studyIcon: string;
 };
 
+export type UnitLeaderboardEntry = {
+  id: string;
+  name: string;
+  studyIcon: string | null;
+  weekSeconds: number;
+};
+
 export type UnitSuggestion = {
   code: string;
   nickname: string | null;
@@ -191,4 +198,22 @@ export function uniqueUnitSuggestions(suggestions: UnitSuggestion[]) {
   return Array.from(byCode.values()).sort((first, second) =>
     first.code.localeCompare(second.code),
   );
+}
+
+export const MAX_UNITS_PER_PERIOD = 5;
+
+// True when adding this unit would exceed the per-period cap. Re-adding a
+// unit you're already in (e.g. to change its nickname) is always allowed.
+export function isUnitPeriodFull(
+  enrollments: Pick<UnitEnrollment, "code" | "period" | "year">[],
+  target: Pick<UnitEnrollment, "code" | "period" | "year">,
+) {
+  const samePeriod = enrollments.filter(
+    (enrollment) =>
+      enrollment.year === target.year && enrollment.period === target.period,
+  );
+  if (samePeriod.some((enrollment) => enrollment.code === target.code)) {
+    return false;
+  }
+  return samePeriod.length >= MAX_UNITS_PER_PERIOD;
 }

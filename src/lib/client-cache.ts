@@ -144,7 +144,6 @@ export function invalidateRemoteCachesForTable(table?: string) {
     table === "groups" ||
     table === "group_members" ||
     table === "group_invites" ||
-    table === "super_nudge_requests" ||
     table === "user_pinned_groups" ||
     table === "user_favourite_friends"
   ) {

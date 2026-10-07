@@ -9,6 +9,7 @@ import {
   type UnitCohortMember,
   type UnitEnrollment,
   uniqueUnitSuggestions,
+  type UnitLeaderboardEntry,
 } from "@/lib/units";
 import { invalidateRemoteCachesForTable } from "@/lib/client-cache";
 import { getRemoteUserId } from "./shared";
@@ -237,8 +238,7 @@ export async function fetchRemoteUnitState(
   const subjectSuggestions = subjectRows.map((subject) => ({
     code: subject.code,
     nickname:
-      subject.name &&
-      subject.name.toUpperCase() !== subject.code.toUpperCase()
+      subject.name && subject.name.toUpperCase() !== subject.code.toUpperCase()
         ? subject.name
         : null,
   }));
@@ -475,4 +475,25 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
+}
+
+export async function fetchRemoteUnitWeeklyLeaderboard({
+  offeringId,
+  supabase,
+}: {
+  offeringId: string;
+  supabase: SupabaseClient;
+}): Promise<UnitLeaderboardEntry[]> {
+  const { data, error } = await supabase.rpc("get_unit_weekly_leaderboard", {
+    input_offering_id: offeringId,
+  });
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => ({
+    id: row.user_id,
+    name: row.display_name || row.username || "Student",
+    studyIcon: row.study_icon,
+    weekSeconds: Number(row.week_seconds) || 0,
+  }));
 }

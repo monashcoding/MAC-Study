@@ -8,14 +8,18 @@ import {
   useRef,
   useState,
 } from "react";
+import Image from "next/image";
 import type { AppSupabaseClient as SupabaseClient } from "@/lib/supabase/types";
 import {
   ArrowLeft,
   BookOpen,
+  CircleHelp,
+  History,
   BriefcaseBusiness,
   Check,
   Info,
   Link2,
+  LogOut,
   ListFilter,
   LoaderCircle,
   Plus,
@@ -23,6 +27,7 @@ import {
   Send,
   UserPlus,
   UsersRound,
+  Timer,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
@@ -38,6 +43,7 @@ import {
   addRemoteFriend,
   fetchRemoteStudyGroups,
   fetchRemoteUnitCohort,
+  fetchRemoteUnitWeeklyLeaderboard,
   fetchRemoteUnitState,
   inviteRemoteFriendToGroup,
   leaveRemoteUnitEnrollment,
@@ -70,11 +76,19 @@ import {
   type SpecialUnit,
   type TeachingPeriod,
   type UnitCohortMember,
+  type UnitLeaderboardEntry,
   type UnitEnrollment,
   type UnitEnrollmentFilter,
+  isUnitPeriodFull,
+  MAX_UNITS_PER_PERIOD,
 } from "@/lib/units";
 import { cn } from "@/lib/utils";
-import { ListSkeleton } from "@/components/ui/skeleton";
+import {
+  ListSkeleton,
+  Skeleton,
+  SkeletonGroup,
+} from "@/components/ui/skeleton";
+import { getMascotSrc } from "@/lib/mascots";
 
 type CohortScope = "all" | "friends";
 const UNLINKED_SUBJECT_VALUE = "__unlinked__";
@@ -579,6 +593,8 @@ export function UnitsDashboard({
           }
           onScopeChange={setScope}
           onSearchChange={setSearch}
+          currentUserId={userId}
+          remoteClient={dataMode === "remote" ? remoteClient : null}
           sentFriendRequestIds={sentFriendRequestIds}
           scope={scope}
           search={search}
@@ -640,9 +656,12 @@ export function UnitsDashboard({
         ) : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="truncate text-base font-semibold sm:text-lg">
-                Current and upcoming
-              </h2>
+              <div className="flex min-w-0 items-center gap-2">
+                <h2 className="hidden truncate text-lg font-semibold lg:block">
+                  Your unit groups
+                </h2>
+                <UnitsHelpButton />
+              </div>
               <div className="ml-auto flex shrink-0 items-center gap-2">
                 {canFilter ? (
                   <button
@@ -658,7 +677,7 @@ export function UnitsDashboard({
                     type="button"
                   >
                     <ListFilter aria-hidden size={17} />
-                    <span className="hidden sm:inline">Filter</span>
+                    <span>Filter</span>
                     {activeFilterCount ? (
                       <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] px-1 text-[11px] font-bold text-[#141414]">
                         {activeFilterCount}
@@ -681,10 +700,9 @@ export function UnitsDashboard({
             </div>
 
             {current.length ? (
-              <EnrollmentSection
+              <TermGroupedEnrollments
                 enrollments={current}
                 onOpen={setSelectedOfferingId}
-                title={null}
               />
             ) : null}
 
@@ -700,15 +718,6 @@ export function UnitsDashboard({
                 </button>
               </div>
             ) : null}
-
-            <p className="flex max-w-xl items-center gap-2 text-sm leading-5 text-[var(--color-text-muted)]">
-              <Info
-                aria-hidden
-                className="shrink-0 text-[var(--color-mac-yellow)]"
-                size={16}
-              />
-              Open a unit to find classmates in the same cohort.
-            </p>
           </>
         )}
       </section>
@@ -716,16 +725,24 @@ export function UnitsDashboard({
       {feedback ? <Feedback message={feedback} /> : null}
 
       {dataMode !== "loading" && past.length ? (
-        <EnrollmentSection
-          enrollments={past}
-          onOpen={setSelectedOfferingId}
-          title="Past units"
-        />
+        <section className="space-y-4 border-t border-[rgb(255_255_255/0.08)] pt-6">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-[var(--color-text-muted)]">
+            <History aria-hidden size={18} />
+            Past units
+            <span className="text-sm font-medium">({past.length})</span>
+          </h2>
+          <TermGroupedEnrollments
+            enrollments={past}
+            muted
+            onOpen={setSelectedOfferingId}
+          />
+        </section>
       ) : null}
 
       {isAdding ? (
         <AddUnitDialog
           initialSpecialUnit={selectedSpecialUnit}
+          enrollments={unitState.enrollments}
           isSaving={busyKey === "add-unit"}
           onAdd={(input) => void addEnrollment(input)}
           onClose={() => {
@@ -867,59 +884,143 @@ function UnitsLoadingState() {
   );
 }
 
-function EnrollmentSection({
+// One heading per teaching period (e.g. "Semester 1 2026"), in list order.
+function groupEnrollmentsByTerm(enrollments: UnitEnrollment[]) {
+  const groups: {
+    enrollments: UnitEnrollment[];
+    key: string;
+    label: string;
+  }[] = [];
+
+  enrollments.forEach((enrollment) => {
+    const key = `${enrollment.year}:${enrollment.period}`;
+    const group = groups.find((item) => item.key === key);
+    if (group) {
+      group.enrollments.push(enrollment);
+    } else {
+      groups.push({
+        enrollments: [enrollment],
+        key,
+        label: `${getTeachingPeriodLabel(enrollment.period)} ${enrollment.year}`,
+      });
+    }
+  });
+
+  return groups;
+}
+
+function UnitsHelpButton() {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    function close(event: PointerEvent | KeyboardEvent) {
+      if (
+        event instanceof KeyboardEvent
+          ? event.key === "Escape"
+          : !containerRef.current?.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [isOpen]);
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        aria-controls="units-help"
+        aria-expanded={isOpen}
+        aria-label="How unit groups work"
+        className={cn(
+          "mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md border transition lg:h-9 lg:w-9",
+          isOpen
+            ? "border-[rgb(255_227_48/0.46)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
+            : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]",
+        )}
+        onClick={() => setIsOpen((current) => !current)}
+        type="button"
+      >
+        <CircleHelp aria-hidden size={17} />
+      </button>
+      {isOpen ? (
+        <p
+          className="absolute left-0 top-full z-20 mt-2 w-64 rounded-md border border-[rgb(255_255_255/0.1)] bg-[var(--color-surface)] px-3 py-2.5 text-sm leading-5 text-[var(--color-text)] shadow-[0_16px_34px_rgb(0_0_0/0.4)]"
+          id="units-help"
+          role="status"
+        >
+          Open a unit to find classmates in the same cohort.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function TermGroupedEnrollments({
   enrollments,
+  muted = false,
   onOpen,
-  title,
 }: {
   enrollments: UnitEnrollment[];
+  muted?: boolean;
   onOpen: (offeringId: string) => void;
-  title: string | null;
 }) {
   return (
-    <section className="space-y-3">
-      {title ? <h3 className="text-lg font-semibold">{title}</h3> : null}
-      {enrollments.length ? (
-        <PaginatedList
-          className="grid gap-3 lg:grid-cols-2"
-          items={enrollments}
-          pageSize={10}
-          renderItem={(enrollment) => (
-            <button
-              className="mac-focus grid min-h-24 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.035)] p-4 text-left transition hover:border-[rgb(255_227_48/0.35)] hover:bg-[rgb(255_255_255/0.05)]"
-              key={enrollment.offeringId}
-              onClick={() => onOpen(enrollment.offeringId)}
-              type="button"
-            >
-              <span className="flex h-11 w-11 items-center justify-center rounded-md bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]">
-                <BookOpen aria-hidden size={19} />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-lg font-semibold">
-                  {enrollment.code}
+    <div className="space-y-5">
+      {groupEnrollmentsByTerm(enrollments).map((term) => (
+        <section className="space-y-2.5" key={term.key}>
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-muted)]">
+            {term.label}
+            <span className="h-px flex-1 bg-[rgb(255_255_255/0.07)]" />
+          </h3>
+          <PaginatedList
+            className="grid gap-1.5 lg:grid-cols-2 lg:gap-2"
+            items={term.enrollments}
+            pageSize={10}
+            renderItem={(enrollment) => (
+              <button
+                className={cn(
+                  "mac-focus grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-[rgb(255_255_255/0.07)] bg-[rgb(255_255_255/0.035)] px-3 py-2.5 text-left transition hover:border-[rgb(255_227_48/0.35)] hover:bg-[rgb(255_255_255/0.05)]",
+                  muted && "opacity-70 hover:opacity-100",
+                )}
+                key={enrollment.offeringId}
+                onClick={() => onOpen(enrollment.offeringId)}
+                type="button"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]">
+                  <BookOpen aria-hidden size={17} />
                 </span>
-                {enrollment.nickname ? (
-                  <span className="mt-1 block truncate text-sm text-[var(--color-text-muted)]">
-                    {enrollment.nickname}
+                <span className="min-w-0">
+                  <span className="block text-base font-semibold leading-tight">
+                    {enrollment.code}
                   </span>
-                ) : null}
-              </span>
-              <span className="text-right text-xs font-semibold text-[var(--color-text-muted)]">
-                <span className="block">{enrollment.year}</span>
-                <span className="mt-1 block">
-                  {getTeachingPeriodLabel(enrollment.period)}
+                  {enrollment.nickname ? (
+                    <span className="mt-0.5 block truncate text-sm text-[var(--color-text-muted)]">
+                      {enrollment.nickname}
+                    </span>
+                  ) : null}
                 </span>
-                <span className="mt-2 flex items-center justify-end gap-1 font-medium text-[var(--color-text-muted)]">
-                  <UsersRound aria-hidden size={13} />
-                  {getUnitMemberCountLabel(enrollment.memberCount)}
+                <span className="text-right text-xs font-semibold text-[var(--color-text-muted)]">
+                  <span className="flex items-center justify-end gap-1 font-medium text-[var(--color-text-muted)]">
+                    <UsersRound aria-hidden size={13} />
+                    {getUnitMemberCountLabel(enrollment.memberCount)}
+                  </span>
                 </span>
-              </span>
-            </button>
-          )}
-          resetKey={title ?? "current-units"}
-        />
-      ) : null}
-    </section>
+              </button>
+            )}
+            resetKey={term.key}
+          />
+        </section>
+      ))}
+    </div>
   );
 }
 
@@ -1020,6 +1121,7 @@ function OfferingDetail({
   busyKey,
   cohort,
   cohortLoading,
+  currentUserId,
   enrollment,
   feedback,
   manageableGroups,
@@ -1030,6 +1132,7 @@ function OfferingDetail({
   onLinkSubject,
   onScopeChange,
   onSearchChange,
+  remoteClient,
   scope,
   search,
   sentFriendRequestIds,
@@ -1039,6 +1142,7 @@ function OfferingDetail({
   busyKey: string | null;
   cohort: UnitCohortMember[];
   cohortLoading: boolean;
+  currentUserId: string | null;
   enrollment: UnitEnrollment;
   feedback: string | null;
   manageableGroups: SocialGroup[];
@@ -1049,6 +1153,7 @@ function OfferingDetail({
   onLinkSubject: (subjectId: string, offeringId: string | null) => void;
   onScopeChange: (scope: CohortScope) => void;
   onSearchChange: (value: string) => void;
+  remoteClient: SupabaseClient | null;
   scope: CohortScope;
   search: string;
   sentFriendRequestIds: string[];
@@ -1057,123 +1162,177 @@ function OfferingDetail({
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
   const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
 
+  const linkedSubject =
+    subjects.find(
+      (subject) => subject.unitOfferingId === enrollment.offeringId,
+    ) ?? null;
+  const leaveButton = (
+    <button
+      className="mac-focus -ml-2 inline-flex h-9 items-center gap-2 rounded-lg px-2 text-[13px] font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-45"
+      disabled={busyKey === `leave:${enrollment.offeringId}`}
+      onClick={() => setIsLeaveDialogOpen(true)}
+      type="button"
+    >
+      <LogOut aria-hidden size={15} />
+      Leave unit
+    </button>
+  );
+
   return (
-    <div className="space-y-5">
-      <section className="space-y-3">
-        <div className="grid gap-2 sm:flex sm:items-center">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <button
-              aria-label="Back to units"
-              className="mac-focus -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
-              onClick={onBack}
-              type="button"
-            >
-              <ArrowLeft aria-hidden size={19} />
-            </button>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-[var(--color-text-muted)]">
-                {enrollment.year} ·{" "}
-                {getTeachingPeriodShortLabel(enrollment.period)}
-              </p>
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--color-text-muted)]">
+        <button
+          aria-label="Back to units"
+          className="mac-focus -ml-2 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.06)]"
+          onClick={onBack}
+          type="button"
+        >
+          <ArrowLeft aria-hidden size={18} />
+        </button>
+        Units
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start lg:gap-7">
+        <aside className="flex flex-col gap-7 lg:gap-11">
+          <section className="rounded-xl border border-[rgb(255_227_48/0.24)] bg-[#1d1c16] px-4 pb-1 pt-4 lg:px-5 lg:pb-4 lg:pt-5">
+            <span className="inline-flex h-6 items-center rounded-full bg-[rgb(255_255_255/0.06)] px-2.5 text-xs font-semibold text-[#cfcfc6]">
+              {enrollment.year} ·{" "}
+              {getTeachingPeriodShortLabel(enrollment.period)}
+            </span>
+            <h2 className="mt-3 text-[28px] font-semibold leading-[1.1] tracking-[-0.03em] lg:text-[32px]">
+              {enrollment.code}
+            </h2>
+            <p className="mb-4 mt-1 text-sm text-[var(--color-text-muted)]">
+              {enrollment.nickname ? `${enrollment.nickname} · ` : ""}
+              {getUnitMemberCountLabel(enrollment.memberCount)}
+            </p>
+            <div className="flex items-center gap-3 border-t border-[#2a2a26] py-3.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[rgb(255_227_48/0.11)] text-[var(--color-mac-yellow)]">
+                <Timer aria-hidden size={17} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">
+                  {linkedSubject ? "Linked to timer" : "Link to timer"}
+                </span>
+                <span className="block text-xs leading-4 text-[var(--color-text-muted)]">
+                  {linkedSubject
+                    ? `Time on your ${linkedSubject.name} subject counts here.`
+                    : `Pick a subject to count towards ${enrollment.code}.`}
+                </span>
+              </div>
+              {linkedSubject ? (
+                <button
+                  className="mac-focus inline-flex h-9 shrink-0 items-center rounded-lg border border-[var(--color-border)] px-3 text-[13px] font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.04)]"
+                  onClick={() => setIsLinkDialogOpen(true)}
+                  type="button"
+                >
+                  Change
+                </button>
+              ) : (
+                <button
+                  className="mac-focus inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--color-mac-yellow)] px-3 text-[13px] font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.98]"
+                  onClick={() => setIsLinkDialogOpen(true)}
+                  type="button"
+                >
+                  <Link2 aria-hidden size={15} />
+                  Link
+                </button>
+              )}
+            </div>
+            <div className="hidden border-t border-[#2a2a26] pt-3.5 lg:block">
+              {leaveButton}
+            </div>
+          </section>
+
+          <UnitWeeklyLeaderboard
+            code={enrollment.code}
+            currentUserId={currentUserId}
+            offeringId={enrollment.offeringId}
+            remoteClient={remoteClient}
+          />
+        </aside>
+
+        <div className="min-w-0 space-y-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <label className="flex h-10 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 transition focus-within:border-[rgb(255_227_48/0.6)]">
+              <Search
+                aria-hidden
+                className="text-[var(--color-text-muted)]"
+                size={16}
+              />
+              <input
+                aria-label="Search people in this unit"
+                className="mac-focus min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--color-text-muted)]"
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Search students"
+                type="search"
+                value={search}
+              />
+            </label>
+            <div className="flex items-center gap-5 border-b border-[var(--color-border)] lg:border-0">
+              {(["all", "friends"] as const).map((item) => (
+                <button
+                  className={cn(
+                    "mac-focus relative h-10 shrink-0 px-0.5 text-sm font-medium capitalize transition",
+                    scope === item
+                      ? "font-semibold text-[var(--color-mac-yellow)] after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-[var(--color-mac-yellow)]"
+                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+                  )}
+                  key={item}
+                  onClick={() => onScopeChange(item)}
+                  type="button"
+                >
+                  {item === "all" ? "All" : item}
+                </button>
+              ))}
             </div>
           </div>
-          <div className="flex items-center gap-1 sm:ml-auto">
-            <button
-              className="mac-focus inline-flex h-10 items-center gap-1.5 rounded-md border border-[rgb(255_227_48/0.34)] px-2.5 text-xs font-semibold text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_227_48/0.07)]"
-              onClick={() => setIsLinkDialogOpen(true)}
-              type="button"
-            >
-              <Link2 aria-hidden size={14} />
-              Link to timer
-            </button>
-            <button
-              className="mac-focus inline-flex h-10 items-center rounded-md px-2 text-xs font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-45"
-              disabled={busyKey === `leave:${enrollment.offeringId}`}
-              onClick={() => setIsLeaveDialogOpen(true)}
-              type="button"
-            >
-              Leave
-            </button>
-          </div>
-        </div>
 
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <label className="flex h-10 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 transition focus-within:border-[rgb(255_227_48/0.6)]">
-            <Search
-              aria-hidden
-              className="text-[var(--color-text-muted)]"
-              size={16}
-            />
-            <input
-              aria-label="Search people in this unit"
-              className="mac-focus min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--color-text-muted)]"
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search students"
-              type="search"
-              value={search}
-            />
-          </label>
-          <div className="flex items-center gap-5 border-b border-[var(--color-border)] lg:border-0">
-            {(["all", "friends"] as const).map((item) => (
-              <button
-                className={cn(
-                  "mac-focus relative h-10 shrink-0 px-0.5 text-sm font-medium capitalize transition",
-                  scope === item
-                    ? "font-semibold text-[var(--color-mac-yellow)] after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-[var(--color-mac-yellow)]"
-                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
-                )}
-                key={item}
-                onClick={() => onScopeChange(item)}
-                type="button"
-              >
-                {item === "all" ? "All" : item}
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
+          {feedback ? <Feedback message={feedback} /> : null}
 
-      {feedback ? <Feedback message={feedback} /> : null}
-
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-base font-semibold">Students</h3>
-          <span className="text-xs text-[var(--color-text-muted)]">
-            {cohort.length} {cohort.length === 1 ? "member" : "members"}
-          </span>
-        </div>
-        {cohortLoading ? (
-          <ListSkeleton
-            avatar
-            className="grid gap-2 lg:grid-cols-2 lg:gap-x-6"
-            count={4}
-            label="Loading cohort"
-          />
-        ) : cohort.length ? (
-          <PaginatedList
-            className="grid lg:grid-cols-2 lg:gap-x-6"
-            items={cohort}
-            pageSize={12}
-            renderItem={(member) => (
-              <CohortMemberCard
-                allGroups={allGroups}
-                busyKey={busyKey}
-                key={member.id}
-                manageableGroups={manageableGroups}
-                member={member}
-                onAddFriend={onAddFriend}
-                onAddToGroup={onAddToGroup}
-                requested={sentFriendRequestIds.includes(member.id)}
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-base font-semibold">Students</h3>
+              <span className="text-xs text-[var(--color-text-muted)]">
+                {cohort.length} {cohort.length === 1 ? "member" : "members"}
+              </span>
+            </div>
+            {cohortLoading ? (
+              <ListSkeleton
+                avatar
+                className="grid gap-2 lg:grid-cols-2 lg:gap-x-6"
+                count={4}
+                label="Loading cohort"
               />
+            ) : cohort.length ? (
+              <PaginatedList
+                className="grid lg:grid-cols-2 lg:gap-x-6"
+                items={cohort}
+                pageSize={12}
+                renderItem={(member) => (
+                  <CohortMemberCard
+                    allGroups={allGroups}
+                    busyKey={busyKey}
+                    key={member.id}
+                    manageableGroups={manageableGroups}
+                    member={member}
+                    onAddFriend={onAddFriend}
+                    onAddToGroup={onAddToGroup}
+                    requested={sentFriendRequestIds.includes(member.id)}
+                  />
+                )}
+                resetKey={`${enrollment.offeringId}:${scope}:${search}`}
+              />
+            ) : (
+              <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">
+                No students found.
+              </p>
             )}
-            resetKey={`${enrollment.offeringId}:${scope}:${search}`}
-          />
-        ) : (
-          <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">
-            No students found.
-          </p>
-        )}
-      </section>
+          </section>
+
+          <div className="lg:hidden">{leaveButton}</div>
+        </div>
+      </div>
 
       {isLinkDialogOpen ? (
         <StudyTimerLinkDialog
@@ -1198,6 +1357,151 @@ function OfferingDetail({
       ) : null}
     </div>
   );
+}
+
+const LEADERBOARD_TABLES = new Set([
+  "study_sessions",
+  "subjects",
+  "unit_enrolments",
+]);
+
+function UnitWeeklyLeaderboard({
+  code,
+  currentUserId,
+  offeringId,
+  remoteClient,
+}: {
+  code: string;
+  currentUserId: string | null;
+  offeringId: string;
+  remoteClient: SupabaseClient | null;
+}) {
+  const [entries, setEntries] = useState<UnitLeaderboardEntry[] | null>(null);
+
+  useEffect(() => {
+    if (!remoteClient) return;
+
+    let cancelled = false;
+    const load = () =>
+      fetchRemoteUnitWeeklyLeaderboard({ offeringId, supabase: remoteClient })
+        .then((rows) => {
+          if (!cancelled) setEntries(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setEntries([]);
+        });
+
+    void load();
+    const unsubscribe = subscribeToRemoteTableChanges((table) => {
+      if (LEADERBOARD_TABLES.has(table)) void load();
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [offeringId, remoteClient]);
+
+  const ranked = (entries ?? []).filter((entry) => entry.weekSeconds > 0);
+  const topSeconds = ranked[0]?.weekSeconds ?? 0;
+  const myIndex = ranked.findIndex((entry) => entry.id === currentUserId);
+  // Desktop shows the top 5, swapping 5th for you when you're further down.
+  const desktopRows =
+    myIndex >= 5
+      ? [
+          ...ranked
+            .slice(0, 4)
+            .map((entry, index) => ({ entry, rank: index + 1 })),
+          { entry: ranked[myIndex], rank: myIndex + 1 },
+        ]
+      : ranked.slice(0, 5).map((entry, index) => ({ entry, rank: index + 1 }));
+  const isLoading = Boolean(remoteClient) && entries === null;
+
+  return (
+    <section className="relative rounded-[10px] border border-[#2a2a26] bg-[rgb(255_255_255/0.015)] p-4">
+      <Image
+        alt=""
+        className="pointer-events-none absolute -top-10 right-1.5 h-[76px] w-[76px] object-contain"
+        height={76}
+        src={getMascotSrc(ranked.length ? "max-arms-up" : "max-arms-down")}
+        width={76}
+      />
+      <h3 className="pr-20 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[var(--color-mac-yellow)]">
+        This week in {code}
+      </h3>
+      {isLoading ? (
+        <SkeletonGroup
+          className="mt-3.5 grid gap-3"
+          label="Loading leaderboard"
+        >
+          {[0, 1, 2].map((index) => (
+            <Skeleton className="h-7 w-full" key={index} />
+          ))}
+        </SkeletonGroup>
+      ) : ranked.length ? (
+        <ol className="mt-3.5 grid gap-3">
+          {desktopRows.map(({ entry, rank }, index) => {
+            const isYou = entry.id === currentUserId;
+
+            return (
+              <li
+                className={cn(
+                  "grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2.5",
+                  // Mobile keeps it short: top 3 only.
+                  index >= 3 && "hidden lg:grid",
+                )}
+                key={entry.id}
+              >
+                <span className="text-xs font-bold tabular-nums text-[var(--color-text-muted)]">
+                  {rank}
+                </span>
+                <div className="min-w-0">
+                  <span
+                    className={cn(
+                      "block truncate text-[13px] font-semibold",
+                      isYou
+                        ? "text-[var(--color-mac-yellow)]"
+                        : "text-[var(--color-text)]",
+                    )}
+                  >
+                    {entry.name}
+                  </span>
+                  <span className="mt-1.5 block h-1 rounded-full bg-[rgb(255_255_255/0.07)]">
+                    <span
+                      className={cn(
+                        "block h-full rounded-full",
+                        isYou
+                          ? "bg-[var(--color-mac-yellow)]"
+                          : "bg-[rgb(255_255_255/0.28)]",
+                      )}
+                      style={{
+                        width: `${Math.max(4, (entry.weekSeconds / (topSeconds || 1)) * 100)}%`,
+                      }}
+                    />
+                  </span>
+                </div>
+                <span className="font-mono text-xs font-semibold tabular-nums text-[var(--color-text-muted)]">
+                  {formatStudyDuration(entry.weekSeconds)}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="mt-3 pr-16 text-[13px] leading-5 text-[var(--color-text-muted)]">
+          No study logged for {code} yet this week. Link a subject and start a
+          session to lead the board.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function formatStudyDuration(seconds: number) {
+  const totalMinutes = Math.floor(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
 function StudyTimerLinkDialog({
@@ -1361,7 +1665,7 @@ function CohortMemberCard({
     .filter((name): name is string => Boolean(name));
 
   return (
-    <article className="grid min-h-16 grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-x-2.5 gap-y-2.5 border-b border-[rgb(255_255_255/0.08)] py-3 sm:grid-cols-[2.25rem_minmax(0,1fr)_auto] sm:gap-y-0 sm:py-2.5">
+    <article className="grid min-h-14 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 border-b border-[rgb(255_255_255/0.08)] py-2.5">
       <span
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-[#141414]"
         style={{ backgroundColor: member.color }}
@@ -1404,7 +1708,7 @@ function CohortMemberCard({
       {!member.isFriend ? (
         <button
           className={cn(
-            "mac-focus col-span-2 inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold disabled:opacity-60 sm:col-span-1 sm:w-auto",
+            "mac-focus inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold disabled:opacity-60",
             requested
               ? "border border-[var(--color-border)] text-[var(--color-text-muted)]"
               : "bg-[var(--color-mac-yellow)] text-[#141414]",
@@ -1419,7 +1723,7 @@ function CohortMemberCard({
       ) : availableGroups.length ? (
         <CustomSelect
           ariaLabel={`Add ${member.displayName} to a group`}
-          className="col-span-2 w-full sm:col-span-1 sm:w-[10rem]"
+          className="w-[7.75rem] shrink-0"
           disabled={busyKey === `group:${member.id}`}
           onChange={(groupId) => onAddToGroup(member.id, groupId)}
           options={availableGroups.map((group) => ({
@@ -1434,7 +1738,7 @@ function CohortMemberCard({
       ) : (
         <span
           className={cn(
-            "col-span-2 inline-flex h-8 items-center gap-1 text-[11px] font-medium sm:col-span-1",
+            "inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-medium",
             manageableGroups.length
               ? "text-[var(--color-success)]"
               : "text-[var(--color-text-muted)]",
@@ -1454,6 +1758,7 @@ function CohortMemberCard({
 }
 
 function AddUnitDialog({
+  enrollments,
   initialSpecialUnit,
   isSaving,
   onAdd,
@@ -1462,6 +1767,7 @@ function AddUnitDialog({
   specialUnits,
   suggestions,
 }: {
+  enrollments: UnitEnrollment[];
   initialSpecialUnit: SpecialUnit | null;
   isSaving: boolean;
   onAdd: (input: {
@@ -1507,6 +1813,11 @@ function AddUnitDialog({
     })),
   );
   const offeringValue = `${year}:${period}`;
+  const periodFull = isUnitPeriodFull(enrollments, {
+    code: normalizedCode,
+    period,
+    year,
+  });
 
   function updateCode(value: string) {
     const nextCode = normalizeUnitCode(value);
@@ -1537,7 +1848,7 @@ function AddUnitDialog({
       footer={
         <button
           className="mac-focus inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] disabled:opacity-45"
-          disabled={!valid || isSaving}
+          disabled={!valid || isSaving || periodFull}
           onClick={() =>
             onAdd({
               code: normalizedCode,
@@ -1625,6 +1936,15 @@ function AddUnitDialog({
           options={offeringOptions}
           value={offeringValue}
         />
+        {periodFull ? (
+          <p
+            className="mt-2 text-sm font-normal text-[var(--color-danger)]"
+            role="alert"
+          >
+            You already have {MAX_UNITS_PER_PERIOD} units in{" "}
+            {getTeachingPeriodLabel(period)} {year}. Leave one to add another.
+          </p>
+        ) : null}
       </div>
 
       {valid ? (

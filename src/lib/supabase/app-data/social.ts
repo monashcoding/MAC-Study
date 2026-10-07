@@ -22,7 +22,6 @@ import type {
   RemoteFriendsSnapshot,
   RemoteGroupInvite,
   RemoteGroupsSnapshot,
-  RemoteSuperNudge,
 } from "./types";
 
 const SOCIAL_PAGE_SIZE = 100;
@@ -107,12 +106,6 @@ type GroupInviteRow = Omit<
   username: string | null;
 };
 
-type SuperNudgeResult =
-  Database["public"]["Functions"]["list_active_super_nudges"]["Returns"][number];
-type SuperNudgeRow = Omit<SuperNudgeResult, "status"> & {
-  status: "active" | "pending";
-};
-
 export async function fetchRemoteFriendsSnapshot(
   supabase: SupabaseClient,
 ): Promise<RemoteFriendsSnapshot | null> {
@@ -124,7 +117,6 @@ export async function fetchRemoteFriendsSnapshot(
     groupsResult,
     candidatesResult,
     requestsResult,
-    nudgesResult,
     preferences,
   ] = await Promise.all([
     supabase.rpc("list_social_friends"),
@@ -134,10 +126,6 @@ export async function fetchRemoteFriendsSnapshot(
       result_offset: 0,
     }),
     supabase.rpc("list_friend_requests_page", {
-      result_limit: SOCIAL_PAGE_SIZE,
-      result_offset: 0,
-    }),
-    supabase.rpc("list_active_super_nudges", {
       result_limit: SOCIAL_PAGE_SIZE,
       result_offset: 0,
     }),
@@ -168,18 +156,12 @@ export async function fetchRemoteFriendsSnapshot(
     : ((requestsResult.data ?? []) as FriendRequestRow[]).map(
         friendRequestFromRow,
       );
-  const superNudges = nudgesResult.error
-    ? []
-    : ((nudgesResult.data ?? []) as SuperNudgeRow[]).map((request) =>
-        superNudgeFromRow(request, userId),
-      );
 
   return {
     availableFriends,
     currentUserId: userId,
     friendRequests,
     socialState,
-    superNudges,
   };
 }
 
@@ -400,19 +382,6 @@ function socialFriendFromProfile(row: {
     studying: false,
     subjectSeconds: {},
     weekSeconds: 0,
-  };
-}
-
-function superNudgeFromRow(
-  row: SuperNudgeRow,
-  userId: string,
-): RemoteSuperNudge {
-  return {
-    createdAt: row.created_at,
-    direction: row.sender_id === userId ? "outgoing" : "incoming",
-    friendId: row.sender_id === userId ? row.recipient_id : row.sender_id,
-    id: row.request_id,
-    status: row.status,
   };
 }
 

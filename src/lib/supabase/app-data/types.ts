@@ -1,9 +1,5 @@
 import type { SocialFriend, SocialState } from "@/lib/social-state";
-import type {
-  SpecialUnit,
-  UnitEnrollment,
-  UnitSuggestion,
-} from "@/lib/units";
+import type { SpecialUnit, UnitEnrollment, UnitSuggestion } from "@/lib/units";
 
 export type RemoteSubject = {
   id: string;
@@ -53,7 +49,6 @@ export type RemoteSocialStateSnapshot = {
 export type RemoteFriendsSnapshot = RemoteSocialStateSnapshot & {
   availableFriends: RemoteFriendCandidate[];
   friendRequests: RemoteFriendRequest[];
-  superNudges: RemoteSuperNudge[];
 };
 
 export type RemoteGroupsSnapshot = RemoteSocialStateSnapshot & {
@@ -81,14 +76,6 @@ export type RemoteGroupInvite = {
   };
   id: string;
   user: SocialFriend;
-};
-
-export type RemoteSuperNudge = {
-  createdAt: string;
-  direction: "incoming" | "outgoing";
-  friendId: string;
-  id: string;
-  status: "active" | "pending";
 };
 
 export type RemoteNotificationPreferences = {

@@ -354,11 +354,6 @@ export function subscribeToRemoteAppChanges(
     )
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "super_nudge_requests" },
-      () => handleChange("super_nudge_requests"),
-    )
-    .on(
-      "postgres_changes",
       { event: "*", schema: "public", table: "group_invites" },
       () => handleChange("group_invites"),
     )
@@ -450,4 +445,50 @@ function appNotificationFromRow(
     title: row.title,
     type: row.type,
   };
+}
+
+export async function fetchRemoteMessageMutes({
+  supabase,
+}: {
+  supabase: SupabaseClient;
+}) {
+  const currentUserId = await getRemoteUserId();
+  if (!currentUserId) return [];
+
+  const { data, error } = await supabase
+    .from("user_message_mutes")
+    .select("muted_user_id")
+    .eq("user_id", currentUserId);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => row.muted_user_id);
+}
+
+export async function setRemoteMessageMute({
+  muted,
+  supabase,
+  userId,
+}: {
+  muted: boolean;
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const currentUserId = await getRemoteUserId();
+  if (!currentUserId) return;
+
+  const { error } = muted
+    ? await supabase
+        .from("user_message_mutes")
+        .upsert(
+          { muted_user_id: userId, user_id: currentUserId },
+          { ignoreDuplicates: true, onConflict: "user_id,muted_user_id" },
+        )
+    : await supabase
+        .from("user_message_mutes")
+        .delete()
+        .eq("user_id", currentUserId)
+        .eq("muted_user_id", userId);
+
+  if (error) throw error;
 }

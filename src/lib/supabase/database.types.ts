@@ -648,6 +648,17 @@ isOneToOne: true
                     "created_at"?: string,"group_id"?: string,"user_id"?: string
                   }
                   Relationships: []
+                },"user_message_mutes": {
+                  Row: {
+                    "created_at": string,"muted_user_id": string,"user_id": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"muted_user_id": string,"user_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"muted_user_id"?: string,"user_id"?: string
+                  }
+                  Relationships: []
                 },"user_nudge_mutes": {
                   Row: {
                     "created_at": string,"group_id": string | null,"id": string,"muted_user_id": string,"user_id": string
@@ -745,6 +756,11 @@ isOneToOne: true
 "get_unit_cohort_v2":
 { Args: { "input_offering_id": string }; Returns: {
               "display_name": string,"is_friend": boolean,"mutual_friend_count": number,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
+            }[]
+                           },
+"get_unit_weekly_leaderboard":
+{ Args: { "input_offering_id": string }; Returns: {
+              "display_name": string | null,"study_icon": string | null,"user_id": string,"username": string | null,"week_seconds": number
             }[]
                            },
 "invite_friend_to_group":

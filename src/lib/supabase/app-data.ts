@@ -17,7 +17,6 @@ export type {
   RemoteSocialStateSnapshot,
   RemoteStoredSession,
   RemoteSubject,
-  RemoteSuperNudge,
   RemoteTimerState,
   RemoteUnitState,
 } from "./app-data/types";
@@ -33,6 +32,7 @@ export {
 
 export {
   fetchRemoteUnitCohort,
+  fetchRemoteUnitWeeklyLeaderboard,
   fetchRemoteUnitState,
   leaveRemoteUnitEnrollment,
   requestRemoteSpecialUnit,
@@ -45,12 +45,10 @@ export {
   addRemoteFriend,
   fetchRemoteDirectMessageUnreadCount,
   removeRemoteFriend,
-  requestRemoteSuperNudge,
   sendRemoteFriendRequest,
   setRemoteFriendFavourite,
   updateRemoteFriendRequest,
   updateRemoteStudyIcon,
-  updateRemoteSuperNudge,
 } from "./app-data/friends";
 
 export {
@@ -86,6 +84,7 @@ export {
 
 export {
   fetchRemoteGlobalNudgeMutes,
+  fetchRemoteMessageMutes,
   fetchRemoteGroupNotificationSettings,
   fetchRemoteNotificationPreferences,
   fetchRemoteUserNudgeMute,
@@ -93,6 +92,7 @@ export {
   markRemoteAppNotificationRead,
   saveRemoteGroupNotificationSettings,
   sendRemoteNudge,
+  setRemoteMessageMute,
   setRemoteUserNudgeMute,
   subscribeToRemoteAppChanges,
   subscribeToRemoteAppNotifications,

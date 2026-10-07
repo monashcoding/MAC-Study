@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   BellOff,
   Check,
+  ChevronDown,
   Clock3,
   Copy,
   Crown,
@@ -601,7 +602,7 @@ export function GroupsDashboard({
     return (
       <div
         className={cn(
-          "grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-md border transition",
+          "grid grid-cols-[minmax(0,1fr)_auto] items-stretch rounded-md border transition",
           group.isPinned
             ? "border-[rgb(255_227_48/0.16)] bg-[rgb(255_227_48/0.035)] hover:border-[rgb(255_227_48/0.28)]"
             : "border-transparent bg-[rgb(255_255_255/0.035)] hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)]",
@@ -617,51 +618,52 @@ export function GroupsDashboard({
           type="button"
         >
           <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2">
-              <h3 className="truncate text-lg font-semibold">{group.name}</h3>
-              {groupUnreadCounts[group.id] ? (
-                <span
-                  aria-label={`${groupUnreadCounts[group.id]} unread chat messages`}
-                  className="inline-flex shrink-0 items-center gap-1 text-[var(--color-text-muted)]"
-                >
-                  <MessagesSquare aria-hidden size={15} />
-                  <UnreadBadge count={groupUnreadCounts[group.id]} />
-                </span>
-              ) : null}
-            </div>
+            <h3 className="truncate text-lg font-semibold">{group.name}</h3>
             <div className="mt-1 text-sm text-[var(--color-text-muted)]">
               <span>{activeNow} active</span>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-xl font-semibold tabular-nums">{memberCount}</p>
-            <p className="text-xs font-medium text-[var(--color-text-muted)]">
-              members
-            </p>
-          </div>
-        </button>
-        <button
-          aria-label={
-            group.isPinned ? `Unpin ${group.name}` : `Pin ${group.name}`
-          }
-          aria-pressed={Boolean(group.isPinned)}
-          className={cn(
-            "mac-focus mr-2 inline-flex h-11 w-11 items-center justify-center rounded-md transition active:scale-95",
-            group.isPinned
-              ? "text-[var(--color-mac-yellow)] hover:bg-[rgb(255_227_48/0.1)]"
-              : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
+          {/* Unread chat count, centred left of the pin/members column. */}
+          {groupUnreadCounts[group.id] ? (
+            <span
+              aria-label={`${groupUnreadCounts[group.id]} unread chat messages`}
+              className="inline-flex shrink-0 items-center gap-1 text-[var(--color-text-muted)]"
+            >
+              <MessagesSquare aria-hidden size={15} />
+              <UnreadBadge count={groupUnreadCounts[group.id]} />
+            </span>
+          ) : (
+            <span />
           )}
-          onClick={() => void toggleGroupPin(group)}
-          title={group.isPinned ? "Unpin" : "Pin to top"}
-          type="button"
-        >
-          <Pin
-            aria-hidden
-            className={group.isPinned ? "rotate-0" : "rotate-45"}
-            fill={group.isPinned ? "currentColor" : "none"}
-            size={17}
-          />
         </button>
+        {/* Pin top-right, member count bottom-right. */}
+        <div className="flex flex-col items-end justify-between pb-3 pr-2 pt-1.5 lg:pb-3.5 lg:pr-3">
+          <button
+            aria-label={
+              group.isPinned ? `Unpin ${group.name}` : `Pin ${group.name}`
+            }
+            aria-pressed={Boolean(group.isPinned)}
+            className={cn(
+              "mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md transition active:scale-95",
+              group.isPinned
+                ? "text-[var(--color-mac-yellow)] hover:bg-[rgb(255_227_48/0.1)]"
+                : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
+            )}
+            onClick={() => void toggleGroupPin(group)}
+            title={group.isPinned ? "Unpin" : "Pin to top"}
+            type="button"
+          >
+            <Pin
+              aria-hidden
+              className={group.isPinned ? "rotate-0" : "rotate-45"}
+              fill={group.isPinned ? "currentColor" : "none"}
+              size={20}
+            />
+          </button>
+          <span className="pr-1 text-sm leading-5 tabular-nums text-[var(--color-text-muted)]">
+            {memberCount} {memberCount === 1 ? "member" : "members"}
+          </span>
+        </div>
       </div>
     );
   }
@@ -1178,57 +1180,64 @@ export function GroupsDashboard({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 rounded-xl bg-[rgb(255_255_255/0.04)] p-1 lg:max-w-lg">
-            {[
-              { id: "class", label: "Class view" },
-              { id: "rankings", label: "Rankings" },
-              { id: "chat", label: "Chat" },
-            ].map((view) => (
-              <button
-                className={cn(
-                  "mac-focus h-11 rounded-lg text-sm font-semibold transition",
-                  groupView === view.id
-                    ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-                    : "text-[var(--color-text-muted)]",
-                )}
-                key={view.id}
-                onClick={() =>
-                  setGroupView(view.id as "class" | "rankings" | "chat")
-                }
-                type="button"
-              >
-                <span className="inline-flex items-center justify-center gap-1.5">
-                  {view.id === "chat" ? (
-                    <MessagesSquare aria-hidden size={15} />
-                  ) : null}
-                  {view.label}
-                  {view.id === "chat" && selectedGroupUnreadCount ? (
-                    <UnreadBadge count={selectedGroupUnreadCount} />
-                  ) : null}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {groupView === "rankings" ? (
-            <div className="grid grid-cols-3 rounded-md bg-[rgb(255_255_255/0.035)] p-1 lg:max-w-md">
-              {rankingWindows.map((window) => (
+          <div className="flex items-center gap-2">
+            <div className="grid min-w-0 flex-1 grid-cols-3 rounded-xl bg-[rgb(255_255_255/0.04)] p-1 lg:max-w-lg">
+              {[
+                { id: "class", label: "Class view" },
+                { id: "rankings", label: "Rankings" },
+                { id: "chat", label: "Chat" },
+              ].map((view) => (
                 <button
                   className={cn(
-                    "mac-focus h-11 rounded px-3 text-xs font-semibold transition",
-                    rankingWindow === window.id
-                      ? "border border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
-                      : "border border-transparent text-[var(--color-text-muted)]",
+                    "mac-focus h-11 min-w-0 whitespace-nowrap rounded-lg text-sm font-semibold transition",
+                    groupView === view.id
+                      ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                      : "text-[var(--color-text-muted)]",
                   )}
-                  key={window.id}
-                  onClick={() => setRankingWindow(window.id)}
+                  key={view.id}
+                  onClick={() =>
+                    setGroupView(view.id as "class" | "rankings" | "chat")
+                  }
                   type="button"
                 >
-                  {window.label}
+                  <span className="inline-flex items-center justify-center gap-1.5">
+                    {view.id === "chat" ? (
+                      <MessagesSquare aria-hidden size={15} />
+                    ) : null}
+                    {view.label}
+                    {view.id === "chat" && selectedGroupUnreadCount ? (
+                      <UnreadBadge count={selectedGroupUnreadCount} />
+                    ) : null}
+                  </span>
                 </button>
               ))}
             </div>
-          ) : null}
+
+            {groupView === "rankings" ? (
+              <div
+                aria-label="Ranking period"
+                className="ml-auto hidden shrink-0 grid-cols-3 rounded-xl bg-[rgb(255_255_255/0.04)] p-1 lg:grid"
+                role="group"
+              >
+                {rankingWindows.map((window) => (
+                  <button
+                    aria-pressed={rankingWindow === window.id}
+                    className={cn(
+                      "mac-focus h-11 rounded-lg px-4 text-sm font-semibold transition",
+                      rankingWindow === window.id
+                        ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                        : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+                    )}
+                    key={window.id}
+                    onClick={() => setRankingWindow(window.id)}
+                    type="button"
+                  >
+                    {window.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </section>
 
         {groupView === "class" ? (
@@ -1356,59 +1365,84 @@ export function GroupsDashboard({
         ) : null}
 
         {groupView === "rankings" ? (
-          <section className="space-y-3">
-            <PaginatedList
-              className="grid gap-2 lg:grid-cols-2 lg:gap-3"
-              items={ranking}
-              pageSize={12}
-              renderItem={(member, _index, absoluteIndex) => (
-                <button
-                  className={cn(
-                    "mac-focus grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md border px-3 py-2.5 text-left transition active:scale-[0.99]",
-                    absoluteIndex === 0
-                      ? "border-[rgb(255_227_48/0.42)] bg-[rgb(255_227_48/0.14)]"
-                      : absoluteIndex < 3
-                        ? "border-[rgb(255_227_48/0.24)] bg-[rgb(255_227_48/0.08)]"
-                        : "border-transparent bg-[rgb(255_255_255/0.035)]",
-                  )}
-                  key={member.id}
-                  onClick={() => {
-                    setSelectedMemberId(member.id);
-                  }}
-                  type="button"
-                >
-                  <span
-                    className={cn(
-                      "inline-flex items-center justify-center font-mono text-sm font-semibold",
-                      absoluteIndex < 3
-                        ? "text-[var(--color-mac-yellow)]"
-                        : "text-[var(--color-text-muted)]",
-                    )}
+          <section className="relative overflow-hidden rounded-[10px] border border-[rgb(255_255_255/0.08)] bg-[rgb(18_18_18/0.52)]">
+            {/* Mobile keeps the view tabs full width, so the period lives in the card. */}
+            <label className="absolute right-2 top-2 z-10 lg:hidden">
+              <span className="sr-only">Ranking period</span>
+              <select
+                className="mac-focus h-8 appearance-none rounded-lg border border-[rgb(255_255_255/0.1)] bg-[rgb(23_23_23/0.92)] pl-2.5 pr-7 text-xs font-semibold text-[var(--color-text)]"
+                onChange={(event) =>
+                  setRankingWindow(event.target.value as RankingWindow)
+                }
+                value={rankingWindow}
+              >
+                {rankingWindows.map((window) => (
+                  <option key={window.id} value={window.id}>
+                    {window.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                aria-hidden
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+                size={14}
+              />
+            </label>
+            {/* Visual order is 2nd, 1st, 3rd; empty slots keep 1st centred in small groups. */}
+            <div className="grid grid-cols-3 items-end gap-2 border-b border-[rgb(255_255_255/0.08)] px-3 pt-6 sm:gap-4 sm:px-12 sm:pt-7">
+              {([1, 0, 2] as const).map((index) => {
+                const member = ranking[index];
+
+                return member ? (
+                  <PodiumSpot
+                    isYou={member.id === (currentUserId ?? "you")}
+                    key={member.id}
+                    member={member}
+                    onSelect={() => setSelectedMemberId(member.id)}
+                    place={(index + 1) as 1 | 2 | 3}
+                    seconds={getLiveRankingSeconds(member, rankingWindow, now)}
+                  />
+                ) : (
+                  <div aria-hidden key={`empty-${index}`} />
+                );
+              })}
+            </div>
+
+            {ranking.length > 3 ? (
+              <PaginatedList
+                className="grid px-2 py-1.5 sm:px-3"
+                items={ranking.slice(3)}
+                pageSize={12}
+                renderItem={(member, _index, absoluteIndex) => (
+                  <button
+                    className="mac-focus grid min-h-[60px] grid-cols-[2.5rem_44px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border-b border-[#34342f] px-1 py-1.5 text-left transition last:border-b-0 hover:bg-[rgb(255_255_255/0.03)] active:scale-[0.99]"
+                    key={member.id}
+                    onClick={() => setSelectedMemberId(member.id)}
+                    type="button"
                   >
-                    {absoluteIndex === 0 ? (
-                      <>
-                        <Crown aria-hidden fill="currentColor" size={17} />
-                        <span className="sr-only">Rank 1</span>
-                      </>
-                    ) : (
-                      `#${absoluteIndex + 1}`
-                    )}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold">{member.name}</p>
-                    <p className="truncate text-xs font-medium text-[var(--color-text-muted)]">
-                      {member.handle}
+                    <span className="text-center font-mono text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">
+                      #{absoluteIndex + 4}
+                    </span>
+                    <MemberMascot
+                      active={member.studying}
+                      className="h-11 w-11"
+                      icon={member.personIcon}
+                      memberId={member.id}
+                    />
+                    <RankingIdentity
+                      isYou={member.id === (currentUserId ?? "you")}
+                      member={member}
+                    />
+                    <p className="font-mono text-sm font-semibold tabular-nums">
+                      {formatDuration(
+                        getLiveRankingSeconds(member, rankingWindow, now),
+                      )}
                     </p>
-                  </div>
-                  <p className="font-mono text-sm font-semibold tabular-nums">
-                    {formatDuration(
-                      getLiveRankingSeconds(member, rankingWindow, now),
-                    )}
-                  </p>
-                </button>
-              )}
-              resetKey={`${selectedGroup.id}:${rankingWindow}`}
-            />
+                  </button>
+                )}
+                resetKey={`${selectedGroup.id}:${rankingWindow}`}
+              />
+            ) : null}
           </section>
         ) : null}
 
@@ -1847,6 +1881,127 @@ function CreateGroupDialog({
         </p>
       ) : null}
     </AppDialog>
+  );
+}
+
+const PODIUM_STYLES = {
+  1: {
+    mascot: "h-24 w-24 sm:h-[132px] sm:w-[132px]",
+    plinth:
+      "h-[100px] border-[rgb(255_227_48/0.42)] bg-[rgb(255_227_48/0.14)] sm:h-[132px]",
+  },
+  2: {
+    mascot: "h-20 w-20 sm:h-[104px] sm:w-[104px]",
+    plinth:
+      "h-20 border-[rgb(255_227_48/0.24)] bg-[rgb(255_227_48/0.08)] sm:h-24",
+  },
+  3: {
+    mascot: "h-[72px] w-[72px] sm:h-24 sm:w-24",
+    plinth:
+      "h-16 border-[rgb(255_227_48/0.24)] bg-[rgb(255_227_48/0.08)] sm:h-[72px]",
+  },
+} as const;
+
+function PodiumSpot({
+  isYou,
+  member,
+  onSelect,
+  place,
+  seconds,
+}: {
+  isYou: boolean;
+  member: SocialFriend;
+  onSelect: () => void;
+  place: 1 | 2 | 3;
+  seconds: number;
+}) {
+  const style = PODIUM_STYLES[place];
+
+  return (
+    <button
+      className="mac-focus group flex min-w-0 flex-col items-center rounded-t-lg text-center"
+      onClick={onSelect}
+      type="button"
+    >
+      {isYou ? (
+        <span className="mb-1 shrink-0 rounded bg-[var(--color-mac-yellow)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#141414]">
+          You
+        </span>
+      ) : null}
+      <MemberMascot
+        active={member.studying}
+        className={cn("relative -mb-1.5", style.mascot)}
+        icon={member.personIcon}
+        memberId={member.id}
+      />
+      <RankingIdentity centered isYou={false} member={member} />
+      <div
+        className={cn(
+          "mt-3 flex w-full flex-col items-center gap-1.5 rounded-t-lg border border-b-0 pt-3 sm:gap-2 sm:pt-3.5",
+          style.plinth,
+        )}
+      >
+        <span className="flex items-center gap-1.5 font-mono text-base font-bold leading-none tabular-nums text-[var(--color-mac-yellow)] sm:text-xl">
+          {place === 1 ? (
+            <Crown
+              aria-hidden
+              className="h-4 w-4 sm:h-5 sm:w-5"
+              fill="currentColor"
+            />
+          ) : null}
+          #{place}
+        </span>
+        <span className="font-mono text-sm font-semibold leading-none tabular-nums sm:text-[15px]">
+          {formatDuration(seconds)}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function RankingIdentity({
+  centered = false,
+  isYou,
+  member,
+}: {
+  centered?: boolean;
+  isYou: boolean;
+  member: SocialFriend;
+}) {
+  return (
+    <div className={cn("min-w-0", centered && "mt-2 w-full")}>
+      <p
+        className={cn(
+          "flex min-w-0 items-center gap-1.5 text-[15px] font-semibold",
+          centered && "justify-center",
+        )}
+      >
+        <span className="truncate">{member.name}</span>
+        {isYou ? (
+          <span className="shrink-0 rounded bg-[var(--color-mac-yellow)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#141414]">
+            You
+          </span>
+        ) : null}
+      </p>
+      <p
+        className={cn(
+          "mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-[var(--color-text-muted)]",
+          centered && "justify-center",
+        )}
+      >
+        {member.studying ? (
+          <>
+            <span
+              aria-hidden
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff7a00]"
+            />
+            <span className="text-[#ff9a3d]">Studying</span>
+          </>
+        ) : (
+          <span className="truncate">{member.handle}</span>
+        )}
+      </p>
+    </div>
   );
 }
 
