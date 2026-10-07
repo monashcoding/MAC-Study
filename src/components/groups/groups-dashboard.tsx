@@ -24,6 +24,7 @@ import {
   MoreHorizontal,
   MessagesSquare,
   Pause,
+  Pin,
   Play,
   Plus,
   Settings,
@@ -74,6 +75,7 @@ import {
   removeRemoteGroupMember,
   saveRemoteGroupNotificationSettings,
   setRemoteGroupMemberRole,
+  setRemoteGroupPinned,
   setRemoteUserNudgeMute,
   startRemoteStudySession,
   stopRemoteStudySession,
@@ -95,6 +97,7 @@ import { StartStudyDialog } from "@/components/study/start-study-dialog";
 import { Switch } from "@/components/ui/switch";
 import { formatDuration, getLocalDateKey, isLongSession } from "@/lib/timer";
 import { cn } from "@/lib/utils";
+import { ListSection } from "@/components/ui/list-section";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import {
   GroupChat,
@@ -555,6 +558,114 @@ export function GroupsDashboard({
       memberCount: members.length,
     };
   });
+  const pinnedGroupSummaries = groupSummaries.filter(
+    ({ group }) => group.isPinned,
+  );
+  const otherGroupSummaries = groupSummaries.filter(
+    ({ group }) => !group.isPinned,
+  );
+
+  function setGroupPinnedLocally(groupId: string, pinned: boolean) {
+    setSocialState((current) => ({
+      ...current,
+      groups: current.groups.map((group) =>
+        group.id === groupId ? { ...group, isPinned: pinned } : group,
+      ),
+    }));
+  }
+
+  async function toggleGroupPin(group: SocialGroup) {
+    const pinned = !group.isPinned;
+    setGroupPinnedLocally(group.id, pinned);
+    if (!remoteClient) return;
+
+    try {
+      await setRemoteGroupPinned({
+        groupId: group.id,
+        pinned,
+        supabase: remoteClient,
+      });
+    } catch {
+      setGroupPinnedLocally(group.id, !pinned);
+      setRequestFeedback(
+        pinned ? "Group could not be pinned." : "Group could not be unpinned.",
+      );
+    }
+  }
+
+  function renderGroupRow({
+    activeNow,
+    group,
+    memberCount,
+  }: (typeof groupSummaries)[number]) {
+    return (
+      <div
+        className={cn(
+          "grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-md border transition",
+          group.isPinned
+            ? "border-[rgb(255_227_48/0.16)] bg-[rgb(255_227_48/0.035)] hover:border-[rgb(255_227_48/0.28)]"
+            : "border-transparent bg-[rgb(255_255_255/0.035)] hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)]",
+        )}
+        key={group.id}
+      >
+        <button
+          className="mac-focus grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-3 text-left active:scale-[0.99] lg:min-h-20 lg:px-4"
+          onClick={() => {
+            setGroupView("class");
+            setSelectedGroupId(group.id);
+          }}
+          type="button"
+        >
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <h3 className="truncate text-lg font-semibold">{group.name}</h3>
+              {groupUnreadCounts[group.id] ? (
+                <span
+                  aria-label={`${groupUnreadCounts[group.id]} unread chat messages`}
+                  className="inline-flex shrink-0 items-center gap-1 text-[var(--color-text-muted)]"
+                >
+                  <MessagesSquare aria-hidden size={15} />
+                  <UnreadBadge count={groupUnreadCounts[group.id]} />
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-1 text-sm text-[var(--color-text-muted)]">
+              <span>{activeNow} active</span>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xl font-semibold tabular-nums">{memberCount}</p>
+            <p className="text-xs font-medium text-[var(--color-text-muted)]">
+              members
+            </p>
+          </div>
+        </button>
+        <button
+          aria-label={
+            group.isPinned ? `Unpin ${group.name}` : `Pin ${group.name}`
+          }
+          aria-pressed={Boolean(group.isPinned)}
+          className={cn(
+            "mac-focus mr-2 inline-flex h-11 w-11 items-center justify-center rounded-md transition active:scale-95",
+            group.isPinned
+              ? "text-[var(--color-mac-yellow)] hover:bg-[rgb(255_227_48/0.1)]"
+              : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
+          )}
+          onClick={() => void toggleGroupPin(group)}
+          title={group.isPinned ? "Unpin" : "Pin to top"}
+          type="button"
+        >
+          <Pin
+            aria-hidden
+            className={group.isPinned ? "rotate-0" : "rotate-45"}
+            fill={group.isPinned ? "currentColor" : "none"}
+            size={17}
+          />
+        </button>
+      </div>
+    );
+  }
+
   const activeTotal = groupSummaries.reduce(
     (total, group) => total + group.activeNow,
     0,
@@ -1417,51 +1528,28 @@ export function GroupsDashboard({
           {!isLoaded ? (
             <ListSkeleton count={3} label="Loading groups" />
           ) : groupSummaries.length ? (
-            <PaginatedList
-              className="grid gap-2 lg:grid-cols-2 lg:gap-3"
-              items={groupSummaries}
-              pageSize={10}
-              renderItem={({ group, activeNow, memberCount }) => (
-                <button
-                  className="mac-focus grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
-                  key={group.id}
-                  onClick={() => {
-                    setGroupView("class");
-                    setSelectedGroupId(group.id);
-                  }}
-                  type="button"
+            <div className="space-y-5">
+              {pinnedGroupSummaries.length ? (
+                <ListSection icon={Pin} title="Pinned">
+                  <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
+                    {pinnedGroupSummaries.map(renderGroupRow)}
+                  </div>
+                </ListSection>
+              ) : null}
+              {otherGroupSummaries.length ? (
+                <ListSection
+                  title={pinnedGroupSummaries.length ? "All groups" : null}
                 >
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <h3 className="truncate text-lg font-semibold">
-                        {group.name}
-                      </h3>
-                      {groupUnreadCounts[group.id] ? (
-                        <span
-                          aria-label={`${groupUnreadCounts[group.id]} unread chat messages`}
-                          className="inline-flex shrink-0 items-center gap-1 text-[var(--color-text-muted)]"
-                        >
-                          <MessagesSquare aria-hidden size={15} />
-                          <UnreadBadge count={groupUnreadCounts[group.id]} />
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-1 text-sm text-[var(--color-text-muted)]">
-                      <span>{activeNow} active</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xl font-semibold tabular-nums">
-                      {memberCount}
-                    </p>
-                    <p className="text-xs font-medium text-[var(--color-text-muted)]">
-                      members
-                    </p>
-                  </div>
-                </button>
-              )}
-              resetKey="groups"
-            />
+                  <PaginatedList
+                    className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+                    items={otherGroupSummaries}
+                    pageSize={10}
+                    renderItem={renderGroupRow}
+                    resetKey="groups"
+                  />
+                </ListSection>
+              ) : null}
+            </div>
           ) : (
             <EmptyStateCta
               action={

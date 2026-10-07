@@ -125,6 +125,7 @@ export async function fetchRemoteFriendsSnapshot(
     candidatesResult,
     requestsResult,
     nudgesResult,
+    preferences,
   ] = await Promise.all([
     supabase.rpc("list_social_friends"),
     supabase.rpc("list_my_study_groups"),
@@ -140,6 +141,7 @@ export async function fetchRemoteFriendsSnapshot(
       result_limit: SOCIAL_PAGE_SIZE,
       result_offset: 0,
     }),
+    fetchListPreferences(supabase),
   ]);
 
   if (friendsResult.error) throw friendsResult.error;
@@ -148,6 +150,7 @@ export async function fetchRemoteFriendsSnapshot(
   const socialState = socialStateFromRows(
     (friendsResult.data ?? []) as SocialFriendRow[],
     (groupsResult.data ?? []) as SocialGroupRow[],
+    preferences,
   );
   const availableFriends = candidatesResult.error
     ? socialState.friends
@@ -186,14 +189,16 @@ export async function fetchRemoteGroupsSnapshot(
   const userId = await getRemoteUserId();
   if (!userId) return null;
 
-  const [friendsResult, groupsResult, invitesResult] = await Promise.all([
-    supabase.rpc("list_social_friends"),
-    supabase.rpc("list_my_study_groups"),
-    supabase.rpc("list_group_invites_page", {
-      result_limit: SOCIAL_PAGE_SIZE,
-      result_offset: 0,
-    }),
-  ]);
+  const [friendsResult, groupsResult, invitesResult, preferences] =
+    await Promise.all([
+      supabase.rpc("list_social_friends"),
+      supabase.rpc("list_my_study_groups"),
+      supabase.rpc("list_group_invites_page", {
+        result_limit: SOCIAL_PAGE_SIZE,
+        result_offset: 0,
+      }),
+      fetchListPreferences(supabase),
+    ]);
 
   if (friendsResult.error) throw friendsResult.error;
   if (groupsResult.error) throw groupsResult.error;
@@ -208,6 +213,7 @@ export async function fetchRemoteGroupsSnapshot(
     socialState: socialStateFromRows(
       (friendsResult.data ?? []) as SocialFriendRow[],
       (groupsResult.data ?? []) as SocialGroupRow[],
+      preferences,
     ),
   };
 }
@@ -224,13 +230,49 @@ export async function fetchRemoteStudyGroups(
   return ((data ?? []) as SocialGroupRow[]).map(socialGroupFromRow);
 }
 
+type ListPreferences = {
+  favouriteFriendIds: Set<string>;
+  pinnedGroupIds: Set<string>;
+};
+
+// Pins and favourites are a nicety: if they fail to load (or the migration
+// isn't applied yet) the lists still render, just unsorted.
+async function fetchListPreferences(
+  supabase: SupabaseClient,
+): Promise<ListPreferences> {
+  const [pinsResult, favouritesResult] = await Promise.all([
+    supabase.from("user_pinned_groups").select("group_id"),
+    supabase.from("user_favourite_friends").select("friend_id"),
+  ]);
+
+  return {
+    favouriteFriendIds: new Set(
+      favouritesResult.error
+        ? []
+        : (favouritesResult.data ?? []).map((row) => row.friend_id),
+    ),
+    pinnedGroupIds: new Set(
+      pinsResult.error
+        ? []
+        : (pinsResult.data ?? []).map((row) => row.group_id),
+    ),
+  };
+}
+
 function socialStateFromRows(
   friendRows: SocialFriendRow[],
   groupRows: SocialGroupRow[],
+  preferences?: ListPreferences,
 ): SocialState {
   return {
-    friends: friendRows.map(socialFriendFromRow),
-    groups: groupRows.map(socialGroupFromRow),
+    friends: friendRows.map((row) => ({
+      ...socialFriendFromRow(row),
+      isFavourite: preferences?.favouriteFriendIds.has(row.user_id) ?? false,
+    })),
+    groups: groupRows.map((row) => ({
+      ...socialGroupFromRow(row),
+      isPinned: preferences?.pinnedGroupIds.has(row.group_id) ?? false,
+    })),
   };
 }
 

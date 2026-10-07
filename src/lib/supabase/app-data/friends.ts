@@ -142,3 +142,33 @@ export async function fetchRemoteDirectMessageUnreadCount({
 
   return count ?? 0;
 }
+
+export async function setRemoteFriendFavourite({
+  favourite,
+  friendId,
+  supabase,
+}: {
+  favourite: boolean;
+  friendId: string;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+  if (!userId) return;
+
+  const { error } = favourite
+    ? await supabase
+        .from("user_favourite_friends")
+        .upsert(
+          { friend_id: friendId, user_id: userId },
+          { ignoreDuplicates: true, onConflict: "user_id,friend_id" },
+        )
+    : await supabase
+        .from("user_favourite_friends")
+        .delete()
+        .eq("user_id", userId)
+        .eq("friend_id", friendId);
+
+  if (error) throw error;
+
+  invalidateRemoteCachesForTable("user_favourite_friends");
+}

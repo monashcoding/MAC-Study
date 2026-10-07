@@ -112,6 +112,20 @@ describe("remote client cache freshness", () => {
     expect(getCachedRemoteUnitState("viewer")).toEqual(unitState);
   });
 
+  it("invalidates social caches when pins or favourites change", () => {
+    for (const table of ["user_pinned_groups", "user_favourite_friends"]) {
+      cacheRemoteTimerState(timerState);
+      cacheRemoteFriendsSnapshot(friendsSnapshot);
+      cacheRemoteGroupsSnapshot(groupsSnapshot);
+
+      invalidateRemoteCachesForTable(table);
+
+      expect(getCachedRemoteTimerState("viewer")).toEqual(timerState);
+      expect(getCachedRemoteFriendsSnapshot("viewer")).toBeNull();
+      expect(getCachedRemoteGroupsSnapshot("viewer")).toBeNull();
+    }
+  });
+
   it("invalidates the units cache when an enrolment changes", () => {
     cacheRemoteUnitState(unitState, "viewer");
 

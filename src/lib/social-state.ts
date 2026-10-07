@@ -37,6 +37,7 @@ export type RankingWindow = "day" | "week" | "month";
 
 export type SocialFriend = {
   id: string;
+  isFavourite?: boolean;
   isFriend?: boolean;
   name: string;
   handle: string;
@@ -60,6 +61,7 @@ export type SocialGroup = {
   name: string;
   icon: GroupIconKey;
   inviteCode?: string;
+  isPinned?: boolean;
   memberIds: string[];
   memberRoles: Record<string, GroupRole>;
   currentUserRole?: GroupRole;

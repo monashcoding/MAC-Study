@@ -24,6 +24,7 @@ import {
   Plus,
   Search,
   Send,
+  Star,
   Users,
   Zap,
 } from "lucide-react";
@@ -57,6 +58,7 @@ import {
   inviteRemoteFriendToGroup,
   removeRemoteFriend,
   requestRemoteSuperNudge,
+  setRemoteFriendFavourite,
   setRemoteUserNudgeMute,
   updateRemoteFriendRequest,
   updateRemoteSuperNudge,
@@ -70,6 +72,7 @@ import { useNudgeQueue } from "@/components/social/use-nudge-queue";
 import { TransientToast } from "@/components/transient-toast";
 import { addDateKeyDays, formatDuration, getLocalDateKey } from "@/lib/timer";
 import { cn } from "@/lib/utils";
+import { ListSection } from "@/components/ui/list-section";
 import { ListSkeleton } from "@/components/ui/skeleton";
 
 const emptySocialState: SocialState = { friends: [], groups: [] };
@@ -450,6 +453,127 @@ export function FriendsDashboard({
         ),
     [selfId, socialState.friends],
   );
+  const favouriteFriends = friendList.filter((friend) => friend.isFavourite);
+  const otherFriends = friendList.filter((friend) => !friend.isFavourite);
+
+  function setFriendFavouriteLocally(friendId: string, favourite: boolean) {
+    setSocialState((current) => ({
+      ...current,
+      friends: current.friends.map((friend) =>
+        friend.id === friendId ? { ...friend, isFavourite: favourite } : friend,
+      ),
+    }));
+  }
+
+  async function toggleFriendFavourite(friend: SocialFriend) {
+    const favourite = !friend.isFavourite;
+    setFriendFavouriteLocally(friend.id, favourite);
+    if (!remoteClient) return;
+
+    try {
+      await setRemoteFriendFavourite({
+        favourite,
+        friendId: friend.id,
+        supabase: remoteClient,
+      });
+    } catch {
+      setFriendFavouriteLocally(friend.id, !favourite);
+      setFeedback(
+        favourite
+          ? "Friend could not be added to favourites."
+          : "Friend could not be removed from favourites.",
+      );
+    }
+  }
+
+  function renderFriendRow(friend: SocialFriend) {
+    return (
+      <div
+        className={cn(
+          "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center rounded-lg border transition",
+          friend.isFavourite
+            ? "border-[rgb(255_227_48/0.16)] bg-[rgb(255_227_48/0.035)] hover:border-[rgb(255_227_48/0.28)]"
+            : "border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] hover:border-[rgb(255_255_255/0.12)] hover:bg-[rgb(255_255_255/0.045)]",
+        )}
+        key={friend.id}
+      >
+        <button
+          className="mac-focus grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-3 text-left active:scale-[0.99] lg:min-h-20 lg:px-4"
+          onClick={() => {
+            setSelectedFriendId(friend.id);
+            setInvitedGroupIds(new Set());
+            setPendingInviteGroupIds(new Set());
+            setIsInviteDialogOpen(false);
+            setIsRemoveDialogOpen(false);
+          }}
+          type="button"
+        >
+          <ProfileBadge friend={friend} />
+          <div className="min-w-0">
+            <p className="truncate font-semibold">{friend.name}</p>
+            <p className="truncate text-sm text-[var(--color-text-muted)]">
+              {friend.handle}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="font-mono text-sm font-semibold tabular-nums">
+              {formatDuration(getLiveRankingSeconds(friend, "day", now))}
+            </p>
+            <p className="text-xs font-medium text-[var(--color-text-muted)]">
+              today
+            </p>
+          </div>
+        </button>
+        <button
+          aria-label={
+            friend.isFavourite
+              ? `Remove ${friend.handle} from favourites`
+              : `Add ${friend.handle} to favourites`
+          }
+          aria-pressed={Boolean(friend.isFavourite)}
+          className={cn(
+            "mac-focus inline-flex h-11 w-10 items-center justify-center rounded-md transition active:scale-90",
+            friend.isFavourite
+              ? "text-[var(--color-mac-yellow)] hover:bg-[rgb(255_227_48/0.1)]"
+              : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
+          )}
+          onClick={() => void toggleFriendFavourite(friend)}
+          title={friend.isFavourite ? "Remove from favourites" : "Favourite"}
+          type="button"
+        >
+          <Star
+            aria-hidden
+            fill={friend.isFavourite ? "currentColor" : "none"}
+            size={17}
+          />
+        </button>
+        <button
+          aria-label={
+            mutedFriendIds.has(friend.id)
+              ? `Enable nudges from ${friend.handle}`
+              : `Mute all nudges from ${friend.handle}`
+          }
+          aria-pressed={mutedFriendIds.has(friend.id)}
+          className={cn(
+            "mac-focus mr-2 inline-flex h-11 w-10 items-center justify-center rounded-md transition disabled:opacity-55",
+            mutedFriendIds.has(friend.id)
+              ? "bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]"
+              : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
+          )}
+          disabled={!remoteClient || nudgeMuteBusyIds.has(friend.id)}
+          onClick={() => void toggleFriendNudgeMute(friend)}
+          type="button"
+        >
+          {mutedFriendIds.has(friend.id) ? (
+            <BellOff aria-hidden size={17} />
+          ) : (
+            <Bell aria-hidden size={17} />
+          )}
+        </button>
+      </div>
+    );
+  }
+
   const selectedFriend =
     friendList.find((friend) => friend.id === selectedFriendId) ?? null;
   useEffect(() => {
@@ -1000,34 +1124,63 @@ export function FriendsDashboard({
           />
 
           <div className="col-span-4 mt-4 flex min-w-0 items-center justify-between gap-3">
-            <button
-              aria-label={
-                mutedFriendIds.has(selectedFriend.id)
-                  ? "Enable nudges from this friend"
-                  : "Mute nudges from this friend"
-              }
-              aria-pressed={mutedFriendIds.has(selectedFriend.id)}
-              className={cn(
-                "mac-focus inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2 text-xs font-semibold transition disabled:opacity-55 sm:h-11 sm:px-3",
-                mutedFriendIds.has(selectedFriend.id)
-                  ? "border-[rgb(255_227_48/0.4)] bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]"
-                  : "border-[var(--color-border)] text-[var(--color-text-muted)]",
-              )}
-              disabled={
-                !remoteClient || nudgeMuteBusyIds.has(selectedFriend.id)
-              }
-              onClick={() => void toggleFriendNudgeMute(selectedFriend)}
-              type="button"
-            >
-              {mutedFriendIds.has(selectedFriend.id) ? (
-                <BellOff aria-hidden size={15} />
-              ) : (
-                <Bell aria-hidden size={15} />
-              )}
-              <span>
-                {mutedFriendIds.has(selectedFriend.id) ? "Muted" : "Mute"}
-              </span>
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                aria-label={
+                  selectedFriend.isFavourite
+                    ? "Remove from favourites"
+                    : "Add to favourites"
+                }
+                aria-pressed={Boolean(selectedFriend.isFavourite)}
+                className={cn(
+                  "mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border transition active:scale-95 sm:h-11 sm:w-11",
+                  selectedFriend.isFavourite
+                    ? "border-[rgb(255_227_48/0.4)] bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]"
+                    : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+                )}
+                onClick={() => void toggleFriendFavourite(selectedFriend)}
+                title={
+                  selectedFriend.isFavourite
+                    ? "Remove from favourites"
+                    : "Add to favourites"
+                }
+                type="button"
+              >
+                <Star
+                  aria-hidden
+                  fill={selectedFriend.isFavourite ? "currentColor" : "none"}
+                  size={16}
+                />
+              </button>
+              <button
+                aria-label={
+                  mutedFriendIds.has(selectedFriend.id)
+                    ? "Enable nudges from this friend"
+                    : "Mute nudges from this friend"
+                }
+                aria-pressed={mutedFriendIds.has(selectedFriend.id)}
+                className={cn(
+                  "mac-focus inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2 text-xs font-semibold transition disabled:opacity-55 sm:h-11 sm:px-3",
+                  mutedFriendIds.has(selectedFriend.id)
+                    ? "border-[rgb(255_227_48/0.4)] bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]"
+                    : "border-[var(--color-border)] text-[var(--color-text-muted)]",
+                )}
+                disabled={
+                  !remoteClient || nudgeMuteBusyIds.has(selectedFriend.id)
+                }
+                onClick={() => void toggleFriendNudgeMute(selectedFriend)}
+                type="button"
+              >
+                {mutedFriendIds.has(selectedFriend.id) ? (
+                  <BellOff aria-hidden size={15} />
+                ) : (
+                  <Bell aria-hidden size={15} />
+                )}
+                <span>
+                  {mutedFriendIds.has(selectedFriend.id) ? "Muted" : "Mute"}
+                </span>
+              </button>
+            </div>
             <div
               className={cn(
                 "inline-flex h-10 w-fit shrink-0 items-stretch overflow-hidden rounded-md border sm:h-11",
@@ -1275,14 +1428,14 @@ export function FriendsDashboard({
             className="flex flex-wrap items-center gap-2 min-[24rem]:flex-nowrap"
             role="tablist"
           >
-            <div className="grid w-full grid-cols-2 rounded-full bg-[rgb(255_255_255/0.04)] p-1 min-[24rem]:min-w-0 min-[24rem]:flex-1">
+            <div className="grid w-full grid-cols-2 rounded-xl bg-[rgb(255_255_255/0.04)] p-1 min-[24rem]:min-w-0 min-[24rem]:flex-1">
               <button
                 aria-selected={activeTab === "friends"}
                 className={cn(
-                  "mac-focus h-11 rounded-full border text-sm font-semibold transition",
+                  "mac-focus h-11 rounded-lg text-sm font-semibold transition",
                   activeTab === "friends"
-                    ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
-                    : "border-transparent text-[var(--color-text-muted)]",
+                    ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
                 )}
                 onClick={() => setActiveTab("friends")}
                 role="tab"
@@ -1293,10 +1446,10 @@ export function FriendsDashboard({
               <button
                 aria-selected={activeTab === "messages"}
                 className={cn(
-                  "mac-focus h-11 rounded-full border text-sm font-semibold transition",
+                  "mac-focus h-11 rounded-lg text-sm font-semibold transition",
                   activeTab === "messages"
-                    ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
-                    : "border-transparent text-[var(--color-text-muted)]",
+                    ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
                 )}
                 onClick={() => {
                   setMessageFriendId(null);
@@ -1378,73 +1531,28 @@ export function FriendsDashboard({
             {!isLoaded ? (
               <ListSkeleton avatar count={4} label="Loading friends" />
             ) : friendList.length ? (
-              <PaginatedList
-                className="grid gap-2 lg:grid-cols-2 lg:gap-3"
-                items={friendList}
-                pageSize={12}
-                renderItem={(friend) => (
-                  <div
-                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] transition hover:border-[rgb(255_255_255/0.12)] hover:bg-[rgb(255_255_255/0.045)]"
-                    key={friend.id}
+              <div className="space-y-5">
+                {favouriteFriends.length ? (
+                  <ListSection icon={Star} title="Favourites">
+                    <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
+                      {favouriteFriends.map(renderFriendRow)}
+                    </div>
+                  </ListSection>
+                ) : null}
+                {otherFriends.length ? (
+                  <ListSection
+                    title={favouriteFriends.length ? "All friends" : null}
                   >
-                    <button
-                      className="mac-focus grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-3 text-left active:scale-[0.99] lg:min-h-20 lg:px-4"
-                      onClick={() => {
-                        setSelectedFriendId(friend.id);
-                        setInvitedGroupIds(new Set());
-                        setPendingInviteGroupIds(new Set());
-                        setIsInviteDialogOpen(false);
-                        setIsRemoveDialogOpen(false);
-                      }}
-                      type="button"
-                    >
-                      <ProfileBadge friend={friend} />
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold">{friend.name}</p>
-                        <p className="truncate text-sm text-[var(--color-text-muted)]">
-                          {friend.handle}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-mono text-sm font-semibold tabular-nums">
-                          {formatDuration(
-                            getLiveRankingSeconds(friend, "day", now),
-                          )}
-                        </p>
-                        <p className="text-xs font-medium text-[var(--color-text-muted)]">
-                          today
-                        </p>
-                      </div>
-                    </button>
-                    <button
-                      aria-label={
-                        mutedFriendIds.has(friend.id)
-                          ? `Enable nudges from ${friend.handle}`
-                          : `Mute all nudges from ${friend.handle}`
-                      }
-                      aria-pressed={mutedFriendIds.has(friend.id)}
-                      className={cn(
-                        "mac-focus mr-2 inline-flex h-11 w-11 items-center justify-center rounded-md transition disabled:opacity-55",
-                        mutedFriendIds.has(friend.id)
-                          ? "bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]"
-                          : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
-                      )}
-                      disabled={
-                        !remoteClient || nudgeMuteBusyIds.has(friend.id)
-                      }
-                      onClick={() => void toggleFriendNudgeMute(friend)}
-                      type="button"
-                    >
-                      {mutedFriendIds.has(friend.id) ? (
-                        <BellOff aria-hidden size={17} />
-                      ) : (
-                        <Bell aria-hidden size={17} />
-                      )}
-                    </button>
-                  </div>
-                )}
-                resetKey="friends"
-              />
+                    <PaginatedList
+                      className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+                      items={otherFriends}
+                      pageSize={12}
+                      renderItem={renderFriendRow}
+                      resetKey="friends"
+                    />
+                  </ListSection>
+                ) : null}
+              </div>
             ) : (
               <EmptyStateCta
                 action={

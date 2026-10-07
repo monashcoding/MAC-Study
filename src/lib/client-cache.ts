@@ -144,7 +144,9 @@ export function invalidateRemoteCachesForTable(table?: string) {
     table === "groups" ||
     table === "group_members" ||
     table === "group_invites" ||
-    table === "super_nudge_requests"
+    table === "super_nudge_requests" ||
+    table === "user_pinned_groups" ||
+    table === "user_favourite_friends"
   ) {
     invalidateRemoteSocialCaches();
   }
@@ -178,8 +180,7 @@ export function dedupeRemoteRequest<T>({
 }): Promise<T> {
   const scopedKey = `${userId}:${key}`;
   const existing = inFlightRemoteRequests.get(scopedKey) as
-    | Promise<T>
-    | undefined;
+    Promise<T> | undefined;
 
   if (existing) return existing;
 
