@@ -18,9 +18,11 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleHelp,
+  LoaderCircle,
   Clock3,
   MessageCircle,
   Plus,
+  Search,
   Send,
   Users,
   Zap,
@@ -49,6 +51,8 @@ import {
   addRemoteFriend,
   fetchRemoteDirectMessageUnreadCount,
   fetchRemoteGlobalNudgeMutes,
+  FRIEND_CANDIDATE_PAGE_SIZE,
+  fetchRemoteFriendCandidatesPage,
   fetchRemoteFriendsSnapshot,
   inviteRemoteFriendToGroup,
   removeRemoteFriend,
@@ -66,6 +70,7 @@ import { useNudgeQueue } from "@/components/social/use-nudge-queue";
 import { TransientToast } from "@/components/transient-toast";
 import { addDateKeyDays, formatDuration, getLocalDateKey } from "@/lib/timer";
 import { cn } from "@/lib/utils";
+import { ListSkeleton } from "@/components/ui/skeleton";
 
 const emptySocialState: SocialState = { friends: [], groups: [] };
 const FRIEND_SOCIAL_CHANGE_TABLES = new Set([
@@ -117,6 +122,18 @@ export function FriendsDashboard({
   const [availableFriends, setAvailableFriends] = useState<
     RemoteFriendCandidate[]
   >([]);
+  const [candidatesHaveMore, setCandidatesHaveMore] = useState(false);
+  const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
+  const isLoadingCandidatesRef = useRef(false);
+  const [candidateQuery, setCandidateQuery] = useState("");
+  // null while not searching; otherwise server results for the current query.
+  const [searchResults, setSearchResults] = useState<
+    RemoteFriendCandidate[] | null
+  >(null);
+  const [searchHasMore, setSearchHasMore] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchRequestRef = useRef(0);
+  const trimmedCandidateQuery = candidateQuery.trim();
   const [friendRequests, setFriendRequests] = useState<RemoteFriendRequest[]>(
     [],
   );
@@ -162,25 +179,25 @@ export function FriendsDashboard({
     listScrollRef.current?.scrollTo({ top: 0 });
   }, [activeTab]);
 
-  const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
-    const snapshot = userId
-      ? await dedupeRemoteRequest({
-          key: "friends",
-          load: () => fetchRemoteFriendsSnapshot(supabase),
-          userId,
-        })
-      : await fetchRemoteFriendsSnapshot(supabase);
+  const refreshRemoteSocial = useCallback(
+    async (supabase: SupabaseClient) => {
+      const snapshot = userId
+        ? await dedupeRemoteRequest({
+            key: "friends",
+            load: () => fetchRemoteFriendsSnapshot(supabase),
+            userId,
+          })
+        : await fetchRemoteFriendsSnapshot(supabase);
 
-    if (snapshot) {
-      const cancellingFriendIds = new Set(
-        pendingCancelledRequestsRef.current.values(),
-      );
-      cacheRemoteFriendsSnapshot(snapshot);
-      setCurrentUserId(snapshot.currentUserId);
-      setSocialState(snapshot.socialState);
-      setAvailableFriends(
-        sortFriendCandidates(
-          snapshot.availableFriends.map((friend) => {
+      if (snapshot) {
+        const cancellingFriendIds = new Set(
+          pendingCancelledRequestsRef.current.values(),
+        );
+        cacheRemoteFriendsSnapshot(snapshot);
+        setCurrentUserId(snapshot.currentUserId);
+        setSocialState(snapshot.socialState);
+        const firstPage = snapshot.availableFriends.map(
+          (friend): RemoteFriendCandidate => {
             if (cancellingFriendIds.has(friend.id)) {
               return { ...friend, requestDirection: null };
             }
@@ -188,28 +205,35 @@ export function FriendsDashboard({
             return pendingFriendRequestIdsRef.current.has(friend.id)
               ? { ...friend, requestDirection: "outgoing" }
               : friend;
-          }),
-        ),
-      );
-      setFriendRequests((current) => {
-        const remoteRequests = (snapshot.friendRequests ?? []).filter(
-          (request) => !pendingCancelledRequestsRef.current.has(request.id),
+          },
         );
-        const remoteUserIds = new Set(
-          remoteRequests.map((request) => request.user.id),
+        setAvailableFriends((current) =>
+          mergeCandidateFirstPage(firstPage, current),
         );
-        const pendingRequests = current.filter(
-          (request) =>
-            request.id.startsWith("optimistic-") &&
-            pendingFriendRequestIdsRef.current.has(request.user.id) &&
-            !remoteUserIds.has(request.user.id),
-        );
+        if (firstPage.length < FRIEND_CANDIDATE_PAGE_SIZE) {
+          setCandidatesHaveMore(false);
+        }
+        setFriendRequests((current) => {
+          const remoteRequests = (snapshot.friendRequests ?? []).filter(
+            (request) => !pendingCancelledRequestsRef.current.has(request.id),
+          );
+          const remoteUserIds = new Set(
+            remoteRequests.map((request) => request.user.id),
+          );
+          const pendingRequests = current.filter(
+            (request) =>
+              request.id.startsWith("optimistic-") &&
+              pendingFriendRequestIdsRef.current.has(request.user.id) &&
+              !remoteUserIds.has(request.user.id),
+          );
 
-        return [...pendingRequests, ...remoteRequests];
-      });
-      setSuperNudges(snapshot.superNudges ?? []);
-    }
-  }, [userId]);
+          return [...pendingRequests, ...remoteRequests];
+        });
+        setSuperNudges(snapshot.superNudges ?? []);
+      }
+    },
+    [userId],
+  );
 
   const refreshDirectMessageUnreadCount = useCallback(
     async (supabase: SupabaseClient, userId: string | null) => {
@@ -276,8 +300,10 @@ export function FriendsDashboard({
       if (cachedSocial) {
         setCurrentUserId(cachedSocial.currentUserId);
         setSocialState(cachedSocial.socialState);
-        setAvailableFriends(
-          sortFriendCandidates(cachedSocial.availableFriends ?? []),
+        setAvailableFriends(cachedSocial.availableFriends ?? []);
+        setCandidatesHaveMore(
+          (cachedSocial.availableFriends?.length ?? 0) >=
+            FRIEND_CANDIDATE_PAGE_SIZE,
         );
         setFriendRequests(cachedSocial.friendRequests ?? []);
         setSuperNudges(cachedSocial.superNudges ?? []);
@@ -302,14 +328,14 @@ export function FriendsDashboard({
           cacheRemoteFriendsSnapshot(snapshot);
           setCurrentUserId(snapshot.currentUserId);
           setSocialState(snapshot.socialState);
-          setAvailableFriends(sortFriendCandidates(snapshot.availableFriends));
+          setAvailableFriends(snapshot.availableFriends);
+          setCandidatesHaveMore(
+            snapshot.availableFriends.length >= FRIEND_CANDIDATE_PAGE_SIZE,
+          );
           setFriendRequests(snapshot.friendRequests ?? []);
           setSuperNudges(snapshot.superNudges ?? []);
           setIsLoaded(true);
-          void refreshDirectMessageUnreadCount(
-            client,
-            snapshot.currentUserId,
-          );
+          void refreshDirectMessageUnreadCount(client, snapshot.currentUserId);
           return;
         }
       } catch {
@@ -497,23 +523,110 @@ export function FriendsDashboard({
     setToastMessage("Friend request sent");
   }
 
+  function changeCandidateQuery(value: string) {
+    setCandidateQuery(value);
+    if (value.trim() === trimmedCandidateQuery) return;
+
+    // Invalidate in-flight pages for the previous query.
+    searchRequestRef.current += 1;
+    setSearchResults(null);
+    setSearchHasMore(false);
+    setIsSearching(Boolean(value.trim()));
+  }
+
+  useEffect(() => {
+    const requestId = searchRequestRef.current;
+    if (!trimmedCandidateQuery || !remoteClient) return;
+
+    const timeout = window.setTimeout(() => {
+      void fetchRemoteFriendCandidatesPage({
+        offset: 0,
+        query: trimmedCandidateQuery,
+        supabase: remoteClient,
+      })
+        .then((page) => {
+          if (requestId !== searchRequestRef.current) return;
+          setSearchResults(page.candidates);
+          setSearchHasMore(page.hasMore);
+        })
+        .catch(() => {
+          if (requestId !== searchRequestRef.current) return;
+          setSearchResults([]);
+          setSearchHasMore(false);
+        })
+        .finally(() => {
+          if (requestId === searchRequestRef.current) setIsSearching(false);
+        });
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [remoteClient, trimmedCandidateQuery]);
+
+  async function loadMoreCandidates() {
+    if (!remoteClient || isLoadingCandidatesRef.current) return;
+
+    const query = trimmedCandidateQuery;
+    const requestId = searchRequestRef.current;
+    isLoadingCandidatesRef.current = true;
+    setIsLoadingCandidates(true);
+
+    try {
+      const page = await fetchRemoteFriendCandidatesPage({
+        offset: query ? (searchResults?.length ?? 0) : availableFriends.length,
+        query,
+        supabase: remoteClient,
+      });
+      const appendPage = (current: RemoteFriendCandidate[]) => {
+        const loadedIds = new Set(current.map((friend) => friend.id));
+        return [
+          ...current,
+          ...page.candidates.filter((friend) => !loadedIds.has(friend.id)),
+        ];
+      };
+
+      if (query) {
+        // Ignore pages for a query the user has already changed.
+        if (requestId !== searchRequestRef.current) return;
+        setSearchResults((current) => appendPage(current ?? []));
+        setSearchHasMore(page.hasMore);
+      } else {
+        setAvailableFriends(appendPage);
+        setCandidatesHaveMore(page.hasMore);
+      }
+    } catch {
+      // Leave hasMore on so reaching the end of the list retries.
+    } finally {
+      isLoadingCandidatesRef.current = false;
+      setIsLoadingCandidates(false);
+    }
+  }
+
+  function setCandidateRequestDirection(
+    friendId: string,
+    requestDirection: RemoteFriendCandidate["requestDirection"],
+  ) {
+    const patch = (current: RemoteFriendCandidate[]) =>
+      current.map((friend) =>
+        friend.id === friendId ? { ...friend, requestDirection } : friend,
+      );
+
+    setAvailableFriends(patch);
+    setSearchResults((current) => (current ? patch(current) : current));
+  }
+
   async function addRemoteFriendFromCandidate(friendId: string) {
     if (!remoteClient) return;
 
-    const candidate = availableFriends.find((friend) => friend.id === friendId);
+    const candidate =
+      availableFriends.find((friend) => friend.id === friendId) ??
+      searchResults?.find((friend) => friend.id === friendId);
     if (!candidate || candidate.requestDirection) return;
 
     const optimisticRequestId = `optimistic-${friendId}`;
     pendingFriendRequestIdsRef.current.add(friendId);
     setFeedback(null);
     setToastMessage("Friend request sent");
-    setAvailableFriends((current) =>
-      current.map((friend) =>
-        friend.id === friendId
-          ? { ...friend, requestDirection: "outgoing" }
-          : friend,
-      ),
-    );
+    setCandidateRequestDirection(friendId, "outgoing");
     setFriendRequests((current) => [
       {
         createdAt: new Date().toISOString(),
@@ -529,13 +642,7 @@ export function FriendsDashboard({
       pendingFriendRequestIdsRef.current.delete(friendId);
     } catch (error) {
       pendingFriendRequestIdsRef.current.delete(friendId);
-      setAvailableFriends((current) =>
-        current.map((friend) =>
-          friend.id === friendId
-            ? { ...friend, requestDirection: null }
-            : friend,
-        ),
-      );
+      setCandidateRequestDirection(friendId, null);
       setFriendRequests((current) =>
         current.filter((request) => request.id !== optimisticRequestId),
       );
@@ -551,13 +658,7 @@ export function FriendsDashboard({
     setFriendRequests((current) =>
       current.filter((item) => item.id !== request.id),
     );
-    setAvailableFriends((current) =>
-      current.map((friend) =>
-        friend.id === request.user.id
-          ? { ...friend, requestDirection: null }
-          : friend,
-      ),
-    );
+    setCandidateRequestDirection(request.user.id, null);
 
     try {
       if (remoteClient) {
@@ -576,13 +677,7 @@ export function FriendsDashboard({
           ? current
           : [request, ...current],
       );
-      setAvailableFriends((current) =>
-        current.map((friend) =>
-          friend.id === request.user.id
-            ? { ...friend, requestDirection: "outgoing" }
-            : friend,
-        ),
-      );
+      setCandidateRequestDirection(request.user.id, "outgoing");
       setToastMessage(null);
       setFeedback(getErrorMessage(error, "Could not cancel that request."));
     }
@@ -1255,9 +1350,11 @@ export function FriendsDashboard({
 
           {activeTab === "friends" ? (
             <p className="text-sm font-medium text-[var(--color-text-muted)]">
-              {friendList.length
-                ? `${friendList.length} ${friendList.length === 1 ? "friend" : "friends"}`
-                : "No friends yet"}
+              {!isLoaded
+                ? "Loading friends…"
+                : friendList.length
+                  ? `${friendList.length} ${friendList.length === 1 ? "friend" : "friends"}`
+                  : "No friends yet"}
             </p>
           ) : null}
         </div>
@@ -1278,7 +1375,9 @@ export function FriendsDashboard({
 
         {activeTab === "friends" ? (
           <section className="space-y-3" role="tabpanel">
-            {friendList.length ? (
+            {!isLoaded ? (
+              <ListSkeleton avatar count={4} label="Loading friends" />
+            ) : friendList.length ? (
               <PaginatedList
                 className="grid gap-2 lg:grid-cols-2 lg:gap-3"
                 items={friendList}
@@ -1374,7 +1473,15 @@ export function FriendsDashboard({
           />
         ) : (
           <section className="space-y-6" role="tabpanel">
-            {incomingSuperNudges.length ? (
+            {!isLoaded ? (
+              <ListSkeleton
+                avatar
+                className="grid gap-2"
+                count={2}
+                label="Loading requests"
+              />
+            ) : null}
+            {isLoaded && incomingSuperNudges.length ? (
               <RequestSection
                 title={`Super Nudge (${incomingSuperNudges.length})`}
               >
@@ -1465,7 +1572,8 @@ export function FriendsDashboard({
               </RequestSection>
             ) : null}
 
-            {!friendRequests.length &&
+            {isLoaded &&
+            !friendRequests.length &&
             !incomingSuperNudges.length &&
             !outgoingSuperNudges.length ? (
               <div className="py-4 text-center">
@@ -1493,6 +1601,7 @@ export function FriendsDashboard({
             setFriendName("");
             setFriendHandle("");
             setFriendColor(PROFILE_COLORS[1]);
+            changeCandidateQuery("");
           }}
           onColorChange={setFriendColor}
           onHandleChange={setFriendHandle}
@@ -1501,7 +1610,21 @@ export function FriendsDashboard({
             setIsAdding(false);
             setActiveTab("requests");
           }}
-          remoteCandidates={remoteClient ? availableFriends : null}
+          candidateQuery={candidateQuery}
+          candidatesHaveMore={
+            trimmedCandidateQuery ? searchHasMore : candidatesHaveMore
+          }
+          isLoadingCandidates={isLoadingCandidates}
+          isSearching={isSearching}
+          onCandidateQueryChange={changeCandidateQuery}
+          onLoadMoreCandidates={() => void loadMoreCandidates()}
+          remoteCandidates={
+            remoteClient
+              ? trimmedCandidateQuery
+                ? (searchResults ?? [])
+                : availableFriends
+              : null
+          }
         />
       ) : null}
 
@@ -1649,26 +1772,38 @@ function FriendRequestRow({
 }
 
 function AddFriendDialog({
+  candidateQuery,
+  candidatesHaveMore,
   color,
   handle,
+  isLoadingCandidates,
+  isSearching,
   name,
   onAdd,
   onAddRemote,
   onClose,
   onColorChange,
+  onCandidateQueryChange,
   onHandleChange,
+  onLoadMoreCandidates,
   onNameChange,
   onShowRequests,
   remoteCandidates,
 }: {
+  candidateQuery: string;
+  candidatesHaveMore: boolean;
   color: string;
   handle: string;
+  isLoadingCandidates: boolean;
+  isSearching: boolean;
   name: string;
   onAdd: () => void;
   onAddRemote: (friendId: string) => void;
   onClose: () => void;
   onColorChange: (color: string) => void;
+  onCandidateQueryChange: (query: string) => void;
   onHandleChange: (handle: string) => void;
+  onLoadMoreCandidates: () => void;
   onNameChange: (name: string) => void;
   onShowRequests: () => void;
   remoteCandidates: RemoteFriendCandidate[] | null;
@@ -1679,7 +1814,11 @@ function AddFriendDialog({
 
   return (
     <AppDialog
-      bodyClassName={remoteCandidates ? "grid gap-1.5 p-3" : "space-y-4 p-3"}
+      bodyClassName={
+        remoteCandidates
+          ? "flex flex-col gap-3 overflow-hidden p-3"
+          : "space-y-4 p-3"
+      }
       closeLabel="Close add friend"
       footer={
         remoteCandidates ? null : (
@@ -1695,63 +1834,96 @@ function AddFriendDialog({
       }
       isDirty={isDirty}
       onClose={onClose}
+      // Fixed height while browsing so the dialog doesn't resize as results change.
+      panelClassName={remoteCandidates ? "h-full max-h-[40rem]" : undefined}
       title="Add a friend"
     >
       {remoteCandidates ? (
-        remoteCandidates.length ? (
-          <PaginatedList
-            className="grid gap-1.5"
-            items={sortFriendCandidates(remoteCandidates)}
-            pageSize={10}
-            renderItem={(candidate, index) => (
-              <div
-                className="grid min-h-14 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-2.5 py-2"
-                key={candidate.id}
-              >
-                <ProfileBadge friend={candidate} size="sm" />
-                <div className="min-w-0">
-                  <p className="truncate font-semibold">{candidate.handle}</p>
-                  <p className="truncate text-sm font-medium text-[var(--color-text)]">
-                    {candidate.name}
-                  </p>
-                  <p className="truncate text-xs text-[var(--color-text-muted)]">
-                    {candidate.mutualFriendCount} mutual{" "}
-                    {candidate.mutualFriendCount === 1 ? "friend" : "friends"}
-                  </p>
-                </div>
-                {candidate.requestDirection === "incoming" ? (
-                  <button
-                    className="mac-focus h-10 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)]"
-                    data-dialog-autofocus={index === 0 ? "" : undefined}
-                    onClick={onShowRequests}
-                    type="button"
-                  >
-                    View request
-                  </button>
-                ) : candidate.requestDirection === "outgoing" ? (
-                  <span className="inline-flex h-10 items-center gap-1.5 px-2 text-sm font-semibold text-[var(--color-text-muted)]">
-                    <Clock3 aria-hidden size={15} />
-                    Sent
-                  </span>
-                ) : (
-                  <button
-                    className="mac-focus h-10 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)] disabled:opacity-45"
-                    data-dialog-autofocus={index === 0 ? "" : undefined}
-                    onClick={() => onAddRemote(candidate.id)}
-                    type="button"
-                  >
-                    Request
-                  </button>
-                )}
-              </div>
-            )}
-            resetKey="friend-candidates"
+        <label className="relative block shrink-0">
+          <span className="sr-only">Search by name or username</span>
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+            size={16}
           />
-        ) : (
-          <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
-            No new profiles available.
-          </p>
-        )
+          <input
+            autoComplete="off"
+            className="mac-focus h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] pl-9 pr-9 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
+            data-dialog-autofocus
+            enterKeyHint="search"
+            onChange={(event) => onCandidateQueryChange(event.target.value)}
+            placeholder="Search by name or @username"
+            type="search"
+            value={candidateQuery}
+          />
+          {isSearching ? (
+            <LoaderCircle
+              aria-label="Searching"
+              className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-[var(--color-text-muted)]"
+              size={16}
+            />
+          ) : null}
+        </label>
+      ) : null}
+      {remoteCandidates ? (
+        <div className="-mx-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1">
+          {isSearching &&
+          !remoteCandidates.length ? null : remoteCandidates.length ? (
+            <div className="grid gap-1.5">
+              {remoteCandidates.map((candidate) => (
+                <div
+                  className="grid min-h-14 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-2.5 py-2"
+                  key={candidate.id}
+                >
+                  <ProfileBadge friend={candidate} size="sm" />
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{candidate.handle}</p>
+                    <p className="truncate text-sm font-medium text-[var(--color-text)]">
+                      {candidate.name}
+                    </p>
+                    <p className="truncate text-xs text-[var(--color-text-muted)]">
+                      {candidate.mutualFriendCount} mutual{" "}
+                      {candidate.mutualFriendCount === 1 ? "friend" : "friends"}
+                    </p>
+                  </div>
+                  {candidate.requestDirection === "incoming" ? (
+                    <button
+                      className="mac-focus h-10 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)]"
+                      onClick={onShowRequests}
+                      type="button"
+                    >
+                      View request
+                    </button>
+                  ) : candidate.requestDirection === "outgoing" ? (
+                    <span className="inline-flex h-10 items-center gap-1.5 px-2 text-sm font-semibold text-[var(--color-text-muted)]">
+                      <Clock3 aria-hidden size={15} />
+                      Sent
+                    </span>
+                  ) : (
+                    <button
+                      className="mac-focus h-10 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)] disabled:opacity-45"
+                      onClick={() => onAddRemote(candidate.id)}
+                      type="button"
+                    >
+                      Request
+                    </button>
+                  )}
+                </div>
+              ))}
+              <InfiniteScrollSentinel
+                hasMore={candidatesHaveMore}
+                isLoading={isLoadingCandidates}
+                onLoadMore={onLoadMoreCandidates}
+              />
+            </div>
+          ) : (
+            <p className="rounded-md bg-[rgb(255_255_255/0.035)] p-4 text-sm text-[var(--color-text-muted)]">
+              {candidateQuery.trim()
+                ? `No one matches "${candidateQuery.trim()}". Check the spelling or try their @username.`
+                : "No new profiles available."}
+            </p>
+          )}
+        </div>
       ) : (
         <>
           <label className="block text-sm font-medium">
@@ -2030,10 +2202,68 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-function sortFriendCandidates(candidates: RemoteFriendCandidate[]) {
-  return [...candidates].sort(
-    (first, second) =>
-      second.mutualFriendCount - first.mutualFriendCount ||
-      first.handle.localeCompare(second.handle),
+// A refresh only re-fetches the first page; keep pages loaded by scrolling.
+function mergeCandidateFirstPage(
+  firstPage: RemoteFriendCandidate[],
+  current: RemoteFriendCandidate[],
+) {
+  const firstPageIds = new Set(firstPage.map((friend) => friend.id));
+
+  return [
+    ...firstPage,
+    ...current
+      .slice(FRIEND_CANDIDATE_PAGE_SIZE)
+      .filter((friend) => !firstPageIds.has(friend.id)),
+  ];
+}
+
+function InfiniteScrollSentinel({
+  hasMore,
+  isLoading,
+  onLoadMore,
+}: {
+  hasMore: boolean;
+  isLoading: boolean;
+  onLoadMore: () => void;
+}) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const onLoadMoreRef = useRef(onLoadMore);
+
+  useEffect(() => {
+    onLoadMoreRef.current = onLoadMore;
+  }, [onLoadMore]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !hasMore || isLoading) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          onLoadMoreRef.current();
+        }
+      },
+      { rootMargin: "160px 0px" },
+    );
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [hasMore, isLoading]);
+
+  if (!hasMore && !isLoading) return null;
+
+  return (
+    <div
+      className="flex h-12 items-center justify-center text-[var(--color-text-muted)]"
+      ref={sentinelRef}
+    >
+      {isLoading ? (
+        <LoaderCircle
+          aria-label="Loading more profiles"
+          className="animate-spin"
+          size={18}
+        />
+      ) : null}
+    </div>
   );
 }

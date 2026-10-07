@@ -17,6 +17,11 @@ import { AlertCircle, ArrowLeft, MessageCircle, Send } from "lucide-react";
 import { PaginatedList } from "@/components/paginated-list";
 import type { SocialFriend } from "@/lib/social-state";
 import { cn } from "@/lib/utils";
+import {
+  ListSkeleton,
+  Skeleton,
+  SkeletonGroup,
+} from "@/components/ui/skeleton";
 
 const HISTORY_PAGE_SIZE = 40;
 const CONVERSATION_LIMIT = 60;
@@ -46,10 +51,7 @@ type ConversationResult =
   Database["public"]["Functions"]["list_direct_conversations"]["Returns"][number];
 type ConversationRow = Omit<
   ConversationResult,
-  | "latest_body"
-  | "latest_created_at"
-  | "latest_message_id"
-  | "latest_sender_id"
+  "latest_body" | "latest_created_at" | "latest_message_id" | "latest_sender_id"
 > & {
   latest_body: string | null;
   latest_created_at: string | null;
@@ -530,9 +532,7 @@ export function DirectMessages({
           ) : null}
 
           {isLoadingMessages ? (
-            <p className="py-10 text-center text-sm text-[var(--color-text-muted)]">
-              Loading messages…
-            </p>
+            <ChatSkeleton />
           ) : messages.length ? (
             <div className="space-y-2.5">
               {messages.map((message) => {
@@ -660,9 +660,13 @@ export function DirectMessages({
       ) : null}
 
       {isLoadingConversations && !displayedConversations.length ? (
-        <p className="py-10 text-center text-sm text-[var(--color-text-muted)]">
-          Loading messages…
-        </p>
+        <ListSkeleton
+          avatar
+          className="space-y-2"
+          count={4}
+          label="Loading conversations"
+          trailing={false}
+        />
       ) : displayedConversations.length ? (
         <PaginatedList
           className="space-y-2"
@@ -797,4 +801,27 @@ function formatConversationTime(value: string) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+export function ChatSkeleton() {
+  return (
+    <SkeletonGroup className="space-y-3 py-2" label="Loading messages">
+      {[
+        ["w-40", false],
+        ["w-56", false],
+        ["w-32", true],
+        ["w-48", false],
+        ["w-44", true],
+      ].map(([width, isOwn], index) => (
+        <div
+          className={cn("flex", isOwn ? "justify-end" : "justify-start")}
+          key={index}
+        >
+          <Skeleton
+            className={cn("h-9 max-w-[75%] rounded-2xl", width as string)}
+          />
+        </div>
+      ))}
+    </SkeletonGroup>
+  );
 }

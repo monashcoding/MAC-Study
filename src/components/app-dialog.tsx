@@ -32,6 +32,7 @@ export function AppDialog({
   isDirty = false,
   maxWidthClassName = "max-w-xl",
   onClose,
+  panelClassName,
   title,
   titleClassName,
   variant = "default",
@@ -46,6 +47,7 @@ export function AppDialog({
   isDirty?: boolean;
   maxWidthClassName?: string;
   onClose: () => void;
+  panelClassName?: string;
   title: ReactNode;
   titleClassName?: string;
   variant?: "confirmation" | "default";
@@ -163,16 +165,17 @@ export function AppDialog({
           "relative flex max-h-full w-full flex-col overflow-hidden shadow-2xl lg:max-h-[min(88dvh,720px)]",
           variant === "confirmation"
             ? "rounded-lg bg-[var(--color-background)]"
-            : "rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)]",
+            : "rounded-2xl bg-[var(--color-surface)] shadow-[0_32px_90px_rgb(0_0_0/0.65)]",
           maxWidthClassName,
+          panelClassName,
         )}
         data-dialog-variant={variant}
         ref={panelRef}
       >
         <div
           className={cn(
-            "flex shrink-0 items-center justify-between gap-3 px-4 py-3",
-            variant === "default" && "border-b border-[var(--color-border)]",
+            "flex shrink-0 items-center justify-between gap-3",
+            variant === "default" ? "px-5 pb-2 pt-5" : "px-4 py-3",
             headerClassName,
           )}
         >
@@ -191,7 +194,7 @@ export function AppDialog({
               "mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]",
               variant === "confirmation"
                 ? "rounded-md hover:bg-[rgb(255_255_255/0.045)]"
-                : "rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.025)] hover:bg-[rgb(255_255_255/0.06)]",
+                : "-mr-2 rounded-full hover:bg-[rgb(255_255_255/0.06)]",
             )}
             data-dialog-close
             onClick={closeImmediately}
@@ -205,7 +208,8 @@ export function AppDialog({
         {children ? (
           <div
             className={cn(
-              "min-h-0 flex-1 overflow-y-auto overscroll-contain p-4",
+              "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+              variant === "default" ? "px-5 py-3" : "p-4",
               bodyClassName,
             )}
           >
@@ -216,8 +220,8 @@ export function AppDialog({
         {footer ? (
           <div
             className={cn(
-              "shrink-0 p-4",
-              variant === "default" && "border-t border-[var(--color-border)]",
+              "shrink-0",
+              variant === "default" ? "px-5 pb-5 pt-3" : "p-4",
               footerClassName,
             )}
           >

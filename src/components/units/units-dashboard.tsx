@@ -74,6 +74,7 @@ import {
   type UnitEnrollmentFilter,
 } from "@/lib/units";
 import { cn } from "@/lib/utils";
+import { ListSkeleton } from "@/components/ui/skeleton";
 
 type CohortScope = "all" | "friends";
 const UNLINKED_SUBJECT_VALUE = "__unlinked__";
@@ -186,30 +187,33 @@ export function UnitsDashboard({
   const [requestUnitError, setRequestUnitError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const refreshRemote = useCallback(async (supabase: SupabaseClient) => {
-    const [units, groups] = await Promise.all([
-      userId
-        ? dedupeRemoteRequest({
-            key: "units",
-            load: () => fetchRemoteUnitState(supabase),
-            userId,
-          })
-        : fetchRemoteUnitState(supabase),
-      userId
-        ? dedupeRemoteRequest({
-            key: "study-groups",
-            load: () => fetchRemoteStudyGroups(supabase),
-            userId,
-          })
-        : fetchRemoteStudyGroups(supabase),
-    ]);
+  const refreshRemote = useCallback(
+    async (supabase: SupabaseClient) => {
+      const [units, groups] = await Promise.all([
+        userId
+          ? dedupeRemoteRequest({
+              key: "units",
+              load: () => fetchRemoteUnitState(supabase),
+              userId,
+            })
+          : fetchRemoteUnitState(supabase),
+        userId
+          ? dedupeRemoteRequest({
+              key: "study-groups",
+              load: () => fetchRemoteStudyGroups(supabase),
+              userId,
+            })
+          : fetchRemoteStudyGroups(supabase),
+      ]);
 
-    if (units) {
-      setUnitState(units);
-      if (userId) cacheRemoteUnitState(units, userId);
-    }
-    setSocialState({ friends: [], groups });
-  }, [userId]);
+      if (units) {
+        setUnitState(units);
+        if (userId) cacheRemoteUnitState(units, userId);
+      }
+      setSocialState({ friends: [], groups });
+    },
+    [userId],
+  );
 
   useEffect(() => {
     if (!isActive) return;
@@ -639,41 +643,41 @@ export function UnitsDashboard({
               <h2 className="truncate text-base font-semibold sm:text-lg">
                 Current and upcoming
               </h2>
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              {canFilter ? (
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                {canFilter ? (
+                  <button
+                    aria-label="Filter units"
+                    aria-pressed={activeFilterCount > 0}
+                    className={cn(
+                      "mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition",
+                      activeFilterCount
+                        ? "border-[rgb(255_227_48/0.46)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
+                        : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]",
+                    )}
+                    onClick={() => setIsFilterOpen(true)}
+                    type="button"
+                  >
+                    <ListFilter aria-hidden size={17} />
+                    <span className="hidden sm:inline">Filter</span>
+                    {activeFilterCount ? (
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] px-1 text-[11px] font-bold text-[#141414]">
+                        {activeFilterCount}
+                      </span>
+                    ) : null}
+                  </button>
+                ) : null}
                 <button
-                  aria-label="Filter units"
-                  aria-pressed={activeFilterCount > 0}
-                  className={cn(
-                    "mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition",
-                    activeFilterCount
-                      ? "border-[rgb(255_227_48/0.46)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
-                      : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]",
-                  )}
-                  onClick={() => setIsFilterOpen(true)}
+                  className="mac-focus inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
+                  onClick={() => {
+                    setSelectedSpecialUnit(null);
+                    setIsAdding(true);
+                  }}
                   type="button"
                 >
-                  <ListFilter aria-hidden size={17} />
-                  <span className="hidden sm:inline">Filter</span>
-                  {activeFilterCount ? (
-                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] px-1 text-[11px] font-bold text-[#141414]">
-                      {activeFilterCount}
-                    </span>
-                  ) : null}
+                  <Plus aria-hidden size={17} />
+                  Add unit
                 </button>
-              ) : null}
-              <button
-                className="mac-focus inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414]"
-                onClick={() => {
-                  setSelectedSpecialUnit(null);
-                  setIsAdding(true);
-                }}
-                type="button"
-              >
-                <Plus aria-hidden size={17} />
-                Add unit
-              </button>
-            </div>
+              </div>
             </div>
 
             {current.length ? (
@@ -935,14 +939,10 @@ function UnitFilterDialog({
   const [year, setYear] = useState(
     filter.year === null ? ALL_UNIT_FILTER_VALUE : String(filter.year),
   );
-  const [period, setPeriod] = useState(
-    filter.period ?? ALL_UNIT_FILTER_VALUE,
-  );
+  const [period, setPeriod] = useState(filter.period ?? ALL_UNIT_FILTER_VALUE);
   const nextFilter: UnitEnrollmentFilter = {
     period:
-      period === ALL_UNIT_FILTER_VALUE
-        ? null
-        : (period as TeachingPeriod),
+      period === ALL_UNIT_FILTER_VALUE ? null : (period as TeachingPeriod),
     year: year === ALL_UNIT_FILTER_VALUE ? null : Number(year),
   };
   const isDirty =
@@ -1143,9 +1143,12 @@ function OfferingDetail({
           </span>
         </div>
         {cohortLoading ? (
-          <p className="text-sm text-[var(--color-text-muted)]">
-            Loading cohort…
-          </p>
+          <ListSkeleton
+            avatar
+            className="grid gap-2 lg:grid-cols-2 lg:gap-x-6"
+            count={4}
+            label="Loading cohort"
+          />
         ) : cohort.length ? (
           <PaginatedList
             className="grid lg:grid-cols-2 lg:gap-x-6"

@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronRight,
+  FlaskConical,
   LoaderCircle,
   LogOut,
   MonitorDown,
@@ -19,6 +20,10 @@ import {
 import { DiscoverabilitySetting } from "@/components/profile/discoverability-setting";
 import type { InstallGuideTarget } from "@/components/pwa/install-onboarding";
 import { PushNotificationSettings } from "@/components/pwa/push-notification-settings";
+import {
+  isOnboardingPreviewAvailable,
+  startOnboardingPreview,
+} from "@/lib/onboarding-preview";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { cn } from "@/lib/utils";
 
@@ -95,6 +100,14 @@ export function ProfileDashboard({
             label="Add to your phone"
             onClick={() => openInstallGuide("phone")}
           />
+          {isOnboardingPreviewAvailable ? (
+            <ActionRow
+              detail="Replay first sign-in as a new account. Your real progress stays as it is."
+              icon={FlaskConical}
+              label="Preview onboarding"
+              onClick={startOnboardingPreview}
+            />
+          ) : null}
         </SettingsSection>
       </div>
 

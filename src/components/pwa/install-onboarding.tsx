@@ -19,6 +19,10 @@ import {
   SquarePlus,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import {
+  onboardingSessionStorage,
+  onboardingStorage,
+} from "@/lib/onboarding-preview";
 import { cn } from "@/lib/utils";
 
 type BeforeInstallPromptEvent = Event & {
@@ -87,15 +91,9 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
           true);
 
     const android = /Android/i.test(navigator.userAgent);
-    let launchersHidden = false;
-
-    try {
-      launchersHidden =
-        window.localStorage.getItem(LAUNCHER_HIDDEN_KEY) === "true" ||
-        window.sessionStorage.getItem(LAUNCHER_CLOSED_SESSION_KEY) === "true";
-    } catch {
-      // Without storage the launchers simply show again next visit.
-    }
+    const launchersHidden =
+      onboardingStorage.get(LAUNCHER_HIDDEN_KEY) === "true" ||
+      onboardingSessionStorage.get(LAUNCHER_CLOSED_SESSION_KEY) === "true";
 
     const frame = window.requestAnimationFrame(() => {
       setIsDesktop(desktopDevice);
@@ -156,14 +154,8 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
     setIsDesktopGuideOpen(false);
     setAreLaunchersHidden(true);
 
-    try {
-      window.sessionStorage.setItem(LAUNCHER_CLOSED_SESSION_KEY, "true");
-      if (dontShowAgain) {
-        window.localStorage.setItem(LAUNCHER_HIDDEN_KEY, "true");
-      }
-    } catch {
-      // Hiding still applies for this page view.
-    }
+    onboardingSessionStorage.set(LAUNCHER_CLOSED_SESSION_KEY, "true");
+    if (dontShowAgain) onboardingStorage.set(LAUNCHER_HIDDEN_KEY, "true");
   }
 
   async function install() {
@@ -262,7 +254,7 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
 
       {isOpen ? (
         <AppDialog
-          bodyClassName="p-4 sm:p-6"
+          bodyClassName="pb-4 pt-2"
           closeLabel="Close phone install guide"
           footer={
             <InstallFooter
@@ -275,8 +267,6 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
               onInstall={() => void install()}
             />
           }
-          footerClassName="border-t-0 px-4 pb-4 pt-0 sm:px-6 sm:pb-6"
-          headerClassName="border-b-0 px-4 pb-0 pt-4 sm:px-6 sm:pt-5"
           maxWidthClassName="max-w-3xl"
           onClose={closeGuides}
           title="Add MAC Study to your phone"
@@ -339,7 +329,7 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
 
       {isDesktopGuideOpen ? (
         <AppDialog
-          bodyClassName="p-4 sm:p-6"
+          bodyClassName="pb-4 pt-2"
           closeLabel="Close PC install guide"
           footer={
             <InstallFooter
@@ -352,8 +342,6 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
               onInstall={() => void install()}
             />
           }
-          footerClassName="border-t-0 px-4 pb-4 pt-0 sm:px-6 sm:pb-6"
-          headerClassName="border-b-0 px-4 pb-0 pt-4 sm:px-6 sm:pt-5"
           maxWidthClassName="max-w-xl"
           onClose={closeGuides}
           title="Install MAC Study on your PC"

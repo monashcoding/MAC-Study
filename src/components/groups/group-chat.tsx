@@ -45,6 +45,7 @@ import {
   type GroupChatReadReceipt,
 } from "@/lib/supabase/group-chat-read-receipts";
 import { cn } from "@/lib/utils";
+import { ChatSkeleton } from "@/components/friends/direct-messages";
 
 const LOCAL_CHAT_KEY = "mac-study-group-chat";
 type RemoteMessageCacheEntry = RemoteGroupChatPage;
@@ -877,7 +878,12 @@ export function GroupChat({
           </div>
         </header>
 
-        <div className="flex h-full min-h-0 flex-col">
+        <div className="relative flex h-full min-h-0 flex-col">
+          {!isReady ? (
+            <div className="pointer-events-none absolute inset-x-0 top-0 px-3 py-2.5 sm:px-4">
+              <ChatSkeleton />
+            </div>
+          ) : null}
           <div
             className={cn(
               "min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-2.5 transition-opacity duration-150 sm:px-4",

@@ -11,12 +11,16 @@ import {
   Plus,
   X,
 } from "lucide-react";
+import {
+  isOnboardingPreview,
+  onboardingStorage,
+} from "@/lib/onboarding-preview";
 
 const STORAGE_KEY = "mac-getting-started-card-hidden";
 
 export function GettingStartedCard({
-  hasStudySession,
-  hasUnit,
+  hasStudySession: actualHasStudySession,
+  hasUnit: actualHasUnit,
   onStartSession,
 }: {
   hasStudySession: boolean;
@@ -24,10 +28,15 @@ export function GettingStartedCard({
   onStartSession: () => void;
 }) {
   const [hidden, setHidden] = useState(false);
+  const [isPreview, setIsPreview] = useState(false);
+  // A preview shows the checklist as a brand new account would see it.
+  const hasStudySession = actualHasStudySession && !isPreview;
+  const hasUnit = actualHasUnit && !isPreview;
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      setHidden(window.localStorage.getItem(STORAGE_KEY) === "true");
+      setIsPreview(isOnboardingPreview());
+      setHidden(onboardingStorage.get(STORAGE_KEY) === "true");
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -36,7 +45,7 @@ export function GettingStartedCard({
   if (hidden || (hasStudySession && hasUnit)) return null;
 
   function dismiss() {
-    window.localStorage.setItem(STORAGE_KEY, "true");
+    onboardingStorage.set(STORAGE_KEY, "true");
     setHidden(true);
   }
 
@@ -94,7 +103,9 @@ export function GettingStartedCard({
         <ChecklistAction
           icon={Download}
           label="Install the app"
-          onClick={() => window.dispatchEvent(new Event("mac-open-install-guide"))}
+          onClick={() =>
+            window.dispatchEvent(new Event("mac-open-install-guide"))
+          }
         />
         <ChecklistAction
           icon={BellRing}
@@ -146,7 +157,11 @@ function StatusIcon({
           : "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[rgb(255_227_48/0.11)] text-[var(--color-mac-yellow)]"
       }
     >
-      {complete ? <Check aria-hidden size={16} /> : <Icon aria-hidden size={16} />}
+      {complete ? (
+        <Check aria-hidden size={16} />
+      ) : (
+        <Icon aria-hidden size={16} />
+      )}
     </span>
   );
 }

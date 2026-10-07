@@ -57,9 +57,11 @@ import {
   isLongSession,
 } from "@/lib/timer";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
+import { emitStudySessionChange } from "@/lib/study-session-events";
 import { TransientToast } from "@/components/transient-toast";
 import { getTeachingPeriodLabel, type UnitEnrollment } from "@/lib/units";
 import { cn } from "@/lib/utils";
+import { ListSkeleton, Skeleton } from "@/components/ui/skeleton";
 
 const STORAGE_KEY = "mac-study-demo-state";
 const SKIP_SUBJECT_DELETE_CONFIRMATION_KEY =
@@ -411,6 +413,7 @@ export function TimerDashboard({
     };
     setActiveSession(optimisticSession);
     setNow(new Date());
+    emitStudySessionChange(optimisticSession);
 
     if (dataMode === "remote" && remoteClient) {
       isSessionMutationInFlightRef.current = true;
@@ -426,6 +429,7 @@ export function TimerDashboard({
         setActiveSession((current) =>
           current?.startedAt === optimisticSession.startedAt ? null : current,
         );
+        emitStudySessionChange(null);
         await refreshRemoteTimer(remoteClient).catch(() => undefined);
         setSubjectToastMessage("Session could not be started");
       } finally {
@@ -458,6 +462,7 @@ export function TimerDashboard({
 
     setSessions((current) => [optimisticCompletedSession, ...current]);
     setActiveSession(null);
+    emitStudySessionChange(null);
 
     if (dataMode === "remote" && remoteClient) {
       isSessionMutationInFlightRef.current = true;
@@ -488,6 +493,11 @@ export function TimerDashboard({
       } catch {
         setSessions(previousSessions);
         setActiveSession(stoppingSession);
+        emitStudySessionChange({
+          groupId: stoppingSession.groupId ?? null,
+          startedAt: stoppingSession.startedAt,
+          subjectId: stoppingSession.subjectId,
+        });
         setSubjectToastMessage("Session could not be stopped");
       } finally {
         isSessionMutationInFlightRef.current = false;
@@ -790,18 +800,25 @@ export function TimerDashboard({
 
   return (
     <div className="space-y-5 pt-1 lg:pt-0 xl:grid xl:grid-cols-[minmax(0,0.9fr)_minmax(25rem,1.1fr)] xl:items-stretch xl:gap-6 xl:space-y-0">
-      <GettingStartedCard
-        hasStudySession={Boolean(activeSession) || sessions.length > 0}
-        hasUnit={unitEnrollments.length > 0}
-        onStartSession={() => setIsChoosingStudy(true)}
-      />
+      {/* Wait for real data so the checklist doesn't flash for returning users. */}
+      {isLoaded ? (
+        <GettingStartedCard
+          hasStudySession={Boolean(activeSession) || sessions.length > 0}
+          hasUnit={unitEnrollments.length > 0}
+          onStartSession={() => setIsChoosingStudy(true)}
+        />
+      ) : null}
       <section className="py-5 text-center lg:flex lg:min-h-[24rem] lg:flex-col lg:items-center lg:justify-center lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(18_18_18/0.52)] lg:px-6 lg:py-10 xl:min-h-[30rem]">
         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[var(--color-mac-yellow)]">
           Studied today
         </p>
-        <p className="mt-4 font-mono text-6xl font-semibold leading-none tabular-nums sm:text-7xl lg:text-[5.4rem] xl:text-[clamp(4rem,5vw,6rem)]">
-          {formatDuration(totalToday)}
-        </p>
+        {isLoaded ? (
+          <p className="mt-4 font-mono text-6xl font-semibold leading-none tabular-nums sm:text-7xl lg:text-[5.4rem] xl:text-[clamp(4rem,5vw,6rem)]">
+            {formatDuration(totalToday)}
+          </p>
+        ) : (
+          <Skeleton className="mx-auto mt-4 h-[3.75rem] w-64 rounded-lg sm:h-[4.5rem] sm:w-80 lg:h-[5.4rem] lg:w-96" />
+        )}
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <button
             className={cn(
@@ -863,7 +880,14 @@ export function TimerDashboard({
           </div>
         </div>
 
-        {subjects.length ? (
+        {!isLoaded ? (
+          <ListSkeleton
+            avatar
+            className="grid gap-2 lg:mt-4"
+            count={4}
+            label="Loading subjects"
+          />
+        ) : subjects.length ? (
           <PaginatedList
             className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)] lg:mt-4 lg:rounded-md lg:border lg:bg-[rgb(255_255_255/0.02)] lg:px-3"
             items={subjects}
@@ -1597,9 +1621,7 @@ function SubjectEditor({
         closeLabel="Close subject editor"
         confirmDiscard={!isCreatingSubject}
         footerClassName={editingSubject ? "p-5 sm:px-6" : undefined}
-        headerClassName={
-          editingSubject ? "border-b-0 px-5 py-4 sm:px-6" : undefined
-        }
+        headerClassName={editingSubject ? "px-5 py-4 sm:px-6" : undefined}
         footer={
           editingSubject ? (
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3">

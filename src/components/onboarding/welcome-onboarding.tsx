@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { BookOpen, Clock3, Play, UsersRound } from "lucide-react";
+import { BookOpen, Clock3, UsersRound } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import {
   ONBOARDING_VERSION,
   shouldAutoOpenWelcome,
   type OnboardingState,
 } from "@/lib/onboarding";
+import {
+  isOnboardingPreview,
+  onboardingStorage,
+} from "@/lib/onboarding-preview";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 type WelcomeOutcome = "completed" | "dismissed";
@@ -20,7 +23,6 @@ export function WelcomeOnboarding({
   onComplete: () => void;
   userId: string;
 }) {
-  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const hasNotifiedComplete = useRef(false);
@@ -30,27 +32,24 @@ export function WelcomeOnboarding({
     let cancelled = false;
 
     async function loadWelcomeState() {
-      let shouldOpen = true;
+      let shouldOpen = onboardingStorage.get(storageKey) !== "complete";
 
-      try {
-        shouldOpen = window.localStorage.getItem(storageKey) !== "complete";
-      } catch {
-        // Continue with the remote state or the first-run fallback below.
-      }
+      // A preview behaves like a brand new account, so skip the saved state.
+      if (!isOnboardingPreview()) {
+        try {
+          const supabase = createSupabaseBrowserClient();
+          const { data, error } = await supabase
+            .from("user_onboarding_states")
+            .select("is_existing_at_rollout, welcome_version")
+            .eq("user_id", userId)
+            .maybeSingle<OnboardingState>();
 
-      try {
-        const supabase = createSupabaseBrowserClient();
-        const { data, error } = await supabase
-          .from("user_onboarding_states")
-          .select("is_existing_at_rollout, welcome_version")
-          .eq("user_id", userId)
-          .maybeSingle<OnboardingState>();
-
-        if (!error) {
-          shouldOpen = shouldAutoOpenWelcome(data);
+          if (!error) {
+            shouldOpen = shouldAutoOpenWelcome(data);
+          }
+        } catch {
+          // A missing migration or an offline request must never block study.
         }
-      } catch {
-        // A missing migration or an offline request must never block study.
       }
 
       const frame = window.requestAnimationFrame(() => {
@@ -86,11 +85,9 @@ export function WelcomeOnboarding({
   }, [isOpen, isReady, onComplete]);
 
   function saveOutcome(outcome: WelcomeOutcome) {
-    try {
-      window.localStorage.setItem(storageKey, "complete");
-    } catch {
-      // The database update below remains the durable record when storage fails.
-    }
+    onboardingStorage.set(storageKey, "complete");
+    if (isOnboardingPreview()) return;
+
     const timestamp = new Date().toISOString();
 
     void createSupabaseBrowserClient()
@@ -111,60 +108,40 @@ export function WelcomeOnboarding({
     setIsOpen(false);
   }
 
-  function startFirstSession() {
-    closeWelcome("completed");
-    router.push("/app");
-    window.requestAnimationFrame(() => {
-      window.dispatchEvent(new Event("mac-open-start-study"));
-    });
-  }
-
   if (!isOpen) return null;
 
   return (
     <AppDialog
-      bodyClassName="space-y-4 sm:p-5"
-      closeLabel="Explore MAC Study"
+      bodyClassName="pb-2 pt-4"
+      closeLabel="Close welcome"
       footer={
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            className="mac-focus inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[var(--color-mac-yellow)] px-3 text-sm font-semibold text-[#141414] sm:px-4 sm:text-base"
-            data-dialog-autofocus
-            onClick={startFirstSession}
-            type="button"
-          >
-            <Play aria-hidden size={18} />
-            Start studying
-          </button>
-          <button
-            className="mac-focus h-12 rounded-lg border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)] sm:px-4"
-            onClick={() => closeWelcome("completed")}
-            type="button"
-          >
-            Explore the app
-          </button>
-        </div>
+        <button
+          className="mac-focus inline-flex h-12 w-full items-center justify-center rounded-xl bg-[var(--color-mac-yellow)] px-4 font-semibold text-[#141414] transition hover:brightness-105"
+          data-dialog-autofocus
+          onClick={() => closeWelcome("completed")}
+          type="button"
+        >
+          Explore the app
+        </button>
       }
-      maxWidthClassName="max-w-2xl"
+      footerClassName="pt-5"
+      maxWidthClassName="max-w-lg"
       onClose={() => closeWelcome("dismissed")}
       title={
-        <span>
-          Study with your friends.{" "}
-          <span className="text-[var(--color-mac-yellow)]">
+        <>
+          <span className="block">Study with your friends.</span>
+          <span className="block text-[var(--color-mac-yellow)]">
             Track your progress.
           </span>
-        </span>
+        </>
       }
-      titleClassName="whitespace-normal text-xl leading-6 tracking-[-0.02em] sm:text-2xl sm:leading-7"
+      titleClassName="whitespace-normal pr-2 text-2xl leading-8 tracking-[-0.02em] sm:text-[1.75rem] sm:leading-9"
     >
-      <p className="max-w-xl text-sm leading-6 text-[var(--color-text-muted)]">
-        Make study time visible and keep each other going.
-      </p>
-      <div className="grid grid-cols-3 divide-x divide-[var(--color-border)] rounded-xl bg-[rgb(255_255_255/0.035)] py-3 sm:py-4">
-        <WelcomeBenefit icon={Clock3} label="Track your time" />
+      <ul className="grid grid-cols-3 gap-2 sm:gap-3">
+        <WelcomeBenefit icon={Clock3} label="Track your study" />
         <WelcomeBenefit icon={BookOpen} label="Find classmates" />
         <WelcomeBenefit icon={UsersRound} label="Study together" />
-      </div>
+      </ul>
     </AppDialog>
   );
 }
@@ -177,15 +154,13 @@ function WelcomeBenefit({
   label: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-col items-center gap-2 px-2 text-center sm:flex-row sm:justify-center sm:px-3 sm:text-left">
-      <Icon
-        aria-hidden
-        className="shrink-0 text-[var(--color-mac-yellow)]"
-        size={20}
-      />
-      <span className="text-xs font-semibold leading-4 text-[var(--color-text)] sm:text-sm">
+    <li className="flex min-w-0 flex-col items-start gap-3 rounded-xl bg-[rgb(255_255_255/0.04)] p-3 sm:p-4">
+      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]">
+        <Icon aria-hidden size={20} />
+      </span>
+      <span className="text-sm font-semibold leading-5 text-[var(--color-text)]">
         {label}
       </span>
-    </div>
+    </li>
   );
 }

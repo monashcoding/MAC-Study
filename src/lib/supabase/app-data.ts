@@ -53,6 +53,8 @@ export {
 } from "./app-data/friends";
 
 export {
+  FRIEND_CANDIDATE_PAGE_SIZE,
+  fetchRemoteFriendCandidatesPage,
   fetchRemoteFriendsSnapshot,
   fetchRemoteGroupsSnapshot,
   fetchRemoteStudyGroups,

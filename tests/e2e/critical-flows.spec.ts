@@ -26,7 +26,7 @@ test.describe("signed-in critical flows", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.addInitScript((userId) => {
-      window.localStorage.setItem(`mac-install-onboarding-v3:${userId}`, "seen");
+      window.localStorage.setItem("mac-install-launchers-hidden", "true");
       window.localStorage.setItem(
         `mac-notification-onboarding:${userId}`,
         "seen",

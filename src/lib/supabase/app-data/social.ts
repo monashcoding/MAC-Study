@@ -26,6 +26,7 @@ import type {
 } from "./types";
 
 const SOCIAL_PAGE_SIZE = 100;
+export const FRIEND_CANDIDATE_PAGE_SIZE = 20;
 
 type SocialFriendResult =
   Database["public"]["Functions"]["list_social_friends"]["Returns"][number];
@@ -118,23 +119,28 @@ export async function fetchRemoteFriendsSnapshot(
   const userId = await getRemoteUserId();
   if (!userId) return null;
 
-  const [friendsResult, groupsResult, candidatesResult, requestsResult, nudgesResult] =
-    await Promise.all([
-      supabase.rpc("list_social_friends"),
-      supabase.rpc("list_my_study_groups"),
-      supabase.rpc("list_friend_candidates_page", {
-        result_limit: SOCIAL_PAGE_SIZE,
-        result_offset: 0,
-      }),
-      supabase.rpc("list_friend_requests_page", {
-        result_limit: SOCIAL_PAGE_SIZE,
-        result_offset: 0,
-      }),
-      supabase.rpc("list_active_super_nudges", {
-        result_limit: SOCIAL_PAGE_SIZE,
-        result_offset: 0,
-      }),
-    ]);
+  const [
+    friendsResult,
+    groupsResult,
+    candidatesResult,
+    requestsResult,
+    nudgesResult,
+  ] = await Promise.all([
+    supabase.rpc("list_social_friends"),
+    supabase.rpc("list_my_study_groups"),
+    supabase.rpc("list_friend_candidates_page", {
+      result_limit: FRIEND_CANDIDATE_PAGE_SIZE,
+      result_offset: 0,
+    }),
+    supabase.rpc("list_friend_requests_page", {
+      result_limit: SOCIAL_PAGE_SIZE,
+      result_offset: 0,
+    }),
+    supabase.rpc("list_active_super_nudges", {
+      result_limit: SOCIAL_PAGE_SIZE,
+      result_offset: 0,
+    }),
+  ]);
 
   if (friendsResult.error) throw friendsResult.error;
   if (groupsResult.error) throw groupsResult.error;
@@ -239,7 +245,9 @@ function socialFriendFromRow(row: SocialFriendRow): SocialFriend {
     currentSubject: "General study",
     dailyStudySeconds: parseDailyStudySeconds(row.daily_study_seconds),
     daySeconds: Number(row.day_seconds) || 0,
-    handle: row.username ? `@${row.username}` : `@user_${row.user_id.slice(0, 6)}`,
+    handle: row.username
+      ? `@${row.username}`
+      : `@user_${row.user_id.slice(0, 6)}`,
     id: row.user_id,
     initials: getInitials(label),
     isFriend: row.is_friend,
@@ -265,7 +273,36 @@ function socialGroupFromRow(row: SocialGroupRow): SocialGroup {
   };
 }
 
-function friendCandidateFromRow(row: FriendCandidateRow): RemoteFriendCandidate {
+export async function fetchRemoteFriendCandidatesPage({
+  offset,
+  query = "",
+  supabase,
+}: {
+  offset: number;
+  query?: string;
+  supabase: SupabaseClient;
+}) {
+  const searchQuery = query.trim();
+  const { data, error } = await supabase.rpc("list_friend_candidates_page", {
+    result_limit: FRIEND_CANDIDATE_PAGE_SIZE,
+    result_offset: offset,
+    // Omit when empty so browsing works the same with or without search.
+    ...(searchQuery ? { search_query: searchQuery } : {}),
+  });
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as FriendCandidateRow[];
+
+  return {
+    candidates: rows.map(friendCandidateFromRow),
+    hasMore: rows.length === FRIEND_CANDIDATE_PAGE_SIZE,
+  };
+}
+
+function friendCandidateFromRow(
+  row: FriendCandidateRow,
+): RemoteFriendCandidate {
   return {
     ...socialFriendFromProfile(row),
     mutualFriendCount: Number(row.mutual_friend_count) || 0,
@@ -309,7 +346,9 @@ function socialFriendFromProfile(row: {
     currentSubject: "General study",
     dailyStudySeconds: {},
     daySeconds: 0,
-    handle: row.username ? `@${row.username}` : `@user_${row.user_id.slice(0, 6)}`,
+    handle: row.username
+      ? `@${row.username}`
+      : `@user_${row.user_id.slice(0, 6)}`,
     id: row.user_id,
     initials: getInitials(label),
     isFriend: false,

@@ -773,7 +773,7 @@ isOneToOne: true
             }[]
                            },
 "list_friend_candidates_page":
-{ Args: { "result_limit"?: number,"result_offset"?: number }; Returns: {
+{ Args: { "result_limit"?: number,"result_offset"?: number,"search_query"?: string }; Returns: {
               "avatar_url": string,"display_name": string,"mutual_friend_count": number,"profile_color": string,"request_direction": string,"study_icon": string,"user_id": string,"username": string
             }[]
                            },

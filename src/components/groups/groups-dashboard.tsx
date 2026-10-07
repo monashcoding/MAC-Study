@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   useCallback,
   useEffect,
@@ -41,6 +42,16 @@ import {
   subscribeToRemoteTableChanges,
 } from "@/lib/client-cache";
 import {
+  emitStudySessionChange,
+  onStudySessionChange,
+} from "@/lib/study-session-events";
+import {
+  getMascotSrc,
+  MASCOT_KEYS,
+  resolveMascot,
+  type MascotKey,
+} from "@/lib/mascots";
+import {
   SOCIAL_STORAGE_KEY,
   defaultSocialState,
   getLiveRankingSeconds,
@@ -66,6 +77,7 @@ import {
   setRemoteUserNudgeMute,
   startRemoteStudySession,
   stopRemoteStudySession,
+  updateRemoteStudyIcon,
   transferRemoteGroupLeadership,
   updateRemoteGroupInvite,
   type RemoteActiveSession,
@@ -83,6 +95,7 @@ import { StartStudyDialog } from "@/components/study/start-study-dialog";
 import { Switch } from "@/components/ui/switch";
 import { formatDuration, getLocalDateKey, isLongSession } from "@/lib/timer";
 import { cn } from "@/lib/utils";
+import { ListSkeleton } from "@/components/ui/skeleton";
 import {
   GroupChat,
   prefetchRemoteGroupChat,
@@ -94,8 +107,6 @@ const rankingWindows = [
   { id: "month", label: "Month" },
 ] satisfies { id: RankingWindow; label: string }[];
 
-const MEMBER_ACTIVE_COLOR = "#ff7a00";
-const MEMBER_INACTIVE_COLOR = "#737b91";
 const emptySocialState: SocialState = { friends: [], groups: [] };
 const TIMER_STORAGE_KEY = "mac-study-demo-state";
 const fallbackStudySubjects: RemoteSubject[] = [];
@@ -132,6 +143,12 @@ export function GroupsDashboard({
   );
   const [activeStudySession, setActiveStudySession] =
     useState<RemoteActiveSession | null>(null);
+  // Your own start/stop, shown on your card before the server confirms it.
+  const [selfStudyOverride, setSelfStudyOverride] = useState<
+    | { studying: true; startedAt: string }
+    | { studying: false; at: string }
+    | null
+  >(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isChoosingStudy, setIsChoosingStudy] = useState(false);
@@ -170,38 +187,44 @@ export function GroupsDashboard({
     );
   }, [groupUnreadCounts, onUnreadChange]);
 
-  const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
-    const snapshot = userId
-      ? await dedupeRemoteRequest({
-          key: "groups",
-          load: () => fetchRemoteGroupsSnapshot(supabase),
-          userId,
-        })
-      : await fetchRemoteGroupsSnapshot(supabase);
+  const refreshRemoteSocial = useCallback(
+    async (supabase: SupabaseClient) => {
+      const snapshot = userId
+        ? await dedupeRemoteRequest({
+            key: "groups",
+            load: () => fetchRemoteGroupsSnapshot(supabase),
+            userId,
+          })
+        : await fetchRemoteGroupsSnapshot(supabase);
 
-    if (snapshot) {
-      cacheRemoteGroupsSnapshot(snapshot);
-      setCurrentUserId(snapshot.currentUserId);
-      setSocialState(snapshot.socialState);
-      setGroupInvites(snapshot.groupInvites ?? []);
-    }
-  }, [userId]);
+      if (snapshot) {
+        cacheRemoteGroupsSnapshot(snapshot);
+        setCurrentUserId(snapshot.currentUserId);
+        setSocialState(snapshot.socialState);
+        setGroupInvites(snapshot.groupInvites ?? []);
+      }
+    },
+    [userId],
+  );
 
-  const refreshRemoteTimer = useCallback(async (supabase: SupabaseClient) => {
-    const timerState = userId
-      ? await dedupeRemoteRequest({
-          key: "timer",
-          load: () => fetchRemoteTimerState(supabase),
-          userId,
-        })
-      : await fetchRemoteTimerState(supabase);
+  const refreshRemoteTimer = useCallback(
+    async (supabase: SupabaseClient) => {
+      const timerState = userId
+        ? await dedupeRemoteRequest({
+            key: "timer",
+            load: () => fetchRemoteTimerState(supabase),
+            userId,
+          })
+        : await fetchRemoteTimerState(supabase);
 
-    if (timerState) {
-      cacheRemoteTimerState(timerState);
-      setTimerSubjects(timerState.subjects);
-      setActiveStudySession(timerState.activeSession);
-    }
-  }, [userId]);
+      if (timerState) {
+        cacheRemoteTimerState(timerState);
+        setTimerSubjects(timerState.subjects);
+        setActiveStudySession(timerState.activeSession);
+      }
+    },
+    [userId],
+  );
 
   const refreshGroupUnreadCounts = useCallback(
     async (supabase: SupabaseClient) => {
@@ -483,10 +506,45 @@ export function GroupsDashboard({
       window.removeEventListener("mac-open-group-requests", openRequests);
   }, []);
   useAppHeaderDetail("/app/groups", selectedGroup?.name ?? null);
+  const selfId = currentUserId ?? "you";
   const friendsById = useMemo(
-    () => new Map(socialState.friends.map((friend) => [friend.id, friend])),
-    [socialState.friends],
+    () =>
+      new Map(
+        socialState.friends.map((friend) => [
+          friend.id,
+          friend.id === selfId
+            ? applySelfStudyOverride(friend, selfStudyOverride)
+            : friend,
+        ]),
+      ),
+    [selfId, selfStudyOverride, socialState.friends],
   );
+
+  useEffect(() => {
+    return onStudySessionChange((session) => {
+      setActiveStudySession(session);
+      setSelfStudyOverride(
+        session
+          ? { studying: true, startedAt: session.startedAt }
+          : { studying: false, at: new Date().toISOString() },
+      );
+    });
+  }, []);
+
+  const serverSelfStudying = socialState.friends.find(
+    (friend) => friend.id === selfId,
+  )?.studying;
+
+  useEffect(() => {
+    // Hand back to server data once it agrees with the local change.
+    if (
+      selfStudyOverride &&
+      serverSelfStudying === selfStudyOverride.studying
+    ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears a resolved optimistic override
+      setSelfStudyOverride(null);
+    }
+  }, [selfStudyOverride, serverSelfStudying]);
   const groupSummaries = socialState.groups.map((group) => {
     const members = getGroupMembers(group, friendsById);
     const activeNow = members.filter((member) => member.studying).length;
@@ -800,11 +858,13 @@ export function GroupsDashboard({
     };
     setActiveStudySession(nextSession);
     setIsChoosingStudy(false);
+    emitStudySessionChange(nextSession);
 
     if (remoteClient) {
       try {
         await startRemoteStudySession({
           groupId: selectedGroup.id,
+          startedAt: nextSession.startedAt,
           subjectId,
           supabase: remoteClient,
         });
@@ -812,6 +872,7 @@ export function GroupsDashboard({
         setActiveStudySession((current) =>
           current?.startedAt === nextSession.startedAt ? null : current,
         );
+        emitStudySessionChange(null);
       } finally {
         await Promise.allSettled([
           refreshRemoteTimer(remoteClient),
@@ -838,12 +899,18 @@ export function GroupsDashboard({
 
     const stoppingSession = activeStudySession;
     setActiveStudySession(null);
+    emitStudySessionChange(null);
 
     if (remoteClient) {
       try {
         await stopRemoteStudySession(remoteClient);
       } catch {
         setActiveStudySession((current) => current ?? stoppingSession);
+        emitStudySessionChange({
+          groupId: stoppingSession.groupId ?? null,
+          startedAt: stoppingSession.startedAt,
+          subjectId: stoppingSession.subjectId,
+        });
       } finally {
         await Promise.allSettled([
           refreshRemoteTimer(remoteClient),
@@ -876,6 +943,31 @@ export function GroupsDashboard({
       ],
       subjects: timerSubjects,
     });
+  }
+
+  async function changeMascot(memberId: string, icon: MascotKey) {
+    const previousIcon = friendsById.get(memberId)?.personIcon;
+    const applyIcon = (nextIcon: SocialFriend["personIcon"]) =>
+      setSocialState((current) => ({
+        ...current,
+        friends: current.friends.map((friend) =>
+          friend.id === memberId ? { ...friend, personIcon: nextIcon } : friend,
+        ),
+      }));
+
+    applyIcon(icon);
+
+    if (!remoteClient || !currentUserId || !previousIcon) return;
+
+    try {
+      await updateRemoteStudyIcon({
+        icon,
+        supabase: remoteClient,
+        userId: currentUserId,
+      });
+    } catch {
+      applyIcon(previousIcon);
+    }
   }
 
   function nudgeMember(memberId: string, groupId: string) {
@@ -1037,10 +1129,10 @@ export function GroupsDashboard({
               renderItem={(member) => (
                 <button
                   className={cn(
-                    "mac-focus min-w-0 rounded-xl border px-2 py-3 text-center transition hover:bg-[rgb(255_255_255/0.045)] active:scale-[0.98]",
+                    "mac-focus group relative flex min-w-0 flex-col items-center rounded-xl border px-1.5 pb-2.5 pt-1.5 text-center transition active:scale-[0.98]",
                     member.studying
-                      ? "border-[rgb(255_122_0/0.18)] bg-[rgb(255_122_0/0.045)] text-[#ff7a00]"
-                      : "border-[rgb(255_255_255/0.045)] bg-[rgb(255_255_255/0.018)] text-[var(--color-text-muted)]",
+                      ? "border-[rgb(255_122_0/0.3)] bg-[radial-gradient(circle_at_50%_38%,rgb(255_122_0/0.14),transparent_62%),rgb(255_122_0/0.035)] hover:border-[rgb(255_122_0/0.45)]"
+                      : "border-[rgb(255_255_255/0.05)] bg-[rgb(255_255_255/0.018)] hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.035)]",
                   )}
                   key={member.id}
                   onClick={() => {
@@ -1048,10 +1140,14 @@ export function GroupsDashboard({
                   }}
                   type="button"
                 >
-                  <StudyPersonIcon active={member.studying} />
+                  <MemberMascot
+                    active={member.studying}
+                    icon={member.personIcon}
+                    memberId={member.id}
+                  />
                   <p
                     className={cn(
-                      "mt-2 truncate text-sm font-semibold",
+                      "mt-1 w-full truncate px-1 text-sm font-semibold",
                       member.studying
                         ? "text-[var(--color-text)]"
                         : "text-[var(--color-text-muted)]",
@@ -1060,7 +1156,23 @@ export function GroupsDashboard({
                   >
                     {member.handle}
                   </p>
-                  <p className="mt-1 font-mono text-xs font-semibold tabular-nums text-[var(--color-text-muted)]">
+                  <p
+                    className={cn(
+                      "mt-0.5 flex items-center justify-center gap-1.5 font-mono text-xs font-semibold tabular-nums",
+                      member.studying
+                        ? "text-[#ff9a3d]"
+                        : "text-[rgb(169_169_159/0.7)]",
+                    )}
+                  >
+                    {member.studying ? (
+                      <>
+                        <span
+                          aria-hidden
+                          className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#ff7a00] motion-reduce:animate-none"
+                        />
+                        <span className="sr-only">Studying now, </span>
+                      </>
+                    ) : null}
                     {formatDuration(getLiveRankingSeconds(member, "day", now))}
                   </p>
                 </button>
@@ -1084,6 +1196,11 @@ export function GroupsDashboard({
             onClose={() => {
               setSelectedMemberId(null);
             }}
+            onMascotChange={
+              selectedMember.id === (currentUserId ?? "you")
+                ? (icon) => void changeMascot(selectedMember.id, icon)
+                : undefined
+            }
             onNudge={() => nudgeMember(selectedMember.id, selectedGroup.id)}
             pendingNudges={selectedMemberNudgeState?.pending ?? 0}
             remoteClient={remoteClient}
@@ -1196,19 +1313,18 @@ export function GroupsDashboard({
           <button
             className={cn(
               "mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold shadow-[0_16px_34px_rgb(0_0_0/0.32)] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-55",
-              activeInSelectedGroup
+              activeStudySession
                 ? "bg-[var(--color-danger)] text-white"
                 : "bg-[var(--color-mac-yellow)] text-[#141414]",
             )}
-            disabled={isStudyingElsewhere}
             onClick={() =>
-              void (activeInSelectedGroup
+              void (activeStudySession
                 ? stopGroupStudy()
                 : setIsChoosingStudy(true))
             }
             type="button"
           >
-            {activeInSelectedGroup ? (
+            {activeStudySession ? (
               <Pause aria-hidden fill="currentColor" size={18} />
             ) : (
               <Play aria-hidden size={18} />
@@ -1216,7 +1332,7 @@ export function GroupsDashboard({
             {activeInSelectedGroup
               ? "Pause study"
               : isStudyingElsewhere
-                ? "Studying in another session"
+                ? "Stop current session"
                 : "Start study"}
           </button>
         </div>
@@ -1227,9 +1343,15 @@ export function GroupsDashboard({
   return (
     <div className="space-y-4 lg:space-y-6">
       <section className="hidden grid-cols-3 gap-4 lg:grid">
-        <SummaryStat label="Groups" value={`${socialState.groups.length}`} />
-        <SummaryStat label="Active" value={`${activeTotal}`} />
-        <SummaryStat label="Members" value={`${uniqueMemberCount}`} />
+        <SummaryStat
+          label="Groups"
+          value={isLoaded ? `${socialState.groups.length}` : "–"}
+        />
+        <SummaryStat label="Active" value={isLoaded ? `${activeTotal}` : "–"} />
+        <SummaryStat
+          label="Members"
+          value={isLoaded ? `${uniqueMemberCount}` : "–"}
+        />
       </section>
 
       <div className="flex items-center justify-between gap-3">
@@ -1244,9 +1366,11 @@ export function GroupsDashboard({
           </button>
         ) : (
           <p className="text-sm font-medium text-[var(--color-text-muted)]">
-            {socialState.groups.length
-              ? `${socialState.groups.length} ${socialState.groups.length === 1 ? "group" : "groups"}`
-              : "No groups yet"}
+            {!isLoaded
+              ? "Loading groups…"
+              : socialState.groups.length
+                ? `${socialState.groups.length} ${socialState.groups.length === 1 ? "group" : "groups"}`
+                : "No groups yet"}
           </p>
         )}
         <div className="flex items-center gap-2">
@@ -1290,7 +1414,9 @@ export function GroupsDashboard({
 
       {activeTab === "groups" ? (
         <section className="space-y-3" role="tabpanel">
-          {groupSummaries.length ? (
+          {!isLoaded ? (
+            <ListSkeleton count={3} label="Loading groups" />
+          ) : groupSummaries.length ? (
             <PaginatedList
               className="grid gap-2 lg:grid-cols-2 lg:gap-3"
               items={groupSummaries}
@@ -1350,6 +1476,14 @@ export function GroupsDashboard({
               }
             />
           )}
+        </section>
+      ) : !isLoaded ? (
+        <section role="tabpanel">
+          <ListSkeleton
+            className="grid gap-2"
+            count={2}
+            label="Loading invitations"
+          />
         </section>
       ) : (
         <section className="space-y-6" role="tabpanel">
@@ -1903,6 +2037,7 @@ function GroupMemberDialog({
   now,
   nudgeFeedback,
   onClose,
+  onMascotChange,
   onNudge,
   pendingNudges,
   remoteClient,
@@ -1914,6 +2049,7 @@ function GroupMemberDialog({
   now: Date;
   nudgeFeedback: string | null;
   onClose: () => void;
+  onMascotChange?: (icon: MascotKey) => void;
   onNudge: () => void;
   pendingNudges: number;
   remoteClient: SupabaseClient | null;
@@ -2040,6 +2176,14 @@ function GroupMemberDialog({
           value={formatDuration(getLiveRankingSeconds(member, "month", now))}
         />
       </div>
+
+      {onMascotChange ? (
+        <MascotPicker
+          memberId={member.id}
+          onChange={onMascotChange}
+          value={member.personIcon}
+        />
+      ) : null}
     </AppDialog>
   );
 }
@@ -2695,30 +2839,116 @@ function SettingValue({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StudyPersonIcon({ active }: { active: boolean }) {
-  const color = active ? MEMBER_ACTIVE_COLOR : MEMBER_INACTIVE_COLOR;
+function MemberMascot({
+  active,
+  className,
+  icon,
+  memberId,
+}: {
+  active: boolean;
+  className?: string;
+  icon: string;
+  memberId: string;
+}) {
+  const src = getMascotSrc(resolveMascot(icon, memberId));
 
   return (
-    <svg
+    <span
       aria-hidden
-      className="mx-auto h-14 w-14 sm:h-16 sm:w-16"
-      fill="none"
-      stroke={color}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="3.2"
-      viewBox="0 0 72 72"
+      className={cn(
+        "mac-mascot relative mx-auto block transition-transform duration-300 group-hover:-translate-y-0.5 motion-reduce:transition-none",
+        className ?? "h-24 w-24 sm:h-28 sm:w-28 lg:h-32 lg:w-32",
+      )}
+      data-active={active}
     >
-      <path d="M31 6c5 5 1 9 6 13" />
-      <path d="M25 10c4 4 1 7 5 10" />
-      <path d="M40 10c-3 4-1 7-5 10" />
-      <circle cx="32" cy="25" r="7.5" />
-      <path d="M18 53c0-10 6-17 14-17s14 7 14 17" />
-      <path d="M12 56h40M17 64V49h31v15" />
-      <path d="M52 37h10l3 19H50l2-19Z" />
-      <path d="M56 37V28h8" />
-    </svg>
+      <Image
+        alt=""
+        className="h-full w-full"
+        height={128}
+        src={src}
+        width={128}
+      />
+    </span>
   );
+}
+
+function MascotPicker({
+  memberId,
+  onChange,
+  value,
+}: {
+  memberId: string;
+  onChange: (key: MascotKey) => void;
+  value: string;
+}) {
+  const selected = resolveMascot(value, memberId);
+
+  return (
+    <fieldset className="mt-5">
+      <legend className="text-sm font-semibold">Your mascot</legend>
+      <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+        Shown to everyone in your groups.
+      </p>
+      <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-6">
+        {MASCOT_KEYS.map((key) => {
+          const isSelected = key === selected;
+
+          return (
+            <button
+              aria-label={key.replace(/-/g, " ")}
+              aria-pressed={isSelected}
+              className={cn(
+                "mac-focus rounded-lg border p-1 transition active:scale-95",
+                isSelected
+                  ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)]"
+                  : "border-[rgb(255_255_255/0.06)] hover:border-[rgb(255_255_255/0.16)] hover:bg-[rgb(255_255_255/0.035)]",
+              )}
+              key={key}
+              onClick={() => onChange(key)}
+              type="button"
+            >
+              <Image
+                alt=""
+                className="h-full w-full"
+                height={56}
+                src={getMascotSrc(key)}
+                width={56}
+              />
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+function applySelfStudyOverride(
+  friend: SocialFriend,
+  override:
+    | { studying: true; startedAt: string }
+    | { studying: false; at: string }
+    | null,
+): SocialFriend {
+  if (!override || friend.studying === override.studying) return friend;
+
+  if (override.studying) {
+    return {
+      ...friend,
+      activeStartedAt: override.startedAt,
+      activeUpdatedAt: override.startedAt,
+      studying: true,
+    };
+  }
+
+  // Bake the live seconds in so the time doesn't drop until the server catches up.
+  const stoppedAt = new Date(override.at);
+  return {
+    ...friend,
+    daySeconds: getLiveRankingSeconds(friend, "day", stoppedAt),
+    monthSeconds: getLiveRankingSeconds(friend, "month", stoppedAt),
+    studying: false,
+    weekSeconds: getLiveRankingSeconds(friend, "week", stoppedAt),
+  };
 }
 
 function getGroupMembers(

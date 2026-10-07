@@ -16,12 +16,16 @@ import {
 } from "lucide-react";
 import type { AppAuthState } from "@/lib/auth/app-auth";
 import {
+  cacheRemoteGroupsSnapshot,
   cacheRemoteTimerState,
   cacheRemoteUnitState,
   dedupeRemoteRequest,
+  getCachedRemoteGroupsSnapshot,
 } from "@/lib/client-cache";
+import { getMascotSrc, MASCOT_KEYS } from "@/lib/mascots";
 import {
   fetchRemoteDirectMessageUnreadCount,
+  fetchRemoteGroupsSnapshot,
   fetchRemoteTimerState,
   fetchRemoteUnitState,
   subscribeToRemoteAppChanges,
@@ -30,11 +34,13 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { fetchGroupChatUnreadCounts } from "@/lib/supabase/group-chat-read-receipts";
 import { AppWorkspace } from "@/components/app-workspace";
 import { AppHeaderDetailProvider } from "@/components/app-header-detail";
+import { OnboardingPreviewBanner } from "@/components/onboarding/onboarding-preview-banner";
 import { WelcomeOnboarding } from "@/components/onboarding/welcome-onboarding";
 import { InstallOnboarding } from "@/components/pwa/install-onboarding";
 import { NotificationOnboarding } from "@/components/pwa/notification-onboarding";
 import { AppNotifications } from "@/components/social/app-notifications";
 import { NudgeNotifications } from "@/components/social/nudge-notifications";
+import { SidebarStudyTimer } from "@/components/timer/sidebar-study-timer";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -174,6 +180,11 @@ export function AppShell({
     const cacheUserId = currentUserId;
     let cancelled = false;
     const timeout = window.setTimeout(() => {
+      // Mascots are tiny SVGs; fetch them now so group cards don't pop in.
+      MASCOT_KEYS.forEach((key) => {
+        new window.Image().src = getMascotSrc(key);
+      });
+
       void (async () => {
         try {
           const supabase = createSupabaseBrowserClient();
@@ -188,6 +199,23 @@ export function AppShell({
           }
         } catch {
           // Preloading is opportunistic; the Units view can retry on demand.
+        }
+      })();
+
+      if (getCachedRemoteGroupsSnapshot(cacheUserId)) return;
+
+      void (async () => {
+        try {
+          const supabase = createSupabaseBrowserClient();
+          const snapshot = await dedupeRemoteRequest({
+            key: "groups",
+            load: () => fetchRemoteGroupsSnapshot(supabase),
+            userId: cacheUserId,
+          });
+
+          if (!cancelled && snapshot) cacheRemoteGroupsSnapshot(snapshot);
+        } catch {
+          // Preloading is opportunistic; the Groups view can retry on demand.
         }
       })();
     }, 350);
@@ -421,7 +449,18 @@ export function AppShell({
                 </nav>
               </div>
 
-              <DesktopAccount handle={accountHandle} name={accountName} />
+              <div className="mt-auto">
+                {currentUserId ? (
+                  <SidebarStudyTimer userId={currentUserId} />
+                ) : null}
+                <DesktopAccount
+                  handle={accountHandle}
+                  isActive={isActive(displayPathname, "/app/profile")}
+                  name={accountName}
+                  onIntent={warmRoute}
+                  onNavigate={navigateTo}
+                />
+              </div>
             </aside>
 
             <main
@@ -538,6 +577,7 @@ export function AppShell({
           <>
             <AppNotifications userId={authState.user.id} />
             <NudgeNotifications userId={authState.user.id} />
+            <OnboardingPreviewBanner />
             <WelcomeOnboarding
               onComplete={handleWelcomeOnboardingComplete}
               userId={authState.user.id}
@@ -661,7 +701,20 @@ function NavUnreadDot() {
   );
 }
 
-function DesktopAccount({ handle, name }: { handle: string; name: string }) {
+function DesktopAccount({
+  handle,
+  isActive,
+  name,
+  onIntent,
+  onNavigate,
+}: {
+  handle: string;
+  isActive: boolean;
+  name: string;
+  onIntent: (href: string) => void;
+  onNavigate: (href: string, event: MouseEvent<HTMLAnchorElement>) => void;
+}) {
+  const href = "/app/profile";
   const initials = name
     .split(/\s+/)
     .map((part) => part[0])
@@ -670,19 +723,35 @@ function DesktopAccount({ handle, name }: { handle: string; name: string }) {
     .toUpperCase();
 
   return (
-    <div className="mt-auto rounded-lg border border-[rgb(255_255_255/0.08)] bg-[rgb(255_255_255/0.025)] p-3">
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-sm font-bold text-[#141414]">
-          {initials}
+    <Link
+      aria-label={`Account settings for ${name}`}
+      className={cn(
+        "mac-focus group flex items-center gap-3 rounded-lg border p-3 transition",
+        isActive
+          ? "border-[rgb(255_227_48/0.45)] bg-[rgb(255_227_48/0.06)]"
+          : "border-[rgb(255_255_255/0.08)] bg-[rgb(255_255_255/0.025)] hover:border-[rgb(255_255_255/0.16)] hover:bg-[rgb(255_255_255/0.05)]",
+      )}
+      href={href}
+      onClick={(event) => onNavigate(href, event)}
+      onFocus={() => onIntent(href)}
+      onPointerEnter={() => onIntent(href)}
+      prefetch
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-sm font-bold text-[#141414]">
+        {initials}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold">{name}</span>
+        <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
+          {handle}
         </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold">{name}</span>
-          <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
-            {handle}
-          </span>
-        </span>
-      </div>
-    </div>
+      </span>
+      <Settings
+        aria-hidden
+        className="shrink-0 text-[var(--color-text-muted)] transition group-hover:rotate-45 group-hover:text-[var(--color-text)] motion-reduce:group-hover:rotate-0"
+        size={17}
+      />
+    </Link>
   );
 }
 

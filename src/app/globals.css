@@ -396,19 +396,16 @@ body {
   }
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
+/* Tailwind's preflight already resets form-control fonts. These stay in the
+   base layer so utility classes such as font-semibold and text-sm still win. */
+@layer base {
+  button {
+    cursor: pointer;
+  }
 
-button {
-  cursor: pointer;
-}
-
-button:disabled {
-  cursor: not-allowed;
+  button:disabled {
+    cursor: not-allowed;
+  }
 }
 
 .mac-duration-slider {
@@ -495,13 +492,6 @@ textarea::placeholder {
   color: rgb(169 169 159 / 0.72);
 }
 
-[role="dialog"] > div {
-  border-color: rgb(255 255 255 / 0.1);
-  border-radius: 0.75rem;
-  background: #181818;
-  box-shadow: 0 32px 90px rgb(0 0 0 / 0.5);
-}
-
 @media (max-width: 40rem) {
   [role="dialog"] {
     align-items: center;
@@ -551,4 +541,16 @@ textarea::placeholder {
   .mac-focus:focus-visible {
     outline-color: var(--color-mac-yellow);
   }
+}
+
+/* Group member mascots: idle members are greyed out, studying members in full colour. */
+.mac-mascot img {
+  transition:
+    filter 300ms ease,
+    opacity 300ms ease;
+}
+
+.mac-mascot[data-active="false"] img {
+  filter: grayscale(1) brightness(0.85);
+  opacity: 0.6;
 }
