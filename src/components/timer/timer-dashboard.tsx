@@ -29,6 +29,7 @@ import {
   cacheRemoteTimerState,
   dedupeRemoteRequest,
   getCachedRemoteTimerState,
+  getStaleRemoteTimerState,
   subscribeToRemoteTableChanges,
 } from "@/lib/client-cache";
 import {
@@ -229,7 +230,9 @@ export function TimerDashboard({
     let cancelled = false;
 
     async function loadInitialState() {
-      const cachedRemoteState = getCachedRemoteTimerState(userId);
+      // A stale snapshot paints immediately; the fetch below replaces it.
+      const cachedRemoteState =
+        getCachedRemoteTimerState(userId) ?? getStaleRemoteTimerState(userId);
 
       if (cachedRemoteState) {
         applyRemoteTimerState(cachedRemoteState);

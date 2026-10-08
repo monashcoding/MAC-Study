@@ -8,6 +8,9 @@ import type {
 } from "@/lib/supabase/app-data/types";
 
 export const REMOTE_CACHE_MAX_AGE_MS = 2 * 60 * 1000;
+// Past the fresh window, data is still good enough to paint on launch while
+// a refetch runs, so the app opens straight onto the last-known screen.
+export const REMOTE_STALE_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const REMOTE_TIMER_CACHE_KEY = "mac-study-remote-timer-cache-v3";
 const REMOTE_FRIENDS_CACHE_KEY = "mac-study-remote-friends-cache-v3";
@@ -44,6 +47,17 @@ export function getCachedRemoteTimerState(userId: string | null) {
   const value = getFreshValue(timerCache, REMOTE_TIMER_CACHE_KEY, userId);
   if (!value) timerCache = null;
   return value;
+}
+
+/** Last-known timer state up to a day old, for painting before a refetch. */
+export function getStaleRemoteTimerState(userId: string | null) {
+  if (!userId) return null;
+  timerCache ??= readCache<RemoteTimerState>(REMOTE_TIMER_CACHE_KEY);
+  if (!timerCache || timerCache.userId !== userId) return null;
+  if (Date.now() - timerCache.cachedAt > REMOTE_STALE_CACHE_MAX_AGE_MS) {
+    return null;
+  }
+  return timerCache.value;
 }
 
 export function cacheRemoteTimerState(state: RemoteTimerState) {
@@ -215,13 +229,15 @@ function getFreshValue<T>(
 ): T | null {
   if (!envelope) return null;
 
-  if (
-    envelope.userId !== userId ||
-    Date.now() - envelope.cachedAt > REMOTE_CACHE_MAX_AGE_MS
-  ) {
+  const age = Date.now() - envelope.cachedAt;
+
+  if (envelope.userId !== userId || age > REMOTE_STALE_CACHE_MAX_AGE_MS) {
     removeCache(key);
     return null;
   }
+
+  // Expired but within the stale window: keep it stored for stale readers.
+  if (age > REMOTE_CACHE_MAX_AGE_MS) return null;
 
   return envelope.value;
 }
