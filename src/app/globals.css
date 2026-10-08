@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant standalone (@media (display-mode: standalone));
+
 :root {
   --radius-md: 0.5rem;
   --radius-lg: 0.625rem;

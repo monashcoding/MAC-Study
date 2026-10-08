@@ -114,8 +114,11 @@ export function DirectMessages({
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [isClosing, setIsClosing] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLElement>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const finishCloseRef = useRef<() => void>(() => {});
   const loadSequenceRef = useRef(0);
   const shouldScrollToBottomRef = useRef(false);
   const friendsRef = useRef(friends);
@@ -250,6 +253,15 @@ export function DirectMessages({
       sizeChat();
     }
 
+    function releaseChatLayout() {
+      body.classList.remove("mac-chat-view-active", "mac-chat-composer-active");
+    }
+
+    function closeForHistoryNavigation() {
+      releaseChatLayout();
+      finishCloseRef.current();
+    }
+
     const workspaceObserver = workspace
       ? new MutationObserver(syncChatVisibility)
       : null;
@@ -262,16 +274,21 @@ export function DirectMessages({
 
     syncChatVisibility();
     window.addEventListener("resize", sizeChat);
+    window.addEventListener("pagehide", releaseChatLayout);
+    window.addEventListener("popstate", closeForHistoryNavigation);
     visualViewport?.addEventListener("resize", sizeChat);
     visualViewport?.addEventListener("scroll", sizeChat);
 
     return () => {
       workspaceObserver?.disconnect();
       window.cancelAnimationFrame(frame);
+      if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
       chat?.style.removeProperty("top");
       chat?.style.removeProperty("height");
       body.classList.remove("mac-chat-view-active", "mac-chat-composer-active");
       window.removeEventListener("resize", sizeChat);
+      window.removeEventListener("pagehide", releaseChatLayout);
+      window.removeEventListener("popstate", closeForHistoryNavigation);
       visualViewport?.removeEventListener("resize", sizeChat);
       visualViewport?.removeEventListener("scroll", sizeChat);
     };
@@ -280,6 +297,27 @@ export function DirectMessages({
   function setComposerFocused(focused: boolean) {
     document.body.classList.toggle("mac-chat-composer-active", focused);
     window.dispatchEvent(new Event("resize"));
+  }
+
+  function finishClose() {
+    closeTimerRef.current = null;
+    setIsClosing(false);
+    onConversationOpenChange?.(false);
+    setSelectedFriendId(null);
+    setMessages([]);
+    setFeedback(null);
+    onConversationClosed();
+  }
+
+  useEffect(() => {
+    finishCloseRef.current = finishClose;
+  });
+
+  function closeConversation() {
+    if (isClosing) return;
+
+    setIsClosing(true);
+    closeTimerRef.current = window.setTimeout(finishClose, 160);
   }
 
   useEffect(() => {
@@ -585,19 +623,16 @@ export function DirectMessages({
       <section
         aria-label={`Messages with ${selectedFriend.name}`}
         ref={chatRef}
-        className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] flex-col overflow-hidden bg-[var(--color-background)] lg:relative lg:inset-auto lg:z-auto lg:h-[calc(100dvh-11rem)] lg:min-h-[32rem] lg:max-h-[760px] lg:rounded-lg lg:border lg:border-[var(--color-border)]"
+        className={cn(
+          "fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] flex-col overflow-hidden bg-[var(--color-background)] lg:relative lg:inset-auto lg:z-auto lg:h-[calc(100dvh-11rem)] lg:min-h-[32rem] lg:max-h-[760px] lg:rounded-lg lg:border lg:border-[var(--color-border)]",
+          isClosing ? "mac-chat-screen-exit" : "mac-chat-screen-enter",
+        )}
       >
-        <header className="flex shrink-0 items-center gap-3 border-b border-[var(--color-border)] px-3 pb-3 pt-[max(0.75rem,var(--safe-area-top))] lg:p-3">
+        <header className="flex shrink-0 items-center gap-3 border-b border-[var(--color-border)] bg-[rgb(23_23_23/0.96)] px-3 pb-2 pt-[calc(var(--safe-area-top)+0.5rem)] backdrop-blur-xl lg:pt-2">
           <button
             aria-label="Back to messages"
-            className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)]"
-            onClick={() => {
-              onConversationOpenChange?.(false);
-              setSelectedFriendId(null);
-              setMessages([]);
-              setFeedback(null);
-              onConversationClosed();
-            }}
+            className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+            onClick={closeConversation}
             type="button"
           >
             <ArrowLeft aria-hidden size={19} />
