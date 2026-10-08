@@ -72,6 +72,7 @@ phone.
 iPhone:
 
 - Open the URL in Safari.
+- Tap the ... menu.
 - Tap Share.
 - Tap Add to Home Screen.
 - Open MAC Study from the new home-screen icon.
