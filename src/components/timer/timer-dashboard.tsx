@@ -19,7 +19,6 @@ import {
   Pencil,
   Play,
   Plus,
-  Trash2,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { CustomSelect } from "@/components/custom-select";
@@ -163,7 +162,12 @@ export function TimerDashboard({
   const [reminderFeedback, setReminderFeedback] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<PushStatus | null>(null);
   const isSavingSubjectsRef = useRef(false);
+  const isEditingSubjectsRef = useRef(false);
   const isSessionMutationInFlightRef = useRef(false);
+
+  useEffect(() => {
+    isEditingSubjectsRef.current = isEditingSubjects;
+  }, [isEditingSubjects]);
 
   const closeSubjectEditor = useCallback(() => {
     setIsEditingSubjects(false);
@@ -172,7 +176,8 @@ export function TimerDashboard({
 
   const applyRemoteTimerState = useCallback((remoteState: RemoteTimerState) => {
     setSubjects(remoteState.subjects);
-    setDraftSubjects(remoteState.subjects);
+    // A refresh mid-edit would drop an unsaved new subject from the draft.
+    if (!isEditingSubjectsRef.current) setDraftSubjects(remoteState.subjects);
     setUnitEnrollments(remoteState.unitEnrollments ?? []);
     setActiveSession(remoteState.activeSession);
     setSessions(remoteState.sessions);
@@ -657,21 +662,6 @@ export function TimerDashboard({
     setIsEditingSubjects(true);
   }
 
-  function addDraftSubject() {
-    const subjectId = makeSubjectId();
-
-    setDraftSubjects((current) => [
-      ...current,
-      {
-        id: subjectId,
-        name: `Subject ${current.length + 1}`,
-        color: SUBJECT_COLORS[current.length % SUBJECT_COLORS.length],
-      },
-    ]);
-
-    return subjectId;
-  }
-
   function openNewSubjectEditor() {
     const subjectId = makeSubjectId();
     const nextSubject: StudySubject = {
@@ -697,27 +687,13 @@ export function TimerDashboard({
     );
   }
 
-  function deleteDraftSubject(subjectId: string) {
-    setDraftSubjects((current) =>
-      current.filter((subject) => subject.id !== subjectId),
-    );
-  }
-
-  function restoreDraftSubject(subject: StudySubject, index: number) {
-    setDraftSubjects((current) => {
-      if (current.some((item) => item.id === subject.id)) return current;
-
-      const next = [...current];
-      next.splice(Math.min(index, next.length), 0, subject);
-      return next;
-    });
-  }
-
   async function deleteSubjectImmediately(subjectId: string) {
     const subject = subjects.find((item) => item.id === subjectId);
 
     if (!subject) {
-      deleteDraftSubject(subjectId);
+      setDraftSubjects((current) =>
+        current.filter((item) => item.id !== subjectId),
+      );
       return;
     }
 
@@ -754,6 +730,7 @@ export function TimerDashboard({
   }
 
   function saveSubjects() {
+    const editedSubjectId = initialEditingSubjectId;
     const cleanedSubjects = normalizeSubjects(draftSubjects);
     const subjectIds = new Set(cleanedSubjects.map((subject) => subject.id));
     const previousSubjects = subjects;
@@ -791,6 +768,7 @@ export function TimerDashboard({
         if (removedActiveSubject) setActiveSession(previousActiveSession);
         setSubjectToastMessage(null);
         setSubjectSaveError("Changes could not be saved. Try again.");
+        setInitialEditingSubjectId(editedSubjectId);
         setIsEditingSubjects(true);
       })
       .finally(() => {
@@ -971,15 +949,12 @@ export function TimerDashboard({
         )}
       </section>
 
-      {isEditingSubjects ? (
+      {isEditingSubjects && initialEditingSubjectId ? (
         <SubjectEditor
+          editingSubjectId={initialEditingSubjectId}
           draftSubjects={draftSubjects}
-          initialSubjectId={initialEditingSubjectId}
-          onAdd={addDraftSubject}
           onClose={closeSubjectEditor}
           onDelete={deleteSubjectImmediately}
-          onDeleteDraft={deleteDraftSubject}
-          onRestore={restoreDraftSubject}
           onSave={saveSubjects}
           onUpdate={updateDraftSubject}
           saveError={subjectSaveError}
@@ -1496,39 +1471,27 @@ function SessionEditor({
 
 function SubjectEditor({
   draftSubjects,
-  initialSubjectId,
-  onAdd,
+  editingSubjectId,
   onClose,
   onDelete,
-  onDeleteDraft,
-  onRestore,
   onSave,
   onUpdate,
   saveError,
   unitEnrollments,
 }: {
   draftSubjects: StudySubject[];
-  initialSubjectId: string | null;
-  onAdd: () => string;
+  editingSubjectId: string;
   onClose: () => void;
   onDelete: (subjectId: string) => Promise<void>;
-  onDeleteDraft: (subjectId: string) => void;
-  onRestore: (subject: StudySubject, index: number) => void;
   onSave: () => void;
   onUpdate: (subjectId: string, updates: Partial<StudySubject>) => void;
   saveError: string | null;
   unitEnrollments: UnitEnrollment[];
 }) {
-  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(
-    initialSubjectId,
-  );
   const colourGroupId = useId();
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isDeletingSubject, setIsDeletingSubject] = useState(false);
-  const [deletedSubjects, setDeletedSubjects] = useState<
-    { index: number; subject: StudySubject }[]
-  >([]);
   const [initialSubjectsJson] = useState(() => JSON.stringify(draftSubjects));
   const [initialSubjectIds] = useState(
     () => new Set(draftSubjects.map((subject) => subject.id)),
@@ -1549,12 +1512,7 @@ function SubjectEditor({
       !linkedByOtherSubjects.has(enrollment.offeringId) ||
       enrollment.offeringId === editingSubject?.unitOfferingId,
   );
-  const lastDeleted = deletedSubjects.at(-1) ?? null;
   const isDirty = JSON.stringify(draftSubjects) !== initialSubjectsJson;
-
-  function addAndEditSubject() {
-    setEditingSubjectId(onAdd());
-  }
 
   function requestSubjectDelete(subject: StudySubject) {
     setDeleteError(null);
@@ -1588,284 +1546,184 @@ function SubjectEditor({
     }
   }
 
-  function quickDeleteSubject(subject: StudySubject) {
-    const index = draftSubjects.findIndex((item) => item.id === subject.id);
-    if (index < 0) return;
-
-    setDeletedSubjects((current) => [...current, { index, subject }]);
-    onDeleteDraft(subject.id);
-  }
-
-  function undoLastDelete() {
-    if (!lastDeleted) return;
-
-    onRestore(lastDeleted.subject, lastDeleted.index);
-    setDeletedSubjects((current) => current.slice(0, -1));
-  }
+  // Deleting removes the subject from the draft before the dialog closes;
+  // render nothing rather than falling back to another view.
+  if (!editingSubject) return null;
 
   return (
-    <>
-      <AppDialog
-        bodyClassName={editingSubject ? "space-y-4 px-5 pb-1 pt-0" : "p-0"}
-        closeLabel="Close subject editor"
-        confirmDiscard={!isCreatingSubject}
-        footerClassName={
-          editingSubject ? "border-t-0 px-5 pb-5 pt-4" : undefined
-        }
-        headerClassName={editingSubject ? "items-start pb-0 pt-4" : undefined}
-        titleClassName={
-          editingSubject
-            ? "pt-3 text-xs font-normal text-[var(--color-text-muted)]"
-            : undefined
-        }
-        footer={
-          editingSubject ? (
-            <div className="grid gap-2">
+    <AppDialog
+      bodyClassName="space-y-4 px-5 pb-1 pt-0"
+      closeLabel="Close subject editor"
+      confirmDiscard={!isCreatingSubject}
+      footerClassName="border-t-0 px-5 pb-5 pt-4"
+      headerClassName="items-start pb-0 pt-4"
+      titleClassName="pt-3 text-xs font-normal text-[var(--color-text-muted)]"
+      footer={
+        <div className="grid gap-2">
+          <button
+            className="mac-focus inline-flex h-12 items-center justify-center rounded-[10px] bg-[var(--color-mac-yellow)] px-3 text-[15px] font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.99] disabled:opacity-35"
+            disabled={isDeletingSubject}
+            onClick={onSave}
+            type="button"
+          >
+            {isCreatingSubject ? "Add subject" : "Save changes"}
+          </button>
+          {isCreatingSubject ? null : isConfirmingDelete ? (
+            <div
+              className="flex min-h-11 items-center gap-2 rounded-[10px] bg-[rgb(255_107_107/0.08)] py-1 pl-3 pr-1"
+              role="alert"
+            >
+              <span className="min-w-0 flex-1 text-[13px] text-[#ffb3b3]">
+                Delete this subject? Past sessions stay in your history.
+              </span>
               <button
-                className="mac-focus inline-flex h-12 items-center justify-center rounded-[10px] bg-[var(--color-mac-yellow)] px-3 text-[15px] font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.99] disabled:opacity-35"
+                className="mac-focus h-9 rounded-lg px-3 text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.05)]"
                 disabled={isDeletingSubject}
-                onClick={onSave}
+                onClick={() => setIsConfirmingDelete(false)}
                 type="button"
               >
-                {isCreatingSubject ? "Add subject" : "Save changes"}
+                Keep
               </button>
-              {isCreatingSubject ? null : isConfirmingDelete ? (
-                <div
-                  className="flex min-h-11 items-center gap-2 rounded-[10px] bg-[rgb(255_107_107/0.08)] py-1 pl-3 pr-1"
-                  role="alert"
-                >
-                  <span className="min-w-0 flex-1 text-[13px] text-[#ffb3b3]">
-                    Delete this subject? Past sessions stay in your history.
-                  </span>
-                  <button
-                    className="mac-focus h-9 rounded-lg px-3 text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.05)]"
-                    disabled={isDeletingSubject}
-                    onClick={() => setIsConfirmingDelete(false)}
-                    type="button"
-                  >
-                    Keep
-                  </button>
-                  <button
-                    className="mac-focus inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--color-danger)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-60"
-                    disabled={isDeletingSubject}
-                    onClick={() => void confirmSubjectDelete(editingSubject)}
-                    type="button"
-                  >
-                    {isDeletingSubject ? (
-                      <LoaderCircle
-                        aria-hidden
-                        className="animate-spin"
-                        size={15}
-                      />
-                    ) : null}
-                    Delete
-                  </button>
-                </div>
-              ) : (
-                <button
-                  className="mac-focus h-11 rounded-[10px] text-sm font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-35"
-                  disabled={isDeletingSubject}
-                  onClick={() => requestSubjectDelete(editingSubject)}
-                  type="button"
-                >
-                  Delete subject
-                </button>
-              )}
+              <button
+                className="mac-focus inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--color-danger)] px-3 text-sm font-semibold text-[#141414] disabled:opacity-60"
+                disabled={isDeletingSubject}
+                onClick={() => void confirmSubjectDelete(editingSubject)}
+                type="button"
+              >
+                {isDeletingSubject ? (
+                  <LoaderCircle
+                    aria-hidden
+                    className="animate-spin"
+                    size={15}
+                  />
+                ) : null}
+                Delete
+              </button>
             </div>
           ) : (
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-              <button
-                className="mac-focus inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)]"
-                onClick={addAndEditSubject}
-                type="button"
-              >
-                <Plus aria-hidden size={17} />
-                Add subject
-              </button>
-              <button
-                className="mac-focus inline-flex h-11 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] px-5 text-sm font-semibold text-[#141414] transition hover:brightness-105 active:scale-[0.99]"
-                onClick={onSave}
-                type="button"
-              >
-                Save changes
-              </button>
+            <button
+              className="mac-focus h-11 rounded-[10px] text-sm font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-35"
+              disabled={isDeletingSubject}
+              onClick={() => requestSubjectDelete(editingSubject)}
+              type="button"
+            >
+              Delete subject
+            </button>
+          )}
+        </div>
+      }
+      isDirty={isDirty}
+      maxWidthClassName="max-w-md"
+      onClose={onClose}
+      title={editingSubject.unitOfferingId ? "Personal name" : "Subject name"}
+    >
+      {saveError ? (
+        <p
+          className="rounded-lg border border-[rgb(255_107_107/0.3)] bg-[rgb(255_107_107/0.07)] px-3 py-2 text-sm font-medium text-[var(--color-danger)]"
+          role="alert"
+        >
+          {saveError}
+        </p>
+      ) : null}
+
+      <>
+        {/* The name is the title: a large inline field under the label. */}
+        <input
+          aria-label={
+            editingSubject.unitOfferingId ? "Personal name" : "Subject name"
+          }
+          className="-mt-1 w-full border-0 border-b border-dashed border-[rgb(255_255_255/0.18)] bg-transparent py-1 text-[26px] font-semibold tracking-[-0.02em] text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-solid focus:border-[var(--color-mac-yellow)]"
+          data-dialog-autofocus
+          maxLength={60}
+          onChange={(event) =>
+            onUpdate(editingSubject.id, { name: event.target.value })
+          }
+          placeholder="Untitled subject"
+          value={editingSubject.name}
+        />
+
+        <div className="rounded-xl bg-[rgb(255_255_255/0.04)]">
+          <div className="flex min-h-14 items-center justify-between gap-3 border-b border-[rgb(255_255_255/0.06)] py-1.5 pl-3.5 pr-1.5">
+            <span className="shrink-0 text-sm font-semibold">Linked unit</span>
+            <CustomSelect
+              ariaLabel={`Linked unit for ${editingSubject.name}`}
+              className="w-auto min-w-0 max-w-[14rem] [&>button]:h-10 [&>button]:border-transparent [&>button]:bg-transparent [&>button]:text-[var(--color-text)]"
+              onChange={(offeringId) => {
+                const enrollment = availableUnitEnrollments.find(
+                  (item) => item.offeringId === offeringId,
+                );
+
+                onUpdate(editingSubject.id, {
+                  canonicalCode: enrollment?.code,
+                  unitOfferingId:
+                    offeringId === UNLINKED_UNIT_VALUE ? null : offeringId,
+                });
+              }}
+              options={[
+                { label: "Not linked", value: UNLINKED_UNIT_VALUE },
+                ...availableUnitEnrollments.map((enrollment) => ({
+                  label: `${enrollment.code} · ${enrollment.year} ${getTeachingPeriodLabel(enrollment.period)}`,
+                  value: enrollment.offeringId,
+                })),
+              ]}
+              size="compact"
+              value={editingSubject.unitOfferingId ?? UNLINKED_UNIT_VALUE}
+            />
+          </div>
+
+          <div className="px-3.5 pb-4 pt-3.5">
+            <p className="text-sm font-semibold" id={colourGroupId}>
+              Colour
+            </p>
+            <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+              Used for this subject&apos;s play button and charts
+            </p>
+            <div
+              aria-labelledby={colourGroupId}
+              className="mt-3 grid grid-cols-6 gap-1.5"
+              role="radiogroup"
+            >
+              {SUBJECT_COLOR_OPTIONS.map((option) => (
+                <label
+                  className="relative min-w-0 cursor-pointer"
+                  key={option.value}
+                  title={option.label}
+                >
+                  <input
+                    aria-label={option.label}
+                    checked={editingSubject.color === option.value}
+                    className="peer sr-only"
+                    name={colourGroupId}
+                    onChange={() =>
+                      onUpdate(editingSubject.id, { color: option.value })
+                    }
+                    type="radio"
+                    value={option.value}
+                  />
+                  <span
+                    className="flex h-11 items-center justify-center rounded-lg text-[#141414] transition peer-checked:ring-2 peer-checked:ring-[var(--color-text)] peer-checked:ring-offset-2 peer-checked:ring-offset-[var(--color-surface)] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-mac-yellow)] hover:brightness-110"
+                    style={{ backgroundColor: option.value }}
+                  >
+                    {editingSubject.color === option.value ? (
+                      <Check aria-hidden size={17} strokeWidth={3} />
+                    ) : null}
+                  </span>
+                </label>
+              ))}
             </div>
-          )
-        }
-        isDirty={isDirty}
-        maxWidthClassName={editingSubject ? "max-w-md" : "max-w-lg"}
-        onClose={onClose}
-        title={
-          editingSubject
-            ? editingSubject.unitOfferingId
-              ? "Personal name"
-              : "Subject name"
-            : "Edit subjects"
-        }
-      >
-        {saveError ? (
+          </div>
+        </div>
+
+        {deleteError ? (
           <p
-            className="rounded-lg border border-[rgb(255_107_107/0.3)] bg-[rgb(255_107_107/0.07)] px-3 py-2 text-sm font-medium text-[var(--color-danger)]"
+            className="text-sm font-medium text-[var(--color-danger)]"
             role="alert"
           >
-            {saveError}
+            {deleteError}
           </p>
         ) : null}
-
-        {editingSubject ? (
-          <>
-            {/* The name is the title: a large inline field under the label. */}
-            <input
-              aria-label={
-                editingSubject.unitOfferingId ? "Personal name" : "Subject name"
-              }
-              className="-mt-1 w-full border-0 border-b border-dashed border-[rgb(255_255_255/0.18)] bg-transparent py-1 text-[26px] font-semibold tracking-[-0.02em] text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-solid focus:border-[var(--color-mac-yellow)]"
-              data-dialog-autofocus
-              maxLength={60}
-              onChange={(event) =>
-                onUpdate(editingSubject.id, { name: event.target.value })
-              }
-              placeholder="Untitled subject"
-              value={editingSubject.name}
-            />
-
-            <div className="rounded-xl bg-[rgb(255_255_255/0.04)]">
-              <div className="flex min-h-14 items-center justify-between gap-3 border-b border-[rgb(255_255_255/0.06)] py-1.5 pl-3.5 pr-1.5">
-                <span className="shrink-0 text-sm font-semibold">
-                  Linked unit
-                </span>
-                <CustomSelect
-                  ariaLabel={`Linked unit for ${editingSubject.name}`}
-                  className="w-auto min-w-0 max-w-[14rem] [&>button]:h-10 [&>button]:border-transparent [&>button]:bg-transparent [&>button]:text-[var(--color-text)]"
-                  onChange={(offeringId) => {
-                    const enrollment = availableUnitEnrollments.find(
-                      (item) => item.offeringId === offeringId,
-                    );
-
-                    onUpdate(editingSubject.id, {
-                      canonicalCode: enrollment?.code,
-                      unitOfferingId:
-                        offeringId === UNLINKED_UNIT_VALUE ? null : offeringId,
-                    });
-                  }}
-                  options={[
-                    { label: "Not linked", value: UNLINKED_UNIT_VALUE },
-                    ...availableUnitEnrollments.map((enrollment) => ({
-                      label: `${enrollment.code} · ${enrollment.year} ${getTeachingPeriodLabel(enrollment.period)}`,
-                      value: enrollment.offeringId,
-                    })),
-                  ]}
-                  size="compact"
-                  value={editingSubject.unitOfferingId ?? UNLINKED_UNIT_VALUE}
-                />
-              </div>
-
-              <div className="px-3.5 pb-4 pt-3.5">
-                <p className="text-sm font-semibold" id={colourGroupId}>
-                  Colour
-                </p>
-                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                  Used for this subject&apos;s play button and charts
-                </p>
-                <div
-                  aria-labelledby={colourGroupId}
-                  className="mt-3 grid grid-cols-6 gap-1.5"
-                  role="radiogroup"
-                >
-                  {SUBJECT_COLOR_OPTIONS.map((option) => (
-                    <label
-                      className="relative min-w-0 cursor-pointer"
-                      key={option.value}
-                      title={option.label}
-                    >
-                      <input
-                        aria-label={option.label}
-                        checked={editingSubject.color === option.value}
-                        className="peer sr-only"
-                        name={colourGroupId}
-                        onChange={() =>
-                          onUpdate(editingSubject.id, { color: option.value })
-                        }
-                        type="radio"
-                        value={option.value}
-                      />
-                      <span
-                        className="flex h-11 items-center justify-center rounded-lg text-[#141414] transition peer-checked:ring-2 peer-checked:ring-[var(--color-text)] peer-checked:ring-offset-2 peer-checked:ring-offset-[var(--color-surface)] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-mac-yellow)] hover:brightness-110"
-                        style={{ backgroundColor: option.value }}
-                      >
-                        {editingSubject.color === option.value ? (
-                          <Check aria-hidden size={17} strokeWidth={3} />
-                        ) : null}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {deleteError ? (
-              <p
-                className="text-sm font-medium text-[var(--color-danger)]"
-                role="alert"
-              >
-                {deleteError}
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <PaginatedList
-            className="grid gap-1"
-            items={draftSubjects}
-            pageSize={10}
-            renderItem={(subject) => (
-              <div
-                className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-md px-4 py-2.5 transition hover:bg-[rgb(255_255_255/0.035)]"
-                key={subject.id}
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <span
-                    aria-hidden
-                    className="h-3.5 w-3.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: subject.color }}
-                  />
-                  <p className="truncate font-semibold">{subject.name}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
-                    onClick={() => setEditingSubjectId(subject.id)}
-                    type="button"
-                  >
-                    <Pencil aria-hidden size={16} />
-                    <span className="sr-only">Edit {subject.name}</span>
-                  </button>
-                  <button
-                    className="mac-focus inline-flex h-11 w-11 items-center justify-center rounded-md text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:cursor-not-allowed disabled:opacity-30"
-                    onClick={() => quickDeleteSubject(subject)}
-                    type="button"
-                  >
-                    <Trash2 aria-hidden size={16} />
-                    <span className="sr-only">Delete {subject.name}</span>
-                  </button>
-                </div>
-              </div>
-            )}
-            resetKey="subject-editor"
-          />
-        )}
-      </AppDialog>
-
-      {lastDeleted ? (
-        <TransientToast
-          actionLabel="Undo"
-          durationMs={6000}
-          key={lastDeleted.subject.id}
-          message={`${lastDeleted.subject.name} removed`}
-          onAction={undoLastDelete}
-          onDismiss={() => setDeletedSubjects([])}
-        />
-      ) : null}
-    </>
+      </>
+    </AppDialog>
   );
 }
 

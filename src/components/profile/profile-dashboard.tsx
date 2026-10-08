@@ -9,7 +9,6 @@ import {
   LogOut,
   MonitorDown,
   PencilLine,
-  PlayCircle,
   Smartphone,
   UserRound,
 } from "lucide-react";
@@ -83,11 +82,6 @@ export function ProfileDashboard({
         </section>
 
         <SettingsSection className="order-4" title="Getting started">
-          <ActionRow
-            icon={PlayCircle}
-            label="Replay introduction"
-            onClick={() => window.dispatchEvent(new Event("mac-open-welcome"))}
-          />
           <ActionRow
             className="hidden lg:flex"
             detail="Its own window and a spot on your taskbar"

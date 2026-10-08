@@ -34,6 +34,21 @@
   }
 }
 
+/* Installed PWA: no browser toolbar, so the home-indicator inset is real.
+   Lift the icons just clear of the indicator and only reserve that much,
+   instead of the full inset sitting as dead space in the nav. */
+@media (display-mode: standalone) {
+  :root {
+    --mobile-nav-control-bottom: max(
+      0px,
+      calc(var(--safe-area-bottom) - 1.25rem)
+    );
+    --mobile-nav-height: calc(
+      var(--mobile-nav-content-height) + var(--mobile-nav-control-bottom)
+    );
+  }
+}
+
 * {
   box-sizing: border-box;
 }
