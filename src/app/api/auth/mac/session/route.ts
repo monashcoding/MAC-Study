@@ -49,7 +49,11 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("MAC session exchange failed", error);
+    // Name and message only; never log the token itself.
+    console.error(
+      "MAC session exchange failed:",
+      error instanceof Error ? `${error.name}: ${error.message}` : error,
+    );
 
     return noStoreJson({ message: "Login could not be verified." }, 401);
   }

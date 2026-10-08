@@ -127,10 +127,8 @@ const GROUP_TIMER_CHANGE_TABLES = new Set([
   "subjects",
   "unit_enrolments",
 ]);
-const GROUP_CHAT_CHANGE_TABLES = new Set([
-  "group_chat_messages",
-  "group_chat_read_receipts",
-]);
+// Read receipts are left out: they never change your own unread counts.
+const GROUP_CHAT_CHANGE_TABLES = new Set(["group_chat_messages"]);
 
 export function GroupsDashboard({
   isActive = true,

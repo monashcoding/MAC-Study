@@ -54,6 +54,7 @@ import {
   fetchRemoteMessageMutes,
   FRIEND_CANDIDATE_PAGE_SIZE,
   fetchRemoteFriendCandidatesPage,
+  fetchRemoteFriendSuggestions,
   fetchRemoteFriendsSnapshot,
   fetchRemoteUserDailyStudySeconds,
   inviteRemoteFriendToGroup,
@@ -69,10 +70,11 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { NudgePill } from "@/components/social/nudge-pill";
 import { useNudgeQueue } from "@/components/social/use-nudge-queue";
 import { TransientToast } from "@/components/transient-toast";
-import { addDateKeyDays, formatDuration, getLocalDateKey } from "@/lib/timer";
+import { formatDuration, getLocalDateKey } from "@/lib/timer";
 import { cn } from "@/lib/utils";
 import { ListSection } from "@/components/ui/list-section";
 import { ListSkeleton } from "@/components/ui/skeleton";
+import { InfiniteScrollSentinel } from "@/components/infinite-scroll-sentinel";
 
 const emptySocialState: SocialState = { friends: [], groups: [] };
 const FRIEND_SOCIAL_CHANGE_TABLES = new Set([
@@ -124,6 +126,9 @@ export function FriendsDashboard({
     RemoteFriendCandidate[]
   >([]);
   const [candidatesHaveMore, setCandidatesHaveMore] = useState(false);
+  const [friendSuggestions, setFriendSuggestions] = useState<
+    RemoteFriendCandidate[]
+  >([]);
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
   const isLoadingCandidatesRef = useRef(false);
   const [candidateQuery, setCandidateQuery] = useState("");
@@ -579,10 +584,9 @@ export function FriendsDashboard({
   const selectedFriend =
     friendList.find((friend) => friend.id === selectedFriendId) ?? null;
   // A friend's day-by-day history only loads when their page is open.
-  const [friendHistory, setFriendHistory] = useState<{
-    days: Record<string, number>;
-    friendId: string;
-  } | null>(null);
+  const [friendHistory, setFriendHistory] = useState<
+    (FriendHistory & { friendId: string }) | null
+  >(null);
 
   useEffect(() => {
     if (!selectedFriendId || !remoteClient) return;
@@ -593,7 +597,13 @@ export function FriendsDashboard({
       userId: selectedFriendId,
     })
       .then((days) => {
-        if (!cancelled) setFriendHistory({ days, friendId: selectedFriendId });
+        if (!cancelled) {
+          setFriendHistory({
+            days,
+            fetchedAt: Date.now(),
+            friendId: selectedFriendId,
+          });
+        }
       })
       .catch(() => undefined);
 
@@ -604,8 +614,8 @@ export function FriendsDashboard({
 
   const selectedFriendHistory =
     friendHistory && friendHistory.friendId === selectedFriendId
-      ? friendHistory.days
-      : (selectedFriend?.dailyStudySeconds ?? {});
+      ? friendHistory
+      : null;
   useEffect(() => {
     const friendId = new URLSearchParams(window.location.search).get("friend");
     if (!friendId || !friendList.some((friend) => friend.id === friendId)) {
@@ -708,6 +718,22 @@ export function FriendsDashboard({
     return () => window.clearTimeout(timeout);
   }, [remoteClient, trimmedCandidateQuery]);
 
+  useEffect(() => {
+    if (!isAdding || !remoteClient) return;
+
+    let cancelled = false;
+    // A missing function (migration not run yet) just means no suggestions.
+    void fetchRemoteFriendSuggestions(remoteClient)
+      .then((suggestions) => {
+        if (!cancelled) setFriendSuggestions(suggestions);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdding, remoteClient]);
+
   async function loadMoreCandidates() {
     if (!remoteClient || isLoadingCandidatesRef.current) return;
 
@@ -757,6 +783,7 @@ export function FriendsDashboard({
       );
 
     setAvailableFriends(patch);
+    setFriendSuggestions(patch);
     setSearchResults((current) => (current ? patch(current) : current));
   }
 
@@ -764,6 +791,7 @@ export function FriendsDashboard({
     if (!remoteClient) return;
 
     const candidate =
+      friendSuggestions.find((friend) => friend.id === friendId) ??
       availableFriends.find((friend) => friend.id === friendId) ??
       searchResults?.find((friend) => friend.id === friendId);
     if (!candidate || candidate.requestDirection) return;
@@ -1040,9 +1068,10 @@ export function FriendsDashboard({
     const nudgeState = nudgeQueue.getState(selectedFriend.id);
     const studyBlockActive = selectedFriend.studying;
     const selectedTimeSeconds = getFriendTimeSeconds(
-      { ...selectedFriend, dailyStudySeconds: selectedFriendHistory },
+      selectedFriend,
       friendTimeRange,
       now,
+      selectedFriendHistory,
     );
     const selectedTimeIndex = friendTimeOptions.findIndex(
       (option) => option.value === friendTimeRange,
@@ -1246,7 +1275,7 @@ export function FriendsDashboard({
 
         <div className="max-sm:[&>section]:p-3 max-sm:[&>section>div:nth-child(2)]:mt-2 max-sm:[&>section>div:last-child]:mt-1 max-sm:[&_button]:h-2.5 max-sm:[&_button]:aspect-auto">
           <StudyHeatmap
-            dailySeconds={selectedFriendHistory}
+            dailySeconds={selectedFriendHistory?.days ?? {}}
             title={`${selectedFriend.name}'s activity`}
           />
         </div>
@@ -1622,6 +1651,7 @@ export function FriendsDashboard({
                 : availableFriends
               : null
           }
+          suggestions={trimmedCandidateQuery ? [] : friendSuggestions}
         />
       ) : null}
 
@@ -1735,6 +1765,7 @@ function AddFriendDialog({
   onNameChange,
   onShowRequests,
   remoteCandidates,
+  suggestions,
 }: {
   candidateQuery: string;
   candidatesHaveMore: boolean;
@@ -1753,7 +1784,56 @@ function AddFriendDialog({
   onNameChange: (name: string) => void;
   onShowRequests: () => void;
   remoteCandidates: RemoteFriendCandidate[] | null;
+  suggestions: RemoteFriendCandidate[];
 }) {
+  // Suggested people are listed once, in their own section.
+  const suggestedIds = new Set(suggestions.map((candidate) => candidate.id));
+  const everyone = remoteCandidates?.filter(
+    (candidate) => !suggestedIds.has(candidate.id),
+  );
+  function renderCandidate(candidate: RemoteFriendCandidate) {
+    return (
+      <div
+        className="grid min-h-14 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-2.5 py-2"
+        key={candidate.id}
+      >
+        <ProfileBadge friend={candidate} size="sm" />
+        <div className="min-w-0">
+          <p className="truncate font-semibold">{candidate.handle}</p>
+          <p className="truncate text-sm font-medium text-[var(--color-text)]">
+            {candidate.name}
+          </p>
+          <p className="truncate text-xs text-[var(--color-text-muted)]">
+            {candidate.mutualFriendCount} mutual{" "}
+            {candidate.mutualFriendCount === 1 ? "friend" : "friends"}
+          </p>
+        </div>
+        {candidate.requestDirection === "incoming" ? (
+          <button
+            className="mac-focus h-10 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)]"
+            onClick={onShowRequests}
+            type="button"
+          >
+            View request
+          </button>
+        ) : candidate.requestDirection === "outgoing" ? (
+          <span className="inline-flex h-10 items-center gap-1.5 px-2 text-sm font-semibold text-[var(--color-text-muted)]">
+            <Clock3 aria-hidden size={15} />
+            Sent
+          </span>
+        ) : (
+          <button
+            className="mac-focus h-10 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)] disabled:opacity-45"
+            onClick={() => onAddRemote(candidate.id)}
+            type="button"
+          >
+            Request
+          </button>
+        )}
+      </div>
+    );
+  }
+
   const isDirty =
     remoteCandidates === null &&
     Boolean(name.trim() || handle.trim() || color !== PROFILE_COLORS[1]);
@@ -1814,48 +1894,21 @@ function AddFriendDialog({
       {remoteCandidates ? (
         <div className="-mx-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1">
           {isSearching &&
-          !remoteCandidates.length ? null : remoteCandidates.length ? (
+          !remoteCandidates.length ? null : remoteCandidates.length ||
+            suggestions.length ? (
             <div className="grid gap-1.5">
-              {remoteCandidates.map((candidate) => (
-                <div
-                  className="grid min-h-14 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-2.5 py-2"
-                  key={candidate.id}
-                >
-                  <ProfileBadge friend={candidate} size="sm" />
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold">{candidate.handle}</p>
-                    <p className="truncate text-sm font-medium text-[var(--color-text)]">
-                      {candidate.name}
-                    </p>
-                    <p className="truncate text-xs text-[var(--color-text-muted)]">
-                      {candidate.mutualFriendCount} mutual{" "}
-                      {candidate.mutualFriendCount === 1 ? "friend" : "friends"}
-                    </p>
-                  </div>
-                  {candidate.requestDirection === "incoming" ? (
-                    <button
-                      className="mac-focus h-10 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)]"
-                      onClick={onShowRequests}
-                      type="button"
-                    >
-                      View request
-                    </button>
-                  ) : candidate.requestDirection === "outgoing" ? (
-                    <span className="inline-flex h-10 items-center gap-1.5 px-2 text-sm font-semibold text-[var(--color-text-muted)]">
-                      <Clock3 aria-hidden size={15} />
-                      Sent
-                    </span>
-                  ) : (
-                    <button
-                      className="mac-focus h-10 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-mac-yellow)] disabled:opacity-45"
-                      onClick={() => onAddRemote(candidate.id)}
-                      type="button"
-                    >
-                      Request
-                    </button>
-                  )}
-                </div>
-              ))}
+              {suggestions.length ? (
+                <h3 className="px-0.5 pb-0.5 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+                  People you may know
+                </h3>
+              ) : null}
+              {suggestions.map(renderCandidate)}
+              {suggestions.length && everyone?.length ? (
+                <h3 className="px-0.5 pb-0.5 pt-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+                  Everyone
+                </h3>
+              ) : null}
+              {(everyone ?? []).map(renderCandidate)}
               <InfiniteScrollSentinel
                 hasMore={candidatesHaveMore}
                 isLoading={isLoadingCandidates}
@@ -2027,53 +2080,48 @@ function formatCompactStudyTime(totalSeconds: number) {
   return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
 }
 
+type FriendHistory = {
+  days: Record<string, number>;
+  fetchedAt: number;
+};
+
 function getFriendTimeSeconds(
   friend: SocialFriend,
   range: FriendTimeRange,
   now: Date,
+  history: FriendHistory | null,
 ) {
-  if (range === "allTime") {
-    return getLiveRankingSeconds(friend, "allTime", now);
-  }
+  if (range === "allTime") return getLiveRankingSeconds(friend, "allTime", now);
+  if (range === "today") return getLiveRankingSeconds(friend, "day", now);
+  if (range === "thisWeek") return getLiveRankingSeconds(friend, "week", now);
+  if (range === "thisMonth") return getLiveRankingSeconds(friend, "month", now);
 
-  const dailySeconds = friend.dailyStudySeconds ?? {};
-  if (!Object.keys(dailySeconds).length) {
-    if (range === "today") {
-      return getLiveRankingSeconds(friend, "day", now);
-    }
-
-    if (range === "thisWeek") {
-      return getLiveRankingSeconds(friend, "week", now);
-    }
-
-    if (range === "thisMonth") {
-      return getLiveRankingSeconds(friend, "month", now);
-    }
-
-    return getLiveRankingSeconds(friend, "allTime", now);
-  }
+  // "This year" needs the day-by-day history, which loads with the page.
+  // Until it arrives, the month total is the best lower bound to show.
+  if (!history) return getLiveRankingSeconds(friend, "month", now);
 
   const todayKey = getLocalDateKey(now);
-  const calendarDay = new Date(`${todayKey}T00:00:00Z`).getUTCDay();
-  const startKey =
-    range === "today"
-      ? todayKey
-      : range === "thisWeek"
-        ? addDateKeyDays(todayKey, -((calendarDay + 6) % 7))
-        : range === "thisMonth"
-          ? `${todayKey.slice(0, 7)}-01`
-          : `${todayKey.slice(0, 4)}-01-01`;
-  const storedSeconds = Object.entries(dailySeconds).reduce(
+  const yearStartKey = `${todayKey.slice(0, 4)}-01-01`;
+  const storedSeconds = Object.entries(history.days).reduce(
     (total, [dateKey, seconds]) =>
-      dateKey >= startKey && dateKey <= todayKey ? total + seconds : total,
+      dateKey >= yearStartKey && dateKey <= todayKey ? total + seconds : total,
     0,
-  );
-  const liveDelta = Math.max(
-    0,
-    getLiveRankingSeconds(friend, "allTime", now) - friend.allTimeSeconds,
   );
 
-  return storedSeconds + liveDelta;
+  // History already includes a running session up to when it was fetched;
+  // only add the time since then.
+  const activeStartedAt = friend.activeStartedAt
+    ? new Date(friend.activeStartedAt).getTime()
+    : null;
+  const liveSince = activeStartedAt
+    ? Math.max(activeStartedAt, history.fetchedAt)
+    : null;
+  const liveSeconds =
+    friend.studying && liveSince
+      ? Math.max(0, Math.floor((now.getTime() - liveSince) / 1000))
+      : 0;
+
+  return storedSeconds + liveSeconds;
 }
 
 function ProfileBadge({
@@ -2161,55 +2209,4 @@ function mergeCandidateFirstPage(
       .slice(FRIEND_CANDIDATE_PAGE_SIZE)
       .filter((friend) => !firstPageIds.has(friend.id)),
   ];
-}
-
-function InfiniteScrollSentinel({
-  hasMore,
-  isLoading,
-  onLoadMore,
-}: {
-  hasMore: boolean;
-  isLoading: boolean;
-  onLoadMore: () => void;
-}) {
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  const onLoadMoreRef = useRef(onLoadMore);
-
-  useEffect(() => {
-    onLoadMoreRef.current = onLoadMore;
-  }, [onLoadMore]);
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel || !hasMore || isLoading) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          onLoadMoreRef.current();
-        }
-      },
-      { rootMargin: "160px 0px" },
-    );
-    observer.observe(sentinel);
-
-    return () => observer.disconnect();
-  }, [hasMore, isLoading]);
-
-  if (!hasMore && !isLoading) return null;
-
-  return (
-    <div
-      className="flex h-12 items-center justify-center text-[var(--color-text-muted)]"
-      ref={sentinelRef}
-    >
-      {isLoading ? (
-        <LoaderCircle
-          aria-label="Loading more profiles"
-          className="animate-spin"
-          size={18}
-        />
-      ) : null}
-    </div>
-  );
 }

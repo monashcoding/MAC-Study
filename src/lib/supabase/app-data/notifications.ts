@@ -384,11 +384,6 @@ export function subscribeToRemoteAppChanges(
     )
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "group_chat_read_receipts" },
-      () => handleChange("group_chat_read_receipts"),
-    )
-    .on(
-      "postgres_changes",
       { event: "*", schema: "public", table: "groups" },
       () => handleChange("groups"),
     )

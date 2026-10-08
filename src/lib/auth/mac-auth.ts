@@ -24,6 +24,8 @@ export type MacClaims = z.infer<typeof macClaimsSchema>;
 // when MAC Auth rotates to a key this process has not seen before.
 const macJwks = createRemoteJWKSet(
   new URL("/api/auth/jwks", `${MAC_AUTH_URL}/`),
+  // A cold server's first key download can be slow; don't fail sign-in on it.
+  { timeoutDuration: 10_000 },
 );
 
 export async function verifyMacToken(
@@ -33,6 +35,9 @@ export async function verifyMacToken(
   const { payload } = await jwtVerify(token, keySet, {
     issuer: MAC_AUTH_ISSUER,
     audience: MAC_AUTH_AUDIENCE,
+    // Tolerate small clock differences between this server and MAC Auth, so
+    // a token minted a moment ago isn't rejected as "not yet valid".
+    clockTolerance: 60,
   });
 
   return macClaimsSchema.parse(payload);

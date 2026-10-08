@@ -31,7 +31,8 @@ export {
 } from "./app-data/timer";
 
 export {
-  fetchRemoteUnitCohort,
+  fetchRemoteUnitCohortPage,
+  UNIT_COHORT_PAGE_SIZE,
   fetchRemoteUnitWeeklyLeaderboard,
   fetchRemoteUnitState,
   leaveRemoteUnitEnrollment,
@@ -54,6 +55,7 @@ export {
 export {
   FRIEND_CANDIDATE_PAGE_SIZE,
   fetchRemoteFriendCandidatesPage,
+  fetchRemoteFriendSuggestions,
   fetchRemoteFriendsSnapshot,
   fetchRemoteGroupsSnapshot,
   fetchRemoteStudyGroups,
@@ -74,13 +76,11 @@ export {
 } from "./app-data/groups";
 
 export {
-  deleteRemoteGroupChatImage,
   deleteRemoteGroupChatMessage,
   fetchRemoteGroupChatMessages,
   reportRemoteGroupChatMessage,
   sendRemoteGroupChatMessage,
   subscribeToRemoteGroupChat,
-  uploadRemoteGroupChatImage,
 } from "./app-data/chat";
 
 export {

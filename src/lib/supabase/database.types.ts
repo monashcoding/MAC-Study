@@ -761,6 +761,16 @@ isOneToOne: true
 "get_user_daily_study_seconds":
 { Args: { "target_user_id": string }; Returns: Json
                            },
+"get_unit_cohort_page":
+{ Args: { "friends_only"?: boolean,"input_offering_id": string,"result_limit"?: number,"result_offset"?: number,"search_query"?: string }; Returns: {
+              "display_name": string,"is_friend": boolean,"mutual_friend_count": number,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
+            }[]
+                           },
+"list_friend_suggestions":
+{ Args: { "result_limit"?: number }; Returns: {
+              "avatar_url": string | null,"display_name": string | null,"mutual_friend_count": number,"profile_color": string | null,"request_direction": string | null,"study_icon": string | null,"user_id": string,"username": string | null
+            }[]
+                           },
 "get_unit_weekly_leaderboard":
 { Args: { "input_offering_id": string }; Returns: {
               "display_name": string | null,"study_icon": string | null,"user_id": string,"username": string | null,"week_seconds": number

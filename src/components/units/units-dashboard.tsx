@@ -42,7 +42,7 @@ import {
 import {
   addRemoteFriend,
   fetchRemoteStudyGroups,
-  fetchRemoteUnitCohort,
+  fetchRemoteUnitCohortPage,
   fetchRemoteUnitWeeklyLeaderboard,
   fetchRemoteUnitState,
   inviteRemoteFriendToGroup,
@@ -89,6 +89,7 @@ import {
   SkeletonGroup,
 } from "@/components/ui/skeleton";
 import { getMascotSrc } from "@/lib/mascots";
+import { InfiniteScrollSentinel } from "@/components/infinite-scroll-sentinel";
 
 type CohortScope = "all" | "friends";
 const UNLINKED_SUBJECT_VALUE = "__unlinked__";
@@ -181,6 +182,9 @@ export function UnitsDashboard({
   );
   const [cohort, setCohort] = useState<UnitCohortMember[]>([]);
   const [cohortLoading, setCohortLoading] = useState(false);
+  const [cohortHasMore, setCohortHasMore] = useState(false);
+  const [cohortLoadingMore, setCohortLoadingMore] = useState(false);
+  const cohortRequestRef = useRef(0);
   const [isAdding, setIsAdding] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [unitFilter, setUnitFilter] = useState<UnitEnrollmentFilter>({
@@ -192,6 +196,7 @@ export function UnitsDashboard({
   const [selectedSpecialUnit, setSelectedSpecialUnit] =
     useState<SpecialUnit | null>(null);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [scope, setScope] = useState<CohortScope>("all");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [sentFriendRequestIds, setSentFriendRequestIds] = useState<string[]>(
@@ -293,6 +298,15 @@ export function UnitsDashboard({
   useAppHeaderDetail("/app/units", selectedEnrollment?.code ?? null);
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearch(search), 250);
+    return () => window.clearTimeout(timeout);
+  }, [search]);
+
+  const isRemoteCohort = Boolean(remoteClient) && dataMode !== "demo";
+
+  // The class list loads from the database a page at a time; search and the
+  // All/Friends filter run there too.
+  useEffect(() => {
     if (!isActive || !selectedOfferingId) {
       return;
     }
@@ -305,16 +319,22 @@ export function UnitsDashboard({
     }
 
     let cancelled = false;
+    const requestId = ++cohortRequestRef.current;
     void Promise.resolve().then(() => {
       if (!cancelled) setCohortLoading(true);
     });
 
-    void fetchRemoteUnitCohort({
+    void fetchRemoteUnitCohortPage({
+      friendsOnly: scope === "friends",
       offeringId: selectedOfferingId,
+      offset: 0,
+      query: debouncedSearch,
       supabase: remoteClient,
     })
-      .then((members) => {
-        if (!cancelled) setCohort(members);
+      .then((page) => {
+        if (cancelled || requestId !== cohortRequestRef.current) return;
+        setCohort(page.members);
+        setCohortHasMore(page.hasMore);
       })
       .catch(() => {
         if (!cancelled) setFeedback("Could not load this unit cohort.");
@@ -328,14 +348,55 @@ export function UnitsDashboard({
     };
   }, [
     dataMode,
+    debouncedSearch,
     isActive,
     remoteClient,
+    scope,
     selectedOfferingId,
     socialState.groups,
   ]);
 
+  async function loadMoreCohort() {
+    if (
+      !remoteClient ||
+      !selectedOfferingId ||
+      !cohortHasMore ||
+      cohortLoading ||
+      cohortLoadingMore
+    ) {
+      return;
+    }
+
+    const requestId = cohortRequestRef.current;
+    setCohortLoadingMore(true);
+    try {
+      const page = await fetchRemoteUnitCohortPage({
+        friendsOnly: scope === "friends",
+        offeringId: selectedOfferingId,
+        offset: cohort.length,
+        query: debouncedSearch,
+        supabase: remoteClient,
+      });
+      if (requestId !== cohortRequestRef.current) return;
+      setCohort((current) => {
+        const seen = new Set(current.map((member) => member.id));
+        return [
+          ...current,
+          ...page.members.filter((member) => !seen.has(member.id)),
+        ];
+      });
+      setCohortHasMore(page.hasMore);
+    } catch {
+      setFeedback("Could not load more students.");
+    } finally {
+      setCohortLoadingMore(false);
+    }
+  }
+
   const manageableGroups = socialState.groups;
   const filteredCohort = useMemo(() => {
+    if (isRemoteCohort) return cohort;
+
     const query = search.trim().toLowerCase();
 
     return cohort
@@ -352,7 +413,7 @@ export function UnitsDashboard({
           second.mutualFriendCount - first.mutualFriendCount ||
           first.displayName.localeCompare(second.displayName),
       );
-  }, [cohort, scope, search]);
+  }, [cohort, isRemoteCohort, scope, search]);
 
   async function addEnrollment(input: {
     code: string;
@@ -573,7 +634,10 @@ export function UnitsDashboard({
           allGroups={socialState.groups}
           busyKey={busyKey}
           cohort={filteredCohort}
+          cohortHasMore={isRemoteCohort && cohortHasMore}
           cohortLoading={cohortLoading}
+          cohortLoadingMore={cohortLoadingMore}
+          onLoadMoreCohort={() => void loadMoreCohort()}
           enrollment={selectedEnrollment}
           feedback={feedback}
           manageableGroups={manageableGroups}
@@ -584,7 +648,9 @@ export function UnitsDashboard({
           onBack={() => {
             setSelectedOfferingId(null);
             setCohort([]);
+            setCohortHasMore(false);
             setSearch("");
+            setDebouncedSearch("");
             setScope("all");
           }}
           onLeave={() => void leaveEnrollment(selectedEnrollment)}
@@ -1120,7 +1186,9 @@ function OfferingDetail({
   allGroups,
   busyKey,
   cohort,
+  cohortHasMore,
   cohortLoading,
+  cohortLoadingMore,
   currentUserId,
   enrollment,
   feedback,
@@ -1130,6 +1198,7 @@ function OfferingDetail({
   onBack,
   onLeave,
   onLinkSubject,
+  onLoadMoreCohort,
   onScopeChange,
   onSearchChange,
   remoteClient,
@@ -1141,7 +1210,9 @@ function OfferingDetail({
   allGroups: SocialGroup[];
   busyKey: string | null;
   cohort: UnitCohortMember[];
+  cohortHasMore: boolean;
   cohortLoading: boolean;
+  cohortLoadingMore: boolean;
   currentUserId: string | null;
   enrollment: UnitEnrollment;
   feedback: string | null;
@@ -1151,6 +1222,7 @@ function OfferingDetail({
   onBack: () => void;
   onLeave: () => void;
   onLinkSubject: (subjectId: string, offeringId: string | null) => void;
+  onLoadMoreCohort: () => void;
   onScopeChange: (scope: CohortScope) => void;
   onSearchChange: (value: string) => void;
   remoteClient: SupabaseClient | null;
@@ -1294,7 +1366,7 @@ function OfferingDetail({
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-base font-semibold">Students</h3>
               <span className="text-xs text-[var(--color-text-muted)]">
-                {cohort.length} {cohort.length === 1 ? "member" : "members"}
+                {getUnitMemberCountLabel(enrollment.memberCount)}
               </span>
             </div>
             {cohortLoading ? (
@@ -1305,24 +1377,27 @@ function OfferingDetail({
                 label="Loading cohort"
               />
             ) : cohort.length ? (
-              <PaginatedList
-                className="grid lg:grid-cols-2 lg:gap-x-6"
-                items={cohort}
-                pageSize={12}
-                renderItem={(member) => (
-                  <CohortMemberCard
-                    allGroups={allGroups}
-                    busyKey={busyKey}
-                    key={member.id}
-                    manageableGroups={manageableGroups}
-                    member={member}
-                    onAddFriend={onAddFriend}
-                    onAddToGroup={onAddToGroup}
-                    requested={sentFriendRequestIds.includes(member.id)}
-                  />
-                )}
-                resetKey={`${enrollment.offeringId}:${scope}:${search}`}
-              />
+              <div>
+                <div className="grid lg:grid-cols-2 lg:gap-x-6">
+                  {cohort.map((member) => (
+                    <CohortMemberCard
+                      allGroups={allGroups}
+                      busyKey={busyKey}
+                      key={member.id}
+                      manageableGroups={manageableGroups}
+                      member={member}
+                      onAddFriend={onAddFriend}
+                      onAddToGroup={onAddToGroup}
+                      requested={sentFriendRequestIds.includes(member.id)}
+                    />
+                  ))}
+                </div>
+                <InfiniteScrollSentinel
+                  hasMore={cohortHasMore}
+                  isLoading={cohortLoadingMore}
+                  onLoadMore={onLoadMoreCohort}
+                />
+              </div>
             ) : (
               <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">
                 No students found.

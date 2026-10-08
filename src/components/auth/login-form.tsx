@@ -55,7 +55,21 @@ export function LoginForm({
 
     async function completeExistingMacSession() {
       try {
-        await completeMacSignIn();
+        // Straight after the Google/Microsoft redirect the MAC session can
+        // take a moment to be usable, so retry briefly before showing an
+        // error. A plain visit to the sign-in page only checks once.
+        const delays = returnedFromProvider ? [600, 1500] : [];
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            await completeMacSignIn();
+            break;
+          } catch (attemptError) {
+            const delay = delays[attempt];
+            if (cancelled || delay === undefined) throw attemptError;
+            await new Promise((resolve) => window.setTimeout(resolve, delay));
+            if (cancelled) return;
+          }
+        }
 
         if (!cancelled) {
           window.location.replace(nextPath);

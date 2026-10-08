@@ -324,6 +324,18 @@ export async function fetchRemoteFriendCandidatesPage({
   };
 }
 
+// Friends of friends, ranked by mutual friends, for "People you may know".
+export async function fetchRemoteFriendSuggestions(
+  supabase: SupabaseClient,
+): Promise<RemoteFriendCandidate[]> {
+  const { data, error } = await supabase.rpc("list_friend_suggestions", {
+    result_limit: 10,
+  });
+
+  if (error) throw error;
+  return ((data ?? []) as FriendCandidateRow[]).map(friendCandidateFromRow);
+}
+
 function friendCandidateFromRow(
   row: FriendCandidateRow,
 ): RemoteFriendCandidate {

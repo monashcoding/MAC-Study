@@ -21,6 +21,7 @@ import {
   cacheRemoteUnitState,
   dedupeRemoteRequest,
   getCachedRemoteGroupsSnapshot,
+  getCachedRemoteTimerState,
 } from "@/lib/client-cache";
 import { getMascotSrc, MASCOT_KEYS } from "@/lib/mascots";
 import {
@@ -254,6 +255,12 @@ export function AppShell({
     const cacheUserId = currentUserId;
     let cancelled = false;
 
+    // Fresh cached timer data is enough; don't refetch on every navigation.
+    if (getCachedRemoteTimerState(cacheUserId)) {
+      revealApp();
+      return () => window.cancelAnimationFrame(readyFrame);
+    }
+
     async function warmAppData() {
       try {
         const supabase = createSupabaseBrowserClient();
@@ -330,12 +337,9 @@ export function AppShell({
 
     return subscribeToRemoteAppChanges(supabase, (table) => {
       if (table === "direct_messages") void refreshFriendUnread();
-      if (
-        table === "group_chat_messages" ||
-        table === "group_chat_read_receipts"
-      ) {
-        void refreshGroupUnread();
-      }
+      // Other people's read receipts can't change your unread count, and
+      // your own reads clear the badge locally via the Groups screen.
+      if (table === "group_chat_messages") void refreshGroupUnread();
     });
   }, [currentUserId]);
 
