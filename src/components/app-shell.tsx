@@ -162,36 +162,6 @@ export function AppShell({
     };
   }, []);
 
-  // iOS home-screen apps report 100dvh (and innerHeight) short by the status
-  // bar inset, which leaves a dead band under the nav. The screen has no
-  // browser chrome there, so size the app from the screen itself.
-  useEffect(() => {
-    const isIosStandalone =
-      (navigator as Navigator & { standalone?: boolean }).standalone === true;
-    if (!isIosStandalone) return;
-
-    const root = document.documentElement;
-
-    function syncViewportHeight() {
-      const landscape = window.innerWidth > window.innerHeight;
-      const screenHeight = landscape
-        ? Math.min(window.screen.width, window.screen.height)
-        : Math.max(window.screen.width, window.screen.height);
-      const height = Math.max(screenHeight, window.innerHeight);
-      root.style.setProperty("--app-viewport-height", `${height}px`);
-    }
-
-    syncViewportHeight();
-    window.addEventListener("resize", syncViewportHeight);
-    window.addEventListener("orientationchange", syncViewportHeight);
-
-    return () => {
-      window.removeEventListener("resize", syncViewportHeight);
-      window.removeEventListener("orientationchange", syncViewportHeight);
-      root.style.removeProperty("--app-viewport-height");
-    };
-  }, []);
-
   useEffect(() => {
     function prefetchAll() {
       navItems.forEach((item) => {

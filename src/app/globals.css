@@ -240,9 +240,7 @@ body {
 .mac-mobile-nav {
   position: fixed;
   inset-inline: 0;
-  /* Anchored from the top: in iOS home-screen apps a fixed `bottom: 0` lands
-     above the real screen edge. */
-  top: calc(var(--app-viewport-height) - var(--mobile-nav-height));
+  bottom: 0;
   z-index: 40;
   width: 100%;
   height: var(--mobile-nav-height);

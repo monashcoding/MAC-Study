@@ -227,15 +227,7 @@ export function DirectMessages({
       frame = window.requestAnimationFrame(() => {
         if (!chat) return;
 
-        // Only follow the visual viewport while the keyboard is up; otherwise
-        // the CSS height (full screen, see AppShell) applies. iOS home-screen
-        // apps report a visual viewport short by the status bar inset.
-        const keyboardOpen =
-          Boolean(visualViewport) &&
-          visualViewport!.height < window.innerHeight - 120;
-
         if (
-          !keyboardOpen ||
           !isWorkspaceVisible() ||
           !window.matchMedia("(max-width: 1023px)").matches
         ) {
