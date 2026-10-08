@@ -130,8 +130,10 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
   }, []);
 
   useEffect(() => {
+    // Explicit requests (e.g. from Settings) open even inside the installed
+    // app; only the floating launchers are hidden there.
     function openInstallGuide(event: Event) {
-      if (!isReady || isStandalone) return;
+      if (!isReady) return;
 
       const target = (event as CustomEvent<InstallGuideTarget | undefined>)
         .detail;
@@ -149,7 +151,7 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
     window.addEventListener("mac-open-install-guide", openInstallGuide);
     return () =>
       window.removeEventListener("mac-open-install-guide", openInstallGuide);
-  }, [isDesktop, isReady, isStandalone]);
+  }, [isDesktop, isReady]);
 
   function hideLauncher(kind: LauncherKind) {
     setHiddenLaunchers((current) => ({ ...current, [kind]: true }));

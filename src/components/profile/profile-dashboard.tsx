@@ -90,6 +90,8 @@ export function ProfileDashboard({
             onClick={() => openInstallGuide("pc")}
           />
           <ActionRow
+            // Already on the Home Screen when running installed on a phone.
+            className="standalone:max-lg:hidden"
             detail="Open it from your Home Screen like any app"
             icon={Smartphone}
             label="Add to your phone"
