@@ -1,8 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -13,6 +15,7 @@ import {
   ArrowLeft,
   BellOff,
   Check,
+  ChevronDown,
   Clock3,
   Copy,
   Crown,
@@ -22,10 +25,12 @@ import {
   MoreHorizontal,
   MessagesSquare,
   Pause,
+  Pin,
   Play,
   Plus,
   Settings,
   UserPlus,
+  UsersRound,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { EmptyStateCta } from "@/components/empty-state-cta";
@@ -39,6 +44,16 @@ import {
   getCachedRemoteTimerState,
   subscribeToRemoteTableChanges,
 } from "@/lib/client-cache";
+import {
+  emitStudySessionChange,
+  onStudySessionChange,
+} from "@/lib/study-session-events";
+import {
+  getMascotSrc,
+  MASCOT_KEYS,
+  resolveMascot,
+  type MascotKey,
+} from "@/lib/mascots";
 import {
   SOCIAL_STORAGE_KEY,
   defaultSocialState,
@@ -62,9 +77,11 @@ import {
   removeRemoteGroupMember,
   saveRemoteGroupNotificationSettings,
   setRemoteGroupMemberRole,
+  setRemoteGroupPinned,
   setRemoteUserNudgeMute,
   startRemoteStudySession,
   stopRemoteStudySession,
+  updateRemoteStudyIcon,
   transferRemoteGroupLeadership,
   updateRemoteGroupInvite,
   type RemoteActiveSession,
@@ -79,8 +96,11 @@ import { getGroupLeaveAvailability } from "@/lib/group-membership";
 import { NudgePill } from "@/components/social/nudge-pill";
 import { useNudgeQueue } from "@/components/social/use-nudge-queue";
 import { StartStudyDialog } from "@/components/study/start-study-dialog";
+import { Switch } from "@/components/ui/switch";
 import { formatDuration, getLocalDateKey, isLongSession } from "@/lib/timer";
 import { cn } from "@/lib/utils";
+import { ListSection } from "@/components/ui/list-section";
+import { ListSkeleton } from "@/components/ui/skeleton";
 import {
   GroupChat,
   prefetchRemoteGroupChat,
@@ -92,8 +112,6 @@ const rankingWindows = [
   { id: "month", label: "Month" },
 ] satisfies { id: RankingWindow; label: string }[];
 
-const MEMBER_ACTIVE_COLOR = "#ff7a00";
-const MEMBER_INACTIVE_COLOR = "#737b91";
 const emptySocialState: SocialState = { friends: [], groups: [] };
 const TIMER_STORAGE_KEY = "mac-study-demo-state";
 const fallbackStudySubjects: RemoteSubject[] = [];
@@ -110,10 +128,8 @@ const GROUP_TIMER_CHANGE_TABLES = new Set([
   "subjects",
   "unit_enrolments",
 ]);
-const GROUP_CHAT_CHANGE_TABLES = new Set([
-  "group_chat_messages",
-  "group_chat_read_receipts",
-]);
+// Read receipts are left out: they never change your own unread counts.
+const GROUP_CHAT_CHANGE_TABLES = new Set(["group_chat_messages"]);
 
 export function GroupsDashboard({
   isActive = true,
@@ -130,6 +146,12 @@ export function GroupsDashboard({
   );
   const [activeStudySession, setActiveStudySession] =
     useState<RemoteActiveSession | null>(null);
+  // Your own start/stop, shown on your card before the server confirms it.
+  const [selfStudyOverride, setSelfStudyOverride] = useState<
+    | { studying: true; startedAt: string }
+    | { studying: false; at: string }
+    | null
+  >(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isChoosingStudy, setIsChoosingStudy] = useState(false);
@@ -168,38 +190,44 @@ export function GroupsDashboard({
     );
   }, [groupUnreadCounts, onUnreadChange]);
 
-  const refreshRemoteSocial = useCallback(async (supabase: SupabaseClient) => {
-    const snapshot = userId
-      ? await dedupeRemoteRequest({
-          key: "groups",
-          load: () => fetchRemoteGroupsSnapshot(supabase),
-          userId,
-        })
-      : await fetchRemoteGroupsSnapshot(supabase);
+  const refreshRemoteSocial = useCallback(
+    async (supabase: SupabaseClient) => {
+      const snapshot = userId
+        ? await dedupeRemoteRequest({
+            key: "groups",
+            load: () => fetchRemoteGroupsSnapshot(supabase),
+            userId,
+          })
+        : await fetchRemoteGroupsSnapshot(supabase);
 
-    if (snapshot) {
-      cacheRemoteGroupsSnapshot(snapshot);
-      setCurrentUserId(snapshot.currentUserId);
-      setSocialState(snapshot.socialState);
-      setGroupInvites(snapshot.groupInvites ?? []);
-    }
-  }, [userId]);
+      if (snapshot) {
+        cacheRemoteGroupsSnapshot(snapshot);
+        setCurrentUserId(snapshot.currentUserId);
+        setSocialState(snapshot.socialState);
+        setGroupInvites(snapshot.groupInvites ?? []);
+      }
+    },
+    [userId],
+  );
 
-  const refreshRemoteTimer = useCallback(async (supabase: SupabaseClient) => {
-    const timerState = userId
-      ? await dedupeRemoteRequest({
-          key: "timer",
-          load: () => fetchRemoteTimerState(supabase),
-          userId,
-        })
-      : await fetchRemoteTimerState(supabase);
+  const refreshRemoteTimer = useCallback(
+    async (supabase: SupabaseClient) => {
+      const timerState = userId
+        ? await dedupeRemoteRequest({
+            key: "timer",
+            load: () => fetchRemoteTimerState(supabase),
+            userId,
+          })
+        : await fetchRemoteTimerState(supabase);
 
-    if (timerState) {
-      cacheRemoteTimerState(timerState);
-      setTimerSubjects(timerState.subjects);
-      setActiveStudySession(timerState.activeSession);
-    }
-  }, [userId]);
+      if (timerState) {
+        cacheRemoteTimerState(timerState);
+        setTimerSubjects(timerState.subjects);
+        setActiveStudySession(timerState.activeSession);
+      }
+    },
+    [userId],
+  );
 
   const refreshGroupUnreadCounts = useCallback(
     async (supabase: SupabaseClient) => {
@@ -481,10 +509,45 @@ export function GroupsDashboard({
       window.removeEventListener("mac-open-group-requests", openRequests);
   }, []);
   useAppHeaderDetail("/app/groups", selectedGroup?.name ?? null);
+  const selfId = currentUserId ?? "you";
   const friendsById = useMemo(
-    () => new Map(socialState.friends.map((friend) => [friend.id, friend])),
-    [socialState.friends],
+    () =>
+      new Map(
+        socialState.friends.map((friend) => [
+          friend.id,
+          friend.id === selfId
+            ? applySelfStudyOverride(friend, selfStudyOverride)
+            : friend,
+        ]),
+      ),
+    [selfId, selfStudyOverride, socialState.friends],
   );
+
+  useEffect(() => {
+    return onStudySessionChange((session) => {
+      setActiveStudySession(session);
+      setSelfStudyOverride(
+        session
+          ? { studying: true, startedAt: session.startedAt }
+          : { studying: false, at: new Date().toISOString() },
+      );
+    });
+  }, []);
+
+  const serverSelfStudying = socialState.friends.find(
+    (friend) => friend.id === selfId,
+  )?.studying;
+
+  useEffect(() => {
+    // Hand back to server data once it agrees with the local change.
+    if (
+      selfStudyOverride &&
+      serverSelfStudying === selfStudyOverride.studying
+    ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears a resolved optimistic override
+      setSelfStudyOverride(null);
+    }
+  }, [selfStudyOverride, serverSelfStudying]);
   const groupSummaries = socialState.groups.map((group) => {
     const members = getGroupMembers(group, friendsById);
     const activeNow = members.filter((member) => member.studying).length;
@@ -495,6 +558,115 @@ export function GroupsDashboard({
       memberCount: members.length,
     };
   });
+  const pinnedGroupSummaries = groupSummaries.filter(
+    ({ group }) => group.isPinned,
+  );
+  const otherGroupSummaries = groupSummaries.filter(
+    ({ group }) => !group.isPinned,
+  );
+
+  function setGroupPinnedLocally(groupId: string, pinned: boolean) {
+    setSocialState((current) => ({
+      ...current,
+      groups: current.groups.map((group) =>
+        group.id === groupId ? { ...group, isPinned: pinned } : group,
+      ),
+    }));
+  }
+
+  async function toggleGroupPin(group: SocialGroup) {
+    const pinned = !group.isPinned;
+    setGroupPinnedLocally(group.id, pinned);
+    if (!remoteClient) return;
+
+    try {
+      await setRemoteGroupPinned({
+        groupId: group.id,
+        pinned,
+        supabase: remoteClient,
+      });
+    } catch {
+      setGroupPinnedLocally(group.id, !pinned);
+      setRequestFeedback(
+        pinned ? "Group could not be pinned." : "Group could not be unpinned.",
+      );
+    }
+  }
+
+  function renderGroupRow({
+    activeNow,
+    group,
+    memberCount,
+  }: (typeof groupSummaries)[number]) {
+    return (
+      <div
+        className={cn(
+          "grid grid-cols-[minmax(0,1fr)_auto] items-stretch rounded-md border transition",
+          group.isPinned
+            ? "border-[rgb(255_227_48/0.16)] bg-[rgb(255_227_48/0.035)] hover:border-[rgb(255_227_48/0.28)]"
+            : "border-transparent bg-[rgb(255_255_255/0.035)] hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)]",
+        )}
+        key={group.id}
+      >
+        <button
+          className="mac-focus grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-3 text-left active:scale-[0.99] lg:min-h-20 lg:px-4"
+          onClick={() => {
+            setGroupView("class");
+            setSelectedGroupId(group.id);
+          }}
+          type="button"
+        >
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-semibold">{group.name}</h3>
+            <div className="mt-1 text-sm text-[var(--color-text-muted)]">
+              <span>{activeNow} active</span>
+            </div>
+          </div>
+          {/* Unread chat count, centred left of the pin/members column. */}
+          {groupUnreadCounts[group.id] ? (
+            <span
+              aria-label={`${groupUnreadCounts[group.id]} unread chat messages`}
+              className="inline-flex shrink-0 items-center gap-1 text-[var(--color-text-muted)]"
+            >
+              <MessagesSquare aria-hidden size={15} />
+              <UnreadBadge count={groupUnreadCounts[group.id]} />
+            </span>
+          ) : (
+            <span />
+          )}
+        </button>
+        {/* Pin top-right, member count bottom-right. */}
+        <div className="flex flex-col items-end justify-between pb-3 pr-2 pt-1.5 lg:pb-3.5 lg:pr-3">
+          <button
+            aria-label={
+              group.isPinned ? `Unpin ${group.name}` : `Pin ${group.name}`
+            }
+            aria-pressed={Boolean(group.isPinned)}
+            className={cn(
+              "mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md transition active:scale-95",
+              group.isPinned
+                ? "text-[var(--color-mac-yellow)] hover:bg-[rgb(255_227_48/0.1)]"
+                : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
+            )}
+            onClick={() => void toggleGroupPin(group)}
+            title={group.isPinned ? "Unpin" : "Pin to top"}
+            type="button"
+          >
+            <Pin
+              aria-hidden
+              className={group.isPinned ? "rotate-0" : "rotate-45"}
+              fill={group.isPinned ? "currentColor" : "none"}
+              size={20}
+            />
+          </button>
+          <span className="pr-1 text-sm leading-5 tabular-nums text-[var(--color-text-muted)]">
+            {memberCount} {memberCount === 1 ? "member" : "members"}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   const activeTotal = groupSummaries.reduce(
     (total, group) => total + group.activeNow,
     0,
@@ -798,11 +970,13 @@ export function GroupsDashboard({
     };
     setActiveStudySession(nextSession);
     setIsChoosingStudy(false);
+    emitStudySessionChange(nextSession);
 
     if (remoteClient) {
       try {
         await startRemoteStudySession({
           groupId: selectedGroup.id,
+          startedAt: nextSession.startedAt,
           subjectId,
           supabase: remoteClient,
         });
@@ -810,6 +984,7 @@ export function GroupsDashboard({
         setActiveStudySession((current) =>
           current?.startedAt === nextSession.startedAt ? null : current,
         );
+        emitStudySessionChange(null);
       } finally {
         await Promise.allSettled([
           refreshRemoteTimer(remoteClient),
@@ -836,12 +1011,18 @@ export function GroupsDashboard({
 
     const stoppingSession = activeStudySession;
     setActiveStudySession(null);
+    emitStudySessionChange(null);
 
     if (remoteClient) {
       try {
         await stopRemoteStudySession(remoteClient);
       } catch {
         setActiveStudySession((current) => current ?? stoppingSession);
+        emitStudySessionChange({
+          groupId: stoppingSession.groupId ?? null,
+          startedAt: stoppingSession.startedAt,
+          subjectId: stoppingSession.subjectId,
+        });
       } finally {
         await Promise.allSettled([
           refreshRemoteTimer(remoteClient),
@@ -874,6 +1055,31 @@ export function GroupsDashboard({
       ],
       subjects: timerSubjects,
     });
+  }
+
+  async function changeMascot(memberId: string, icon: MascotKey) {
+    const previousIcon = friendsById.get(memberId)?.personIcon;
+    const applyIcon = (nextIcon: SocialFriend["personIcon"]) =>
+      setSocialState((current) => ({
+        ...current,
+        friends: current.friends.map((friend) =>
+          friend.id === memberId ? { ...friend, personIcon: nextIcon } : friend,
+        ),
+      }));
+
+    applyIcon(icon);
+
+    if (!remoteClient || !currentUserId || !previousIcon) return;
+
+    try {
+      await updateRemoteStudyIcon({
+        icon,
+        supabase: remoteClient,
+        userId: currentUserId,
+      });
+    } catch {
+      applyIcon(previousIcon);
+    }
   }
 
   function nudgeMember(memberId: string, groupId: string) {
@@ -973,57 +1179,64 @@ export function GroupsDashboard({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 rounded-xl bg-[rgb(255_255_255/0.04)] p-1 lg:max-w-lg">
-            {[
-              { id: "class", label: "Class view" },
-              { id: "rankings", label: "Rankings" },
-              { id: "chat", label: "Chat" },
-            ].map((view) => (
-              <button
-                className={cn(
-                  "mac-focus h-11 rounded-lg text-sm font-semibold transition",
-                  groupView === view.id
-                    ? "bg-[var(--color-mac-yellow)] text-[#141414]"
-                    : "text-[var(--color-text-muted)]",
-                )}
-                key={view.id}
-                onClick={() =>
-                  setGroupView(view.id as "class" | "rankings" | "chat")
-                }
-                type="button"
-              >
-                <span className="inline-flex items-center justify-center gap-1.5">
-                  {view.id === "chat" ? (
-                    <MessagesSquare aria-hidden size={15} />
-                  ) : null}
-                  {view.label}
-                  {view.id === "chat" && selectedGroupUnreadCount ? (
-                    <UnreadBadge count={selectedGroupUnreadCount} />
-                  ) : null}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {groupView === "rankings" ? (
-            <div className="grid grid-cols-3 rounded-md bg-[rgb(255_255_255/0.035)] p-1 lg:max-w-md">
-              {rankingWindows.map((window) => (
+          <div className="flex items-center gap-2">
+            <div className="grid min-w-0 flex-1 grid-cols-3 rounded-xl bg-[rgb(255_255_255/0.04)] p-1 lg:max-w-lg">
+              {[
+                { id: "class", label: "Class view" },
+                { id: "rankings", label: "Rankings" },
+                { id: "chat", label: "Chat" },
+              ].map((view) => (
                 <button
                   className={cn(
-                    "mac-focus h-11 rounded px-3 text-xs font-semibold transition",
-                    rankingWindow === window.id
-                      ? "border border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)] text-[var(--color-mac-yellow)]"
-                      : "border border-transparent text-[var(--color-text-muted)]",
+                    "mac-focus h-11 min-w-0 whitespace-nowrap rounded-lg text-sm font-semibold transition",
+                    groupView === view.id
+                      ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                      : "text-[var(--color-text-muted)]",
                   )}
-                  key={window.id}
-                  onClick={() => setRankingWindow(window.id)}
+                  key={view.id}
+                  onClick={() =>
+                    setGroupView(view.id as "class" | "rankings" | "chat")
+                  }
                   type="button"
                 >
-                  {window.label}
+                  <span className="inline-flex items-center justify-center gap-1.5">
+                    {view.id === "chat" ? (
+                      <MessagesSquare aria-hidden size={15} />
+                    ) : null}
+                    {view.label}
+                    {view.id === "chat" && selectedGroupUnreadCount ? (
+                      <UnreadBadge count={selectedGroupUnreadCount} />
+                    ) : null}
+                  </span>
                 </button>
               ))}
             </div>
-          ) : null}
+
+            {groupView === "rankings" ? (
+              <div
+                aria-label="Ranking period"
+                className="ml-auto hidden shrink-0 grid-cols-3 rounded-xl bg-[rgb(255_255_255/0.04)] p-1 lg:grid"
+                role="group"
+              >
+                {rankingWindows.map((window) => (
+                  <button
+                    aria-pressed={rankingWindow === window.id}
+                    className={cn(
+                      "mac-focus h-11 rounded-lg px-4 text-sm font-semibold transition",
+                      rankingWindow === window.id
+                        ? "bg-[var(--color-mac-yellow)] text-[#141414]"
+                        : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+                    )}
+                    key={window.id}
+                    onClick={() => setRankingWindow(window.id)}
+                    type="button"
+                  >
+                    {window.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </section>
 
         {groupView === "class" ? (
@@ -1035,10 +1248,10 @@ export function GroupsDashboard({
               renderItem={(member) => (
                 <button
                   className={cn(
-                    "mac-focus min-w-0 rounded-xl border px-2 py-3 text-center transition hover:bg-[rgb(255_255_255/0.045)] active:scale-[0.98]",
+                    "mac-focus group relative flex min-w-0 flex-col items-center rounded-xl border px-1.5 pb-2.5 pt-1.5 text-center transition active:scale-[0.98]",
                     member.studying
-                      ? "border-[rgb(255_122_0/0.18)] bg-[rgb(255_122_0/0.045)] text-[#ff7a00]"
-                      : "border-[rgb(255_255_255/0.045)] bg-[rgb(255_255_255/0.018)] text-[var(--color-text-muted)]",
+                      ? "border-[rgb(255_122_0/0.3)] bg-[radial-gradient(circle_at_50%_38%,rgb(255_122_0/0.14),transparent_62%),rgb(255_122_0/0.035)] hover:border-[rgb(255_122_0/0.45)]"
+                      : "border-[rgb(255_255_255/0.05)] bg-[rgb(255_255_255/0.018)] hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.035)]",
                   )}
                   key={member.id}
                   onClick={() => {
@@ -1046,10 +1259,14 @@ export function GroupsDashboard({
                   }}
                   type="button"
                 >
-                  <StudyPersonIcon active={member.studying} />
+                  <MemberMascot
+                    active={member.studying}
+                    icon={member.personIcon}
+                    memberId={member.id}
+                  />
                   <p
                     className={cn(
-                      "mt-2 truncate text-sm font-semibold",
+                      "mt-1 w-full truncate px-1 text-sm font-semibold",
                       member.studying
                         ? "text-[var(--color-text)]"
                         : "text-[var(--color-text-muted)]",
@@ -1058,7 +1275,23 @@ export function GroupsDashboard({
                   >
                     {member.handle}
                   </p>
-                  <p className="mt-1 font-mono text-xs font-semibold tabular-nums text-[var(--color-text-muted)]">
+                  <p
+                    className={cn(
+                      "mt-0.5 flex items-center justify-center gap-1.5 font-mono text-xs font-semibold tabular-nums",
+                      member.studying
+                        ? "text-[#ff9a3d]"
+                        : "text-[rgb(169_169_159/0.7)]",
+                    )}
+                  >
+                    {member.studying ? (
+                      <>
+                        <span
+                          aria-hidden
+                          className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#ff7a00] motion-reduce:animate-none"
+                        />
+                        <span className="sr-only">Studying now, </span>
+                      </>
+                    ) : null}
                     {formatDuration(getLiveRankingSeconds(member, "day", now))}
                   </p>
                 </button>
@@ -1082,6 +1315,11 @@ export function GroupsDashboard({
             onClose={() => {
               setSelectedMemberId(null);
             }}
+            onMascotChange={
+              selectedMember.id === (currentUserId ?? "you")
+                ? (icon) => void changeMascot(selectedMember.id, icon)
+                : undefined
+            }
             onNudge={() => nudgeMember(selectedMember.id, selectedGroup.id)}
             pendingNudges={selectedMemberNudgeState?.pending ?? 0}
             remoteClient={remoteClient}
@@ -1126,59 +1364,84 @@ export function GroupsDashboard({
         ) : null}
 
         {groupView === "rankings" ? (
-          <section className="space-y-3">
-            <PaginatedList
-              className="grid gap-2 lg:grid-cols-2 lg:gap-3"
-              items={ranking}
-              pageSize={12}
-              renderItem={(member, _index, absoluteIndex) => (
-                <button
-                  className={cn(
-                    "mac-focus grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md border px-3 py-2.5 text-left transition active:scale-[0.99]",
-                    absoluteIndex === 0
-                      ? "border-[rgb(255_227_48/0.42)] bg-[rgb(255_227_48/0.14)]"
-                      : absoluteIndex < 3
-                        ? "border-[rgb(255_227_48/0.24)] bg-[rgb(255_227_48/0.08)]"
-                        : "border-transparent bg-[rgb(255_255_255/0.035)]",
-                  )}
-                  key={member.id}
-                  onClick={() => {
-                    setSelectedMemberId(member.id);
-                  }}
-                  type="button"
-                >
-                  <span
-                    className={cn(
-                      "inline-flex items-center justify-center font-mono text-sm font-semibold",
-                      absoluteIndex < 3
-                        ? "text-[var(--color-mac-yellow)]"
-                        : "text-[var(--color-text-muted)]",
-                    )}
+          <section className="relative overflow-hidden rounded-[10px] border border-[rgb(255_255_255/0.08)] bg-[rgb(18_18_18/0.52)]">
+            {/* Mobile keeps the view tabs full width, so the period lives in the card. */}
+            <label className="absolute right-2 top-2 z-10 lg:hidden">
+              <span className="sr-only">Ranking period</span>
+              <select
+                className="mac-focus h-8 appearance-none rounded-lg border border-[rgb(255_255_255/0.1)] bg-[rgb(23_23_23/0.92)] pl-2.5 pr-7 text-xs font-semibold text-[var(--color-text)]"
+                onChange={(event) =>
+                  setRankingWindow(event.target.value as RankingWindow)
+                }
+                value={rankingWindow}
+              >
+                {rankingWindows.map((window) => (
+                  <option key={window.id} value={window.id}>
+                    {window.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                aria-hidden
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+                size={14}
+              />
+            </label>
+            {/* Visual order is 2nd, 1st, 3rd; empty slots keep 1st centred in small groups. */}
+            <div className="grid grid-cols-3 items-end gap-2 border-b border-[rgb(255_255_255/0.08)] px-3 pt-6 sm:gap-4 sm:px-12 sm:pt-7">
+              {([1, 0, 2] as const).map((index) => {
+                const member = ranking[index];
+
+                return member ? (
+                  <PodiumSpot
+                    isYou={member.id === (currentUserId ?? "you")}
+                    key={member.id}
+                    member={member}
+                    onSelect={() => setSelectedMemberId(member.id)}
+                    place={(index + 1) as 1 | 2 | 3}
+                    seconds={getLiveRankingSeconds(member, rankingWindow, now)}
+                  />
+                ) : (
+                  <div aria-hidden key={`empty-${index}`} />
+                );
+              })}
+            </div>
+
+            {ranking.length > 3 ? (
+              <PaginatedList
+                className="grid px-2 py-1.5 sm:px-3"
+                items={ranking.slice(3)}
+                pageSize={12}
+                renderItem={(member, _index, absoluteIndex) => (
+                  <button
+                    className="mac-focus grid min-h-[60px] grid-cols-[2.5rem_44px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border-b border-[#34342f] px-1 py-1.5 text-left transition last:border-b-0 hover:bg-[rgb(255_255_255/0.03)] active:scale-[0.99]"
+                    key={member.id}
+                    onClick={() => setSelectedMemberId(member.id)}
+                    type="button"
                   >
-                    {absoluteIndex === 0 ? (
-                      <>
-                        <Crown aria-hidden fill="currentColor" size={17} />
-                        <span className="sr-only">Rank 1</span>
-                      </>
-                    ) : (
-                      `#${absoluteIndex + 1}`
-                    )}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold">{member.name}</p>
-                    <p className="truncate text-xs font-medium text-[var(--color-text-muted)]">
-                      {member.handle}
+                    <span className="text-center font-mono text-sm font-semibold tabular-nums text-[var(--color-text-muted)]">
+                      #{absoluteIndex + 4}
+                    </span>
+                    <MemberMascot
+                      active={member.studying}
+                      className="h-11 w-11"
+                      icon={member.personIcon}
+                      memberId={member.id}
+                    />
+                    <RankingIdentity
+                      isYou={member.id === (currentUserId ?? "you")}
+                      member={member}
+                    />
+                    <p className="font-mono text-sm font-semibold tabular-nums">
+                      {formatDuration(
+                        getLiveRankingSeconds(member, rankingWindow, now),
+                      )}
                     </p>
-                  </div>
-                  <p className="font-mono text-sm font-semibold tabular-nums">
-                    {formatDuration(
-                      getLiveRankingSeconds(member, rankingWindow, now),
-                    )}
-                  </p>
-                </button>
-              )}
-              resetKey={`${selectedGroup.id}:${rankingWindow}`}
-            />
+                  </button>
+                )}
+                resetKey={`${selectedGroup.id}:${rankingWindow}`}
+              />
+            ) : null}
           </section>
         ) : null}
 
@@ -1194,19 +1457,18 @@ export function GroupsDashboard({
           <button
             className={cn(
               "mac-focus inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold shadow-[0_16px_34px_rgb(0_0_0/0.32)] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-55",
-              activeInSelectedGroup
+              activeStudySession
                 ? "bg-[var(--color-danger)] text-white"
                 : "bg-[var(--color-mac-yellow)] text-[#141414]",
             )}
-            disabled={isStudyingElsewhere}
             onClick={() =>
-              void (activeInSelectedGroup
+              void (activeStudySession
                 ? stopGroupStudy()
                 : setIsChoosingStudy(true))
             }
             type="button"
           >
-            {activeInSelectedGroup ? (
+            {activeStudySession ? (
               <Pause aria-hidden fill="currentColor" size={18} />
             ) : (
               <Play aria-hidden size={18} />
@@ -1214,7 +1476,7 @@ export function GroupsDashboard({
             {activeInSelectedGroup
               ? "Pause study"
               : isStudyingElsewhere
-                ? "Studying in another session"
+                ? "Stop current session"
                 : "Start study"}
           </button>
         </div>
@@ -1225,9 +1487,15 @@ export function GroupsDashboard({
   return (
     <div className="space-y-4 lg:space-y-6">
       <section className="hidden grid-cols-3 gap-4 lg:grid">
-        <SummaryStat label="Groups" value={`${socialState.groups.length}`} />
-        <SummaryStat label="Active" value={`${activeTotal}`} />
-        <SummaryStat label="Members" value={`${uniqueMemberCount}`} />
+        <SummaryStat
+          label="Groups"
+          value={isLoaded ? `${socialState.groups.length}` : "–"}
+        />
+        <SummaryStat label="Active" value={isLoaded ? `${activeTotal}` : "–"} />
+        <SummaryStat
+          label="Members"
+          value={isLoaded ? `${uniqueMemberCount}` : "–"}
+        />
       </section>
 
       <div className="flex items-center justify-between gap-3">
@@ -1242,9 +1510,11 @@ export function GroupsDashboard({
           </button>
         ) : (
           <p className="text-sm font-medium text-[var(--color-text-muted)]">
-            {socialState.groups.length
-              ? `${socialState.groups.length} ${socialState.groups.length === 1 ? "group" : "groups"}`
-              : "No groups yet"}
+            {!isLoaded
+              ? "Loading groups…"
+              : socialState.groups.length
+                ? `${socialState.groups.length} ${socialState.groups.length === 1 ? "group" : "groups"}`
+                : "No groups yet"}
           </p>
         )}
         <div className="flex items-center gap-2">
@@ -1288,54 +1558,41 @@ export function GroupsDashboard({
 
       {activeTab === "groups" ? (
         <section className="space-y-3" role="tabpanel">
-          {groupSummaries.length ? (
-            <PaginatedList
-              className="grid gap-2 lg:grid-cols-2 lg:gap-3"
-              items={groupSummaries}
-              pageSize={10}
-              renderItem={({ group, activeNow, memberCount }) => (
-                <button
-                  className="mac-focus grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-transparent bg-[rgb(255_255_255/0.035)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.1)] hover:bg-[rgb(255_255_255/0.05)] active:scale-[0.99] lg:min-h-20 lg:px-4"
-                  key={group.id}
-                  onClick={() => {
-                    setGroupView("class");
-                    setSelectedGroupId(group.id);
-                  }}
-                  type="button"
+          {!isLoaded ? (
+            <ListSkeleton count={3} label="Loading groups" />
+          ) : groupSummaries.length ? (
+            <div className="space-y-5">
+              {pinnedGroupSummaries.length ? (
+                <ListSection icon={Pin} title="Pinned">
+                  <div className="grid gap-2 lg:grid-cols-2 lg:gap-3">
+                    {pinnedGroupSummaries.map(renderGroupRow)}
+                  </div>
+                </ListSection>
+              ) : null}
+              {otherGroupSummaries.length ? (
+                <ListSection
+                  title={pinnedGroupSummaries.length ? "All groups" : null}
                 >
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <h3 className="truncate text-lg font-semibold">
-                        {group.name}
-                      </h3>
-                      {groupUnreadCounts[group.id] ? (
-                        <span
-                          aria-label={`${groupUnreadCounts[group.id]} unread chat messages`}
-                          className="inline-flex shrink-0 items-center gap-1 text-[var(--color-text-muted)]"
-                        >
-                          <MessagesSquare aria-hidden size={15} />
-                          <UnreadBadge count={groupUnreadCounts[group.id]} />
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-1 text-sm text-[var(--color-text-muted)]">
-                      <span>{activeNow} active</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xl font-semibold tabular-nums">
-                      {memberCount}
-                    </p>
-                    <p className="text-xs font-medium text-[var(--color-text-muted)]">
-                      members
-                    </p>
-                  </div>
-                </button>
-              )}
-              resetKey="groups"
-            />
+                  <PaginatedList
+                    className="grid gap-2 lg:grid-cols-2 lg:gap-3"
+                    items={otherGroupSummaries}
+                    pageSize={10}
+                    renderItem={renderGroupRow}
+                    resetKey="groups"
+                  />
+                </ListSection>
+              ) : null}
+            </div>
           ) : (
             <EmptyStateCta
+              description="A group is a shared space for your study crew: see who's studying right now, race up the leaderboard, and chat."
+              mascot="max-arms-up"
+              points={[
+                { icon: UsersRound, label: "Who's studying now" },
+                { icon: Crown, label: "Leaderboard" },
+                { icon: MessagesSquare, label: "Group chat" },
+              ]}
+              title="Study together in a group"
               action={
                 <button
                   className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"
@@ -1348,6 +1605,14 @@ export function GroupsDashboard({
               }
             />
           )}
+        </section>
+      ) : !isLoaded ? (
+        <section role="tabpanel">
+          <ListSkeleton
+            className="grid gap-2"
+            count={2}
+            label="Loading invitations"
+          />
         </section>
       ) : (
         <section className="space-y-6" role="tabpanel">
@@ -1626,6 +1891,127 @@ function CreateGroupDialog({
   );
 }
 
+const PODIUM_STYLES = {
+  1: {
+    mascot: "h-24 w-24 sm:h-[132px] sm:w-[132px]",
+    plinth:
+      "h-[100px] border-[rgb(255_227_48/0.42)] bg-[rgb(255_227_48/0.14)] sm:h-[132px]",
+  },
+  2: {
+    mascot: "h-20 w-20 sm:h-[104px] sm:w-[104px]",
+    plinth:
+      "h-20 border-[rgb(255_227_48/0.24)] bg-[rgb(255_227_48/0.08)] sm:h-24",
+  },
+  3: {
+    mascot: "h-[72px] w-[72px] sm:h-24 sm:w-24",
+    plinth:
+      "h-16 border-[rgb(255_227_48/0.24)] bg-[rgb(255_227_48/0.08)] sm:h-[72px]",
+  },
+} as const;
+
+function PodiumSpot({
+  isYou,
+  member,
+  onSelect,
+  place,
+  seconds,
+}: {
+  isYou: boolean;
+  member: SocialFriend;
+  onSelect: () => void;
+  place: 1 | 2 | 3;
+  seconds: number;
+}) {
+  const style = PODIUM_STYLES[place];
+
+  return (
+    <button
+      className="mac-focus group flex min-w-0 flex-col items-center rounded-t-lg text-center"
+      onClick={onSelect}
+      type="button"
+    >
+      {isYou ? (
+        <span className="mb-1 shrink-0 rounded bg-[var(--color-mac-yellow)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#141414]">
+          You
+        </span>
+      ) : null}
+      <MemberMascot
+        active={member.studying}
+        className={cn("relative -mb-1.5", style.mascot)}
+        icon={member.personIcon}
+        memberId={member.id}
+      />
+      <RankingIdentity centered isYou={false} member={member} />
+      <div
+        className={cn(
+          "mt-3 flex w-full flex-col items-center gap-1.5 rounded-t-lg border border-b-0 pt-3 sm:gap-2 sm:pt-3.5",
+          style.plinth,
+        )}
+      >
+        <span className="flex items-center gap-1.5 font-mono text-base font-bold leading-none tabular-nums text-[var(--color-mac-yellow)] sm:text-xl">
+          {place === 1 ? (
+            <Crown
+              aria-hidden
+              className="h-4 w-4 sm:h-5 sm:w-5"
+              fill="currentColor"
+            />
+          ) : null}
+          #{place}
+        </span>
+        <span className="font-mono text-sm font-semibold leading-none tabular-nums sm:text-[15px]">
+          {formatDuration(seconds)}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function RankingIdentity({
+  centered = false,
+  isYou,
+  member,
+}: {
+  centered?: boolean;
+  isYou: boolean;
+  member: SocialFriend;
+}) {
+  return (
+    <div className={cn("min-w-0", centered && "mt-2 w-full")}>
+      <p
+        className={cn(
+          "flex min-w-0 items-center gap-1.5 text-[15px] font-semibold",
+          centered && "justify-center",
+        )}
+      >
+        <span className="truncate">{member.name}</span>
+        {isYou ? (
+          <span className="shrink-0 rounded bg-[var(--color-mac-yellow)] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#141414]">
+            You
+          </span>
+        ) : null}
+      </p>
+      <p
+        className={cn(
+          "mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-[var(--color-text-muted)]",
+          centered && "justify-center",
+        )}
+      >
+        {member.studying ? (
+          <>
+            <span
+              aria-hidden
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff7a00]"
+            />
+            <span className="text-[#ff9a3d]">Studying</span>
+          </>
+        ) : (
+          <span className="truncate">{member.handle}</span>
+        )}
+      </p>
+    </div>
+  );
+}
+
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.03)] px-3 py-3 text-center lg:px-4 lg:py-4">
@@ -1901,6 +2287,7 @@ function GroupMemberDialog({
   now,
   nudgeFeedback,
   onClose,
+  onMascotChange,
   onNudge,
   pendingNudges,
   remoteClient,
@@ -1912,6 +2299,7 @@ function GroupMemberDialog({
   now: Date;
   nudgeFeedback: string | null;
   onClose: () => void;
+  onMascotChange?: (icon: MascotKey) => void;
   onNudge: () => void;
   pendingNudges: number;
   remoteClient: SupabaseClient | null;
@@ -2038,6 +2426,14 @@ function GroupMemberDialog({
           value={formatDuration(getLiveRankingSeconds(member, "month", now))}
         />
       </div>
+
+      {onMascotChange ? (
+        <MascotPicker
+          memberId={member.id}
+          onChange={onMascotChange}
+          value={member.personIcon}
+        />
+      ) : null}
     </AppDialog>
   );
 }
@@ -2665,34 +3061,22 @@ function GroupNotificationRow({
   onToggle: () => void;
   saving: boolean;
 }) {
+  const switchId = useId();
+
   return (
-    <button
-      aria-checked={enabled}
-      className="mac-focus flex min-h-12 w-full items-center gap-3 border-b border-[var(--color-border)] px-3 text-left last:border-b-0"
-      disabled={saving}
-      onClick={onToggle}
-      role="switch"
-      type="button"
+    <label
+      className="flex min-h-12 w-full cursor-pointer items-center gap-3 border-b border-[var(--color-border)] px-3 last:border-b-0"
+      htmlFor={switchId}
     >
       <span className="text-[var(--color-mac-yellow)]">{icon}</span>
       <span className="min-w-0 flex-1 text-sm font-medium">{label}</span>
-      <span
-        aria-hidden
-        className={cn(
-          "relative h-7 w-12 rounded-full border transition",
-          enabled
-            ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)]"
-            : "border-[var(--color-border)] bg-[var(--color-surface-raised)]",
-        )}
-      >
-        <span
-          className={cn(
-            "absolute top-0.5 h-5 w-5 rounded-full bg-[#f7f7f2] transition",
-            enabled ? "left-[1.35rem]" : "left-0.5",
-          )}
-        />
-      </span>
-    </button>
+      <Switch
+        checked={enabled}
+        disabled={saving}
+        id={switchId}
+        onCheckedChange={onToggle}
+      />
+    </label>
   );
 }
 
@@ -2705,30 +3089,116 @@ function SettingValue({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StudyPersonIcon({ active }: { active: boolean }) {
-  const color = active ? MEMBER_ACTIVE_COLOR : MEMBER_INACTIVE_COLOR;
+function MemberMascot({
+  active,
+  className,
+  icon,
+  memberId,
+}: {
+  active: boolean;
+  className?: string;
+  icon: string;
+  memberId: string;
+}) {
+  const src = getMascotSrc(resolveMascot(icon, memberId));
 
   return (
-    <svg
+    <span
       aria-hidden
-      className="mx-auto h-14 w-14 sm:h-16 sm:w-16"
-      fill="none"
-      stroke={color}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="3.2"
-      viewBox="0 0 72 72"
+      className={cn(
+        "mac-mascot relative mx-auto block transition-transform duration-300 group-hover:-translate-y-0.5 motion-reduce:transition-none",
+        className ?? "h-24 w-24 sm:h-28 sm:w-28 lg:h-32 lg:w-32",
+      )}
+      data-active={active}
     >
-      <path d="M31 6c5 5 1 9 6 13" />
-      <path d="M25 10c4 4 1 7 5 10" />
-      <path d="M40 10c-3 4-1 7-5 10" />
-      <circle cx="32" cy="25" r="7.5" />
-      <path d="M18 53c0-10 6-17 14-17s14 7 14 17" />
-      <path d="M12 56h40M17 64V49h31v15" />
-      <path d="M52 37h10l3 19H50l2-19Z" />
-      <path d="M56 37V28h8" />
-    </svg>
+      <Image
+        alt=""
+        className="h-full w-full"
+        height={128}
+        src={src}
+        width={128}
+      />
+    </span>
   );
+}
+
+function MascotPicker({
+  memberId,
+  onChange,
+  value,
+}: {
+  memberId: string;
+  onChange: (key: MascotKey) => void;
+  value: string;
+}) {
+  const selected = resolveMascot(value, memberId);
+
+  return (
+    <fieldset className="mt-5">
+      <legend className="text-sm font-semibold">Your mascot</legend>
+      <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+        Shown to everyone in your groups.
+      </p>
+      <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-6">
+        {MASCOT_KEYS.map((key) => {
+          const isSelected = key === selected;
+
+          return (
+            <button
+              aria-label={key.replace(/-/g, " ")}
+              aria-pressed={isSelected}
+              className={cn(
+                "mac-focus rounded-lg border p-1 transition active:scale-95",
+                isSelected
+                  ? "border-[var(--color-mac-yellow)] bg-[rgb(255_227_48/0.08)]"
+                  : "border-[rgb(255_255_255/0.06)] hover:border-[rgb(255_255_255/0.16)] hover:bg-[rgb(255_255_255/0.035)]",
+              )}
+              key={key}
+              onClick={() => onChange(key)}
+              type="button"
+            >
+              <Image
+                alt=""
+                className="h-full w-full"
+                height={56}
+                src={getMascotSrc(key)}
+                width={56}
+              />
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+function applySelfStudyOverride(
+  friend: SocialFriend,
+  override:
+    | { studying: true; startedAt: string }
+    | { studying: false; at: string }
+    | null,
+): SocialFriend {
+  if (!override || friend.studying === override.studying) return friend;
+
+  if (override.studying) {
+    return {
+      ...friend,
+      activeStartedAt: override.startedAt,
+      activeUpdatedAt: override.startedAt,
+      studying: true,
+    };
+  }
+
+  // Bake the live seconds in so the time doesn't drop until the server catches up.
+  const stoppedAt = new Date(override.at);
+  return {
+    ...friend,
+    daySeconds: getLiveRankingSeconds(friend, "day", stoppedAt),
+    monthSeconds: getLiveRankingSeconds(friend, "month", stoppedAt),
+    studying: false,
+    weekSeconds: getLiveRankingSeconds(friend, "week", stoppedAt),
+  };
 }
 
 function getGroupMembers(

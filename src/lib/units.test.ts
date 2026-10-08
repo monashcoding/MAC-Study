@@ -5,6 +5,7 @@ import {
   getCohortLabel,
   getUnitMemberCountLabel,
   isPastUnitEnrollment,
+  isUnitPeriodFull,
   isValidUnitCode,
   normalizeUnitCode,
   uniqueUnitSuggestions,
@@ -112,5 +113,38 @@ describe("unit offerings", () => {
   it("formats cohort sizes with correct singular and plural labels", () => {
     expect(getUnitMemberCountLabel(1)).toBe("1 person");
     expect(getUnitMemberCountLabel(12)).toBe("12 people");
+  });
+});
+
+describe("isUnitPeriodFull", () => {
+  const unit = (code: string, year = 2026, period = "semester_1" as const) => ({
+    code,
+    period,
+    year,
+  });
+  const five = ["A", "B", "C", "D", "E"].map((letter) =>
+    unit(`FIT100${letter}`),
+  );
+
+  it("allows a sixth unit in a different period", () => {
+    expect(
+      isUnitPeriodFull(five, {
+        code: "FIT2004",
+        period: "semester_2",
+        year: 2026,
+      }),
+    ).toBe(false);
+  });
+
+  it("blocks a sixth unit in the same period", () => {
+    expect(isUnitPeriodFull(five, unit("FIT2004"))).toBe(true);
+  });
+
+  it("allows re-adding a unit already in that period", () => {
+    expect(isUnitPeriodFull(five, unit("FIT100A"))).toBe(false);
+  });
+
+  it("allows up to the limit", () => {
+    expect(isUnitPeriodFull(five.slice(0, 4), unit("FIT2004"))).toBe(false);
   });
 });

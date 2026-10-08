@@ -316,13 +316,28 @@ export async function markRemoteAppNotificationRead({
   if (error) throw error;
 }
 
+const REALTIME_BATCH_MS = 750;
+
 export function subscribeToRemoteAppChanges(
   supabase: SupabaseClient,
   onChange?: (table: string) => void,
 ) {
+  // Realtime events arrive in bursts (one session start can touch several
+  // rows and tables). Collect them briefly and refetch once per table.
+  const pendingTables = new Set<string>();
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    flushTimer = null;
+    const tables = [...pendingTables];
+    pendingTables.clear();
+    tables.forEach((table) => {
+      invalidateRemoteCachesForTable(table);
+      onChange?.(table);
+    });
+  };
   const handleChange = (table: string) => {
-    invalidateRemoteCachesForTable(table);
-    onChange?.(table);
+    pendingTables.add(table);
+    flushTimer ??= setTimeout(flush, REALTIME_BATCH_MS);
   };
 
   const channel = supabase
@@ -354,11 +369,6 @@ export function subscribeToRemoteAppChanges(
     )
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "super_nudge_requests" },
-      () => handleChange("super_nudge_requests"),
-    )
-    .on(
-      "postgres_changes",
       { event: "*", schema: "public", table: "group_invites" },
       () => handleChange("group_invites"),
     )
@@ -374,18 +384,8 @@ export function subscribeToRemoteAppChanges(
     )
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "group_chat_read_receipts" },
-      () => handleChange("group_chat_read_receipts"),
-    )
-    .on(
-      "postgres_changes",
       { event: "*", schema: "public", table: "groups" },
       () => handleChange("groups"),
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "profiles" },
-      () => handleChange("profiles"),
     )
     .on(
       "postgres_changes",
@@ -415,6 +415,7 @@ export function subscribeToRemoteAppChanges(
     .subscribe();
 
   return () => {
+    if (flushTimer) clearTimeout(flushTimer);
     void supabase.removeChannel(channel);
   };
 }
@@ -450,4 +451,50 @@ function appNotificationFromRow(
     title: row.title,
     type: row.type,
   };
+}
+
+export async function fetchRemoteMessageMutes({
+  supabase,
+}: {
+  supabase: SupabaseClient;
+}) {
+  const currentUserId = await getRemoteUserId();
+  if (!currentUserId) return [];
+
+  const { data, error } = await supabase
+    .from("user_message_mutes")
+    .select("muted_user_id")
+    .eq("user_id", currentUserId);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => row.muted_user_id);
+}
+
+export async function setRemoteMessageMute({
+  muted,
+  supabase,
+  userId,
+}: {
+  muted: boolean;
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const currentUserId = await getRemoteUserId();
+  if (!currentUserId) return;
+
+  const { error } = muted
+    ? await supabase
+        .from("user_message_mutes")
+        .upsert(
+          { muted_user_id: userId, user_id: currentUserId },
+          { ignoreDuplicates: true, onConflict: "user_id,muted_user_id" },
+        )
+    : await supabase
+        .from("user_message_mutes")
+        .delete()
+        .eq("user_id", currentUserId)
+        .eq("muted_user_id", userId);
+
+  if (error) throw error;
 }

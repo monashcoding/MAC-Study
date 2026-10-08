@@ -99,7 +99,8 @@ export default async function ProfileSetupPage({
             <>
               <h1 className="text-2xl font-semibold">Set up your profile</h1>
               <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-                Add your name and a unique username.
+                Add a name and username so classmates and friends can recognise
+                you in MAC Study.
               </p>
             </>
           ) : null}

@@ -557,6 +557,31 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"user_favourite_friends": {
+                  Row: {
+                    "created_at": string,"friend_id": string,"user_id": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"friend_id": string,"user_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"friend_id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "user_favourite_friends_friend_id_fkey"
+      columns: ["friend_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "user_favourite_friends_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"user_goals": {
                   Row: {
                     "created_at": string,"id": string,"period": string,"subject_id": string | null,"target_seconds": number,"updated_at": string,"user_id": string
@@ -601,6 +626,31 @@ isOneToOne: false
       referencedColumns: ["id"]
     },{
       foreignKeyName: "user_group_notification_settings_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"user_message_mutes": {
+                  Row: {
+                    "created_at": string,"muted_user_id": string,"user_id": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"muted_user_id": string,"user_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"muted_user_id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "user_message_mutes_muted_user_id_fkey"
+      columns: ["muted_user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "user_message_mutes_user_id_fkey"
       columns: ["user_id"]
 isOneToOne: false
       referencedRelation: "profiles"
@@ -657,6 +707,50 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"user_onboarding_states": {
+                  Row: {
+                    "created_at": string,"is_existing_at_rollout": boolean,"updated_at": string,"user_id": string,"welcome_completed_at": string | null,"welcome_dismissed_at": string | null,"welcome_version": number
+                  }
+                  Insert: {
+                    "created_at"?: string,"is_existing_at_rollout"?: boolean,"updated_at"?: string,"user_id": string,"welcome_completed_at"?: string | null,"welcome_dismissed_at"?: string | null,"welcome_version"?: number
+                  }
+                  Update: {
+                    "created_at"?: string,"is_existing_at_rollout"?: boolean,"updated_at"?: string,"user_id"?: string,"welcome_completed_at"?: string | null,"welcome_dismissed_at"?: string | null,"welcome_version"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "user_onboarding_states_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: true
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"user_pinned_groups": {
+                  Row: {
+                    "created_at": string,"group_id": string,"user_id": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"group_id": string,"user_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"group_id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "user_pinned_groups_group_id_fkey"
+      columns: ["group_id"]
+isOneToOne: false
+      referencedRelation: "groups"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "user_pinned_groups_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 }
           }
           Views: {
@@ -701,10 +795,23 @@ isOneToOne: false
               "display_name": string,"is_friend": boolean,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
             }[]
                            },
+"get_unit_cohort_page":
+{ Args: { "friends_only"?: boolean,"input_offering_id": string,"result_limit"?: number,"result_offset"?: number,"search_query"?: string }; Returns: {
+              "display_name": string,"is_friend": boolean,"mutual_friend_count": number,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
+            }[]
+                           },
 "get_unit_cohort_v2":
 { Args: { "input_offering_id": string }; Returns: {
               "display_name": string,"is_friend": boolean,"mutual_friend_count": number,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
             }[]
+                           },
+"get_unit_weekly_leaderboard":
+{ Args: { "input_offering_id": string }; Returns: {
+              "display_name": string,"study_icon": string,"user_id": string,"username": string,"week_seconds": number
+            }[]
+                           },
+"get_user_daily_study_seconds":
+{ Args: { "target_user_id": string }; Returns: Json
                            },
 "invite_friend_to_group":
 { Args: { "target_group_id": string,"target_user_id": string }; Returns: boolean
@@ -754,7 +861,7 @@ isOneToOne: false
             }[]
                            },
 "list_friend_candidates_page":
-{ Args: { "result_limit"?: number,"result_offset"?: number }; Returns: {
+{ Args: { "result_limit"?: number,"result_offset"?: number,"search_query"?: string }; Returns: {
               "avatar_url": string,"display_name": string,"mutual_friend_count": number,"profile_color": string,"request_direction": string,"study_icon": string,"user_id": string,"username": string
             }[]
                            },
@@ -766,6 +873,11 @@ isOneToOne: false
 "list_friend_requests_page":
 { Args: { "result_limit"?: number,"result_offset"?: number }; Returns: {
               "avatar_url": string,"created_at": string,"direction": string,"display_name": string,"profile_color": string,"request_id": string,"study_icon": string,"user_id": string,"username": string
+            }[]
+                           },
+"list_friend_suggestions":
+{ Args: { "result_limit"?: number }; Returns: {
+              "avatar_url": string,"display_name": string,"mutual_friend_count": number,"profile_color": string,"request_direction": string,"study_icon": string,"user_id": string,"username": string
             }[]
                            },
 "list_group_chat_unread_counts":
@@ -800,6 +912,9 @@ isOneToOne: false
                            },
 "mark_group_chat_read":
 { Args: { "target_group_id": string }; Returns: string
+                           },
+"prune_old_activity":
+{ Args: Record<PropertyKey, never>; Returns: undefined
                            },
 "redeem_access_invite":
 { Args: { "invite_code": string }; Returns: boolean

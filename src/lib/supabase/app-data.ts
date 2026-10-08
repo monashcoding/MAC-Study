@@ -17,7 +17,6 @@ export type {
   RemoteSocialStateSnapshot,
   RemoteStoredSession,
   RemoteSubject,
-  RemoteSuperNudge,
   RemoteTimerState,
   RemoteUnitState,
 } from "./app-data/types";
@@ -32,12 +31,15 @@ export {
 } from "./app-data/timer";
 
 export {
-  fetchRemoteUnitCohort,
+  fetchRemoteUnitCohortPage,
+  UNIT_COHORT_PAGE_SIZE,
+  fetchRemoteUnitWeeklyLeaderboard,
   fetchRemoteUnitState,
   leaveRemoteUnitEnrollment,
   requestRemoteSpecialUnit,
   saveRemoteSubjects,
   setRemoteSubjectUnitOffering,
+  createRemoteSubjectForUnit,
   upsertRemoteUnitEnrollment,
 } from "./app-data/units";
 
@@ -45,17 +47,20 @@ export {
   addRemoteFriend,
   fetchRemoteDirectMessageUnreadCount,
   removeRemoteFriend,
-  requestRemoteSuperNudge,
   sendRemoteFriendRequest,
+  setRemoteFriendFavourite,
   updateRemoteFriendRequest,
   updateRemoteStudyIcon,
-  updateRemoteSuperNudge,
 } from "./app-data/friends";
 
 export {
+  FRIEND_CANDIDATE_PAGE_SIZE,
+  fetchRemoteFriendCandidatesPage,
+  fetchRemoteFriendSuggestions,
   fetchRemoteFriendsSnapshot,
   fetchRemoteGroupsSnapshot,
   fetchRemoteStudyGroups,
+  fetchRemoteUserDailyStudySeconds,
 } from "./app-data/social";
 
 export {
@@ -65,23 +70,23 @@ export {
   leaveRemoteGroup,
   removeRemoteGroupMember,
   setRemoteGroupMemberRole,
+  setRemoteGroupPinned,
   transferRemoteGroupLeadership,
   updateRemoteGroupDetails,
   updateRemoteGroupInvite,
 } from "./app-data/groups";
 
 export {
-  deleteRemoteGroupChatImage,
   deleteRemoteGroupChatMessage,
   fetchRemoteGroupChatMessages,
   reportRemoteGroupChatMessage,
   sendRemoteGroupChatMessage,
   subscribeToRemoteGroupChat,
-  uploadRemoteGroupChatImage,
 } from "./app-data/chat";
 
 export {
   fetchRemoteGlobalNudgeMutes,
+  fetchRemoteMessageMutes,
   fetchRemoteGroupNotificationSettings,
   fetchRemoteNotificationPreferences,
   fetchRemoteUserNudgeMute,
@@ -89,6 +94,7 @@ export {
   markRemoteAppNotificationRead,
   saveRemoteGroupNotificationSettings,
   sendRemoteNudge,
+  setRemoteMessageMute,
   setRemoteUserNudgeMute,
   subscribeToRemoteAppChanges,
   subscribeToRemoteAppNotifications,

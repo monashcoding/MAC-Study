@@ -13,10 +13,22 @@ import type {
   Database,
   Tables,
 } from "@/lib/supabase/types";
-import { AlertCircle, ArrowLeft, MessageCircle, Send } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Bell,
+  BellOff,
+  MessageCircle,
+  Send,
+} from "lucide-react";
 import { PaginatedList } from "@/components/paginated-list";
 import type { SocialFriend } from "@/lib/social-state";
 import { cn } from "@/lib/utils";
+import {
+  ListSkeleton,
+  Skeleton,
+  SkeletonGroup,
+} from "@/components/ui/skeleton";
 
 const HISTORY_PAGE_SIZE = 40;
 const CONVERSATION_LIMIT = 60;
@@ -46,10 +58,7 @@ type ConversationResult =
   Database["public"]["Functions"]["list_direct_conversations"]["Returns"][number];
 type ConversationRow = Omit<
   ConversationResult,
-  | "latest_body"
-  | "latest_created_at"
-  | "latest_message_id"
-  | "latest_sender_id"
+  "latest_body" | "latest_created_at" | "latest_message_id" | "latest_sender_id"
 > & {
   latest_body: string | null;
   latest_created_at: string | null;
@@ -70,16 +79,24 @@ export function DirectMessages({
   currentUserId,
   friends,
   initialFriendId,
+  mutedFriendIds,
+  muteBusyFriendIds,
   onConversationClosed,
   onConversationOpenChange,
+  onOpenProfile,
+  onToggleMute,
   onUnreadCountChange,
   remoteClient,
 }: {
   currentUserId: string | null;
   friends: SocialFriend[];
   initialFriendId: string | null;
+  mutedFriendIds: Set<string>;
+  muteBusyFriendIds: Set<string>;
   onConversationClosed: () => void;
   onConversationOpenChange?: (open: boolean) => void;
+  onOpenProfile: (friendId: string) => void;
+  onToggleMute: (friend: SocialFriend) => void;
   onUnreadCountChange?: (count: number) => void;
   remoteClient: SupabaseClient | null;
 }) {
@@ -503,13 +520,29 @@ export function DirectMessages({
           >
             <ArrowLeft aria-hidden size={19} />
           </button>
-          <FriendAvatar friend={selectedFriend} />
-          <div className="min-w-0">
-            <h2 className="truncate font-semibold">{selectedFriend.name}</h2>
-            <p className="truncate text-xs text-[var(--color-text-muted)]">
-              {selectedFriend.handle}
-            </p>
-          </div>
+          <button
+            aria-label={`View ${selectedFriend.name}'s profile`}
+            className="mac-focus -ml-1 flex min-w-0 items-center gap-3 rounded-lg px-1 py-1 text-left transition hover:bg-[rgb(255_255_255/0.045)]"
+            onClick={() => onOpenProfile(selectedFriend.id)}
+            type="button"
+          >
+            <FriendAvatar friend={selectedFriend} />
+            <span className="min-w-0">
+              <span className="flex min-w-0 items-center gap-1.5 font-semibold">
+                <span className="truncate">{selectedFriend.name}</span>
+                {mutedFriendIds.has(selectedFriend.id) ? (
+                  <BellOff
+                    aria-label="Messages muted"
+                    className="shrink-0 text-[var(--color-text-muted)]"
+                    size={13}
+                  />
+                ) : null}
+              </span>
+              <span className="block truncate text-xs text-[var(--color-text-muted)]">
+                {selectedFriend.handle}
+              </span>
+            </span>
+          </button>
         </header>
 
         <div
@@ -530,9 +563,7 @@ export function DirectMessages({
           ) : null}
 
           {isLoadingMessages ? (
-            <p className="py-10 text-center text-sm text-[var(--color-text-muted)]">
-              Loading messages…
-            </p>
+            <ChatSkeleton />
           ) : messages.length ? (
             <div className="space-y-2.5">
               {messages.map((message) => {
@@ -660,47 +691,85 @@ export function DirectMessages({
       ) : null}
 
       {isLoadingConversations && !displayedConversations.length ? (
-        <p className="py-10 text-center text-sm text-[var(--color-text-muted)]">
-          Loading messages…
-        </p>
+        <ListSkeleton
+          avatar
+          className="space-y-2"
+          count={4}
+          label="Loading conversations"
+          trailing={false}
+        />
       ) : displayedConversations.length ? (
         <PaginatedList
           className="space-y-2"
           items={displayedConversations}
           pageSize={12}
           renderItem={(conversation) => (
-            <button
-              className="mac-focus grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] px-3 py-3 text-left transition hover:border-[rgb(255_255_255/0.12)] hover:bg-[rgb(255_255_255/0.045)]"
+            <div
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch rounded-lg border border-[rgb(255_255_255/0.055)] bg-[rgb(255_255_255/0.028)] transition hover:border-[rgb(255_255_255/0.12)] hover:bg-[rgb(255_255_255/0.045)]"
               key={conversation.friend.id}
-              onClick={() => openConversation(conversation.friend.id)}
-              type="button"
             >
-              <FriendAvatar friend={conversation.friend} />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold">
-                  {conversation.friend.name}
-                </span>
-                <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
-                  {conversation.latestBody
-                    ? `${conversation.latestSenderId === currentUserId ? "You: " : ""}${conversation.latestBody}`
-                    : "Start a conversation"}
-                </span>
-              </span>
-              <span className="flex min-w-10 flex-col items-end gap-1">
-                {conversation.latestCreatedAt ? (
-                  <span className="text-[10px] text-[var(--color-text-muted)]">
-                    {formatConversationTime(conversation.latestCreatedAt)}
+              <button
+                className="mac-focus grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-3 text-left"
+                onClick={() => openConversation(conversation.friend.id)}
+                type="button"
+              >
+                <FriendAvatar friend={conversation.friend} />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold">
+                    {conversation.friend.name}
                   </span>
-                ) : null}
+                  <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
+                    {conversation.latestBody
+                      ? `${conversation.latestSenderId === currentUserId ? "You: " : ""}${conversation.latestBody}`
+                      : "Start a conversation"}
+                  </span>
+                </span>
+                {/* Unread count sits on the avatar's line, left of the bell/time column. */}
                 {conversation.unreadCount ? (
-                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] px-1 text-[10px] font-bold text-[#141414]">
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-mac-yellow)] px-1.5 text-[10px] font-bold leading-none tabular-nums text-[#141414]">
                     {conversation.unreadCount > 99
                       ? "99+"
                       : conversation.unreadCount}
                   </span>
+                ) : (
+                  <span />
+                )}
+              </button>
+              {/* Bell top-right, last-message time bottom-right. */}
+              <div className="flex flex-col items-end justify-between py-1.5 pr-2">
+                <button
+                  aria-label={
+                    mutedFriendIds.has(conversation.friend.id)
+                      ? `Turn message alerts from ${conversation.friend.handle} back on`
+                      : `Mute messages from ${conversation.friend.handle}`
+                  }
+                  aria-pressed={mutedFriendIds.has(conversation.friend.id)}
+                  className={cn(
+                    "mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md transition disabled:opacity-55",
+                    mutedFriendIds.has(conversation.friend.id)
+                      ? "bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]"
+                      : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.055)] hover:text-[var(--color-text)]",
+                  )}
+                  disabled={
+                    !remoteClient ||
+                    muteBusyFriendIds.has(conversation.friend.id)
+                  }
+                  onClick={() => onToggleMute(conversation.friend)}
+                  type="button"
+                >
+                  {mutedFriendIds.has(conversation.friend.id) ? (
+                    <BellOff aria-hidden size={20} />
+                  ) : (
+                    <Bell aria-hidden size={20} />
+                  )}
+                </button>
+                {conversation.latestCreatedAt ? (
+                  <span className="pr-1 text-[10px] leading-none text-[var(--color-text-muted)]">
+                    {formatConversationTime(conversation.latestCreatedAt)}
+                  </span>
                 ) : null}
-              </span>
-            </button>
+              </div>
+            </div>
           )}
           resetKey="direct-conversations"
         />
@@ -797,4 +866,27 @@ function formatConversationTime(value: string) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+export function ChatSkeleton() {
+  return (
+    <SkeletonGroup className="space-y-3 py-2" label="Loading messages">
+      {[
+        ["w-40", false],
+        ["w-56", false],
+        ["w-32", true],
+        ["w-48", false],
+        ["w-44", true],
+      ].map(([width, isOwn], index) => (
+        <div
+          className={cn("flex", isOwn ? "justify-end" : "justify-start")}
+          key={index}
+        >
+          <Skeleton
+            className={cn("h-9 max-w-[75%] rounded-2xl", width as string)}
+          />
+        </div>
+      ))}
+    </SkeletonGroup>
+  );
 }

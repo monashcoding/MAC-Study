@@ -55,7 +55,21 @@ export function LoginForm({
 
     async function completeExistingMacSession() {
       try {
-        await completeMacSignIn();
+        // Straight after the Google/Microsoft redirect the MAC session can
+        // take a moment to be usable, so retry briefly before showing an
+        // error. A plain visit to the sign-in page only checks once.
+        const delays = returnedFromProvider ? [600, 1500] : [];
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            await completeMacSignIn();
+            break;
+          } catch (attemptError) {
+            const delay = delays[attempt];
+            if (cancelled || delay === undefined) throw attemptError;
+            await new Promise((resolve) => window.setTimeout(resolve, delay));
+            if (cancelled) return;
+          }
+        }
 
         if (!cancelled) {
           window.location.replace(nextPath);
@@ -154,7 +168,7 @@ function SigningInState({ checkingSession }: { checkingSession: boolean }) {
       className="mac-auth-loading fixed inset-0 z-50 flex h-[var(--app-viewport-height)] min-h-0 items-center justify-center overflow-hidden overscroll-none bg-[var(--color-background)] px-6 pb-[var(--safe-area-bottom)] pt-[var(--safe-area-top)]"
       role="status"
     >
-      <div className="mac-auth-pulse flex flex-col items-center text-center">
+      <div className="flex flex-col items-center text-center">
         <Image
           alt="MAC Study"
           className="rounded-xl"

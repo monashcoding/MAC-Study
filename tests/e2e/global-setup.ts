@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { createClient } from "@supabase/supabase-js";
 import { createStudySessionToken } from "../../src/lib/auth/study-session";
+import { ONBOARDING_VERSION } from "../../src/lib/onboarding";
 import type { Database } from "../../src/lib/supabase/types";
 import {
   E2E_AUTH_DIR,
@@ -46,6 +47,17 @@ export default async function globalSetup() {
       { onConflict: "id" },
     ),
     "seed test profiles",
+  );
+  await requireSuccess(
+    admin.from("user_onboarding_states").upsert(
+      userIds.map((userId) => ({
+        user_id: userId,
+        welcome_completed_at: new Date().toISOString(),
+        welcome_version: ONBOARDING_VERSION,
+      })),
+      { onConflict: "user_id" },
+    ),
+    "mark test profiles as onboarded",
   );
   await requireSuccess(
     admin.from("groups").insert({

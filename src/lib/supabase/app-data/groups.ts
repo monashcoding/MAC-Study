@@ -1,7 +1,7 @@
 import type { AppSupabaseClient as SupabaseClient } from "../types";
 import type { GroupRole } from "@/lib/social-state";
 import { invalidateRemoteCachesForTable } from "@/lib/client-cache";
-import { getResponseError } from "./shared";
+import { getRemoteUserId, getResponseError } from "./shared";
 
 export async function createRemoteGroup({
   name,
@@ -198,4 +198,34 @@ export async function updateRemoteGroupInvite({
   }
 
   invalidateRemoteCachesForTable("group_invites");
+}
+
+export async function setRemoteGroupPinned({
+  groupId,
+  pinned,
+  supabase,
+}: {
+  groupId: string;
+  pinned: boolean;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+  if (!userId) return;
+
+  const { error } = pinned
+    ? await supabase
+        .from("user_pinned_groups")
+        .upsert(
+          { group_id: groupId, user_id: userId },
+          { ignoreDuplicates: true, onConflict: "user_id,group_id" },
+        )
+    : await supabase
+        .from("user_pinned_groups")
+        .delete()
+        .eq("user_id", userId)
+        .eq("group_id", groupId);
+
+  if (error) throw error;
+
+  invalidateRemoteCachesForTable("user_pinned_groups");
 }

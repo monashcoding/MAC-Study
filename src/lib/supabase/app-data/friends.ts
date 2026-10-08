@@ -73,40 +73,6 @@ export async function updateRemoteFriendRequest({
   invalidateRemoteCachesForTable("friend_requests");
 }
 
-export async function requestRemoteSuperNudge({
-  friendId,
-  supabase,
-}: {
-  friendId: string;
-  supabase: SupabaseClient;
-}) {
-  const { data, error } = await supabase.rpc("request_super_nudge", {
-    target_user_id: friendId,
-  });
-
-  if (error) throw error;
-  invalidateRemoteCachesForTable("super_nudge_requests");
-  return data as string;
-}
-
-export async function updateRemoteSuperNudge({
-  action,
-  requestId,
-  supabase,
-}: {
-  action: "accept" | "cancel" | "decline" | "disable";
-  requestId: string;
-  supabase: SupabaseClient;
-}) {
-  const { error } = await supabase.rpc("respond_super_nudge", {
-    request_id: requestId,
-    response_action: action,
-  });
-
-  if (error) throw error;
-  invalidateRemoteCachesForTable("super_nudge_requests");
-}
-
 export async function removeRemoteFriend({
   friendId,
   supabase,
@@ -141,4 +107,34 @@ export async function fetchRemoteDirectMessageUnreadCount({
   if (error) throw error;
 
   return count ?? 0;
+}
+
+export async function setRemoteFriendFavourite({
+  favourite,
+  friendId,
+  supabase,
+}: {
+  favourite: boolean;
+  friendId: string;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+  if (!userId) return;
+
+  const { error } = favourite
+    ? await supabase
+        .from("user_favourite_friends")
+        .upsert(
+          { friend_id: friendId, user_id: userId },
+          { ignoreDuplicates: true, onConflict: "user_id,friend_id" },
+        )
+    : await supabase
+        .from("user_favourite_friends")
+        .delete()
+        .eq("user_id", userId)
+        .eq("friend_id", friendId);
+
+  if (error) throw error;
+
+  invalidateRemoteCachesForTable("user_favourite_friends");
 }

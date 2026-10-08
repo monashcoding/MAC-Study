@@ -1,3 +1,4 @@
+import { MASCOT_KEYS } from "./mascots";
 import { getElapsedSeconds, getLocalDateKey } from "./timer";
 
 export const SOCIAL_STORAGE_KEY = "mac-study-social-state";
@@ -24,6 +25,7 @@ export const PERSON_ICON_KEYS = [
   "clock-desk",
   "lamp-desk",
   "spark-desk",
+  ...MASCOT_KEYS,
 ] as const;
 
 export type GroupIconKey = (typeof GROUP_ICON_KEYS)[number];
@@ -35,6 +37,7 @@ export type RankingWindow = "day" | "week" | "month";
 
 export type SocialFriend = {
   id: string;
+  isFavourite?: boolean;
   isFriend?: boolean;
   name: string;
   handle: string;
@@ -58,6 +61,7 @@ export type SocialGroup = {
   name: string;
   icon: GroupIconKey;
   inviteCode?: string;
+  isPinned?: boolean;
   memberIds: string[];
   memberRoles: Record<string, GroupRole>;
   currentUserRole?: GroupRole;

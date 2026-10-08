@@ -12,6 +12,7 @@ import {
 } from "@/lib/client-cache";
 import { fetchRemoteTimerState } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import {
   getElapsedSeconds,
   getLocalDateKey,
@@ -130,7 +131,11 @@ export function StatisticsDashboard({
   }, [userId]);
 
   const applyRemoteStats = useCallback(
-    (remoteState: NonNullable<Awaited<ReturnType<typeof fetchRemoteTimerState>>>) => {
+    (
+      remoteState: NonNullable<
+        Awaited<ReturnType<typeof fetchRemoteTimerState>>
+      >,
+    ) => {
       cacheRemoteTimerState(remoteState);
       setSubjects(remoteState.subjects);
       setSessions(remoteState.sessions);
@@ -299,10 +304,14 @@ export function StatisticsDashboard({
         </div>
 
         <div className="mt-5 min-w-0">
-          <h2 className="text-4xl font-semibold leading-none tracking-[-0.025em] lg:text-5xl">
-            {formatRoundedStudyTime(totalSeconds)}
-          </h2>
-          {showAverage ? (
+          {isLoaded ? (
+            <h2 className="text-4xl font-semibold leading-none tracking-[-0.025em] lg:text-5xl">
+              {formatRoundedStudyTime(totalSeconds)}
+            </h2>
+          ) : (
+            <Skeleton className="h-10 w-40 rounded-lg lg:h-12 lg:w-52" />
+          )}
+          {isLoaded && showAverage ? (
             <p className="mt-2 text-xs font-medium text-[var(--color-text-muted)] sm:text-sm">
               Avg {average.label}: {formatRoundedStudyTime(average.seconds)}
             </p>
@@ -338,7 +347,20 @@ export function StatisticsDashboard({
         ) : null}
       </section>
 
-      {totalSeconds <= 0 ? (
+      {!isLoaded ? (
+        <SkeletonGroup
+          className="flex h-56 items-end gap-2 rounded-lg border border-[rgb(255_255_255/0.08)] px-4 pb-4 pt-6"
+          label="Loading statistics"
+        >
+          {[45, 70, 30, 85, 55, 65, 40].map((height, index) => (
+            <Skeleton
+              className="flex-1 rounded-t-md rounded-b-none"
+              key={index}
+              style={{ height: `${height}%` }}
+            />
+          ))}
+        </SkeletonGroup>
+      ) : totalSeconds <= 0 ? (
         <EmptyStatistics />
       ) : chartView === "column" ? (
         <ColumnChart

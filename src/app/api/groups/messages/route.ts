@@ -10,23 +10,16 @@ import type { Tables } from "@/lib/supabase/types";
 
 export const runtime = "nodejs";
 
-const messageSchema = z
-  .object({
-    body: z.string().trim().max(2000).default(""),
-    groupId: z.string().uuid(),
-    imagePath: z.string().trim().max(240).nullable().optional(),
-    replyToId: z.string().uuid().nullable().optional(),
-  })
-  .refine((value) => Boolean(value.body || value.imagePath), {
-    message: "A message or photo is required.",
-  });
+// Photos were removed from group chat; messages are text only.
+const messageSchema = z.object({
+  body: z.string().trim().min(1).max(2000),
+  groupId: z.string().uuid(),
+  replyToId: z.string().uuid().nullable().optional(),
+});
 
 type GroupMemberRow = Pick<Tables<"group_members">, "user_id">;
 
-type GroupMuteRow = Pick<
-  Tables<"user_group_notification_settings">,
-  "user_id"
->;
+type GroupMuteRow = Pick<Tables<"user_group_notification_settings">, "user_id">;
 
 type NotificationPreferenceRow = Pick<
   Tables<"user_notification_preferences">,
@@ -60,21 +53,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { body, groupId, imagePath = null, replyToId = null } = parsed.data;
-  const expectedImagePrefix = `${groupId}/${session.sub}/`;
-
-  if (
-    imagePath &&
-    (!imagePath.startsWith(expectedImagePrefix) ||
-      !/^[0-9a-f-]{36}\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(?:gif|jpe?g|png|webp)$/i.test(
-        imagePath,
-      ))
-  ) {
-    return NextResponse.json(
-      { message: "That photo does not belong to this message." },
-      { status: 400 },
-    );
-  }
+  const { body, groupId, replyToId = null } = parsed.data;
 
   if (replyToId) {
     const { data: replyTarget, error: replyError } = await supabase
@@ -96,9 +75,8 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from("group_chat_messages")
     .insert({
-      body: body || null,
+      body,
       group_id: groupId,
-      image_path: imagePath,
       reply_to_id: replyToId,
       user_id: session.sub,
     })
@@ -115,7 +93,6 @@ export async function POST(request: Request) {
   const notifications = await sendGroupMessageNotifications({
     body,
     groupId,
-    hasImage: Boolean(imagePath),
     messageId: data.id,
     senderId: session.sub,
   });
@@ -126,13 +103,11 @@ export async function POST(request: Request) {
 async function sendGroupMessageNotifications({
   body,
   groupId,
-  hasImage,
   messageId,
   senderId,
 }: {
   body: string;
   groupId: string;
-  hasImage: boolean;
   messageId: string;
   senderId: string;
 }) {
@@ -188,13 +163,7 @@ async function sendGroupMessageNotifications({
     "A group member";
   const groupName =
     (groupResult.data as { name?: string | null } | null)?.name ?? "Group chat";
-  const preview = body
-    ? body.length > 120
-      ? `${body.slice(0, 117)}…`
-      : body
-    : hasImage
-      ? "Sent a photo"
-      : "Sent a message";
+  const preview = body.length > 120 ? `${body.slice(0, 117)}…` : body;
   const notificationBody = `@${sender}: ${preview}`;
   const { data: createdNotificationData } = await admin
     .from("app_notifications")

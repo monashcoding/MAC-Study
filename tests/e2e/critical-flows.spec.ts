@@ -17,7 +17,9 @@ test.describe("authentication routing", () => {
     await page.goto("/app");
 
     await expect(page).toHaveURL(/\/auth\/login\?next=%2Fapp$/);
-    await expect(page.getByRole("heading", { name: "MAC Study" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Continue with Google" }),
+    ).toBeVisible();
   });
 });
 
@@ -26,7 +28,7 @@ test.describe("signed-in critical flows", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.addInitScript((userId) => {
-      window.localStorage.setItem(`mac-install-onboarding-v3:${userId}`, "seen");
+      window.localStorage.setItem("mac-install-launchers-hidden", "true");
       window.localStorage.setItem(
         `mac-notification-onboarding:${userId}`,
         "seen",

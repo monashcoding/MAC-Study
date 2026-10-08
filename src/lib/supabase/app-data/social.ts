@@ -22,10 +22,10 @@ import type {
   RemoteFriendsSnapshot,
   RemoteGroupInvite,
   RemoteGroupsSnapshot,
-  RemoteSuperNudge,
 } from "./types";
 
 const SOCIAL_PAGE_SIZE = 100;
+export const FRIEND_CANDIDATE_PAGE_SIZE = 20;
 
 type SocialFriendResult =
   Database["public"]["Functions"]["list_social_friends"]["Returns"][number];
@@ -106,35 +106,31 @@ type GroupInviteRow = Omit<
   username: string | null;
 };
 
-type SuperNudgeResult =
-  Database["public"]["Functions"]["list_active_super_nudges"]["Returns"][number];
-type SuperNudgeRow = Omit<SuperNudgeResult, "status"> & {
-  status: "active" | "pending";
-};
-
 export async function fetchRemoteFriendsSnapshot(
   supabase: SupabaseClient,
 ): Promise<RemoteFriendsSnapshot | null> {
   const userId = await getRemoteUserId();
   if (!userId) return null;
 
-  const [friendsResult, groupsResult, candidatesResult, requestsResult, nudgesResult] =
-    await Promise.all([
-      supabase.rpc("list_social_friends"),
-      supabase.rpc("list_my_study_groups"),
-      supabase.rpc("list_friend_candidates_page", {
-        result_limit: SOCIAL_PAGE_SIZE,
-        result_offset: 0,
-      }),
-      supabase.rpc("list_friend_requests_page", {
-        result_limit: SOCIAL_PAGE_SIZE,
-        result_offset: 0,
-      }),
-      supabase.rpc("list_active_super_nudges", {
-        result_limit: SOCIAL_PAGE_SIZE,
-        result_offset: 0,
-      }),
-    ]);
+  const [
+    friendsResult,
+    groupsResult,
+    candidatesResult,
+    requestsResult,
+    preferences,
+  ] = await Promise.all([
+    supabase.rpc("list_social_friends"),
+    supabase.rpc("list_my_study_groups"),
+    supabase.rpc("list_friend_candidates_page", {
+      result_limit: FRIEND_CANDIDATE_PAGE_SIZE,
+      result_offset: 0,
+    }),
+    supabase.rpc("list_friend_requests_page", {
+      result_limit: SOCIAL_PAGE_SIZE,
+      result_offset: 0,
+    }),
+    fetchListPreferences(supabase),
+  ]);
 
   if (friendsResult.error) throw friendsResult.error;
   if (groupsResult.error) throw groupsResult.error;
@@ -142,6 +138,7 @@ export async function fetchRemoteFriendsSnapshot(
   const socialState = socialStateFromRows(
     (friendsResult.data ?? []) as SocialFriendRow[],
     (groupsResult.data ?? []) as SocialGroupRow[],
+    preferences,
   );
   const availableFriends = candidatesResult.error
     ? socialState.friends
@@ -159,18 +156,12 @@ export async function fetchRemoteFriendsSnapshot(
     : ((requestsResult.data ?? []) as FriendRequestRow[]).map(
         friendRequestFromRow,
       );
-  const superNudges = nudgesResult.error
-    ? []
-    : ((nudgesResult.data ?? []) as SuperNudgeRow[]).map((request) =>
-        superNudgeFromRow(request, userId),
-      );
 
   return {
     availableFriends,
     currentUserId: userId,
     friendRequests,
     socialState,
-    superNudges,
   };
 }
 
@@ -180,14 +171,16 @@ export async function fetchRemoteGroupsSnapshot(
   const userId = await getRemoteUserId();
   if (!userId) return null;
 
-  const [friendsResult, groupsResult, invitesResult] = await Promise.all([
-    supabase.rpc("list_social_friends"),
-    supabase.rpc("list_my_study_groups"),
-    supabase.rpc("list_group_invites_page", {
-      result_limit: SOCIAL_PAGE_SIZE,
-      result_offset: 0,
-    }),
-  ]);
+  const [friendsResult, groupsResult, invitesResult, preferences] =
+    await Promise.all([
+      supabase.rpc("list_social_friends"),
+      supabase.rpc("list_my_study_groups"),
+      supabase.rpc("list_group_invites_page", {
+        result_limit: SOCIAL_PAGE_SIZE,
+        result_offset: 0,
+      }),
+      fetchListPreferences(supabase),
+    ]);
 
   if (friendsResult.error) throw friendsResult.error;
   if (groupsResult.error) throw groupsResult.error;
@@ -202,6 +195,7 @@ export async function fetchRemoteGroupsSnapshot(
     socialState: socialStateFromRows(
       (friendsResult.data ?? []) as SocialFriendRow[],
       (groupsResult.data ?? []) as SocialGroupRow[],
+      preferences,
     ),
   };
 }
@@ -218,13 +212,49 @@ export async function fetchRemoteStudyGroups(
   return ((data ?? []) as SocialGroupRow[]).map(socialGroupFromRow);
 }
 
+type ListPreferences = {
+  favouriteFriendIds: Set<string>;
+  pinnedGroupIds: Set<string>;
+};
+
+// Pins and favourites are a nicety: if they fail to load (or the migration
+// isn't applied yet) the lists still render, just unsorted.
+async function fetchListPreferences(
+  supabase: SupabaseClient,
+): Promise<ListPreferences> {
+  const [pinsResult, favouritesResult] = await Promise.all([
+    supabase.from("user_pinned_groups").select("group_id"),
+    supabase.from("user_favourite_friends").select("friend_id"),
+  ]);
+
+  return {
+    favouriteFriendIds: new Set(
+      favouritesResult.error
+        ? []
+        : (favouritesResult.data ?? []).map((row) => row.friend_id),
+    ),
+    pinnedGroupIds: new Set(
+      pinsResult.error
+        ? []
+        : (pinsResult.data ?? []).map((row) => row.group_id),
+    ),
+  };
+}
+
 function socialStateFromRows(
   friendRows: SocialFriendRow[],
   groupRows: SocialGroupRow[],
+  preferences?: ListPreferences,
 ): SocialState {
   return {
-    friends: friendRows.map(socialFriendFromRow),
-    groups: groupRows.map(socialGroupFromRow),
+    friends: friendRows.map((row) => ({
+      ...socialFriendFromRow(row),
+      isFavourite: preferences?.favouriteFriendIds.has(row.user_id) ?? false,
+    })),
+    groups: groupRows.map((row) => ({
+      ...socialGroupFromRow(row),
+      isPinned: preferences?.pinnedGroupIds.has(row.group_id) ?? false,
+    })),
   };
 }
 
@@ -239,7 +269,9 @@ function socialFriendFromRow(row: SocialFriendRow): SocialFriend {
     currentSubject: "General study",
     dailyStudySeconds: parseDailyStudySeconds(row.daily_study_seconds),
     daySeconds: Number(row.day_seconds) || 0,
-    handle: row.username ? `@${row.username}` : `@user_${row.user_id.slice(0, 6)}`,
+    handle: row.username
+      ? `@${row.username}`
+      : `@user_${row.user_id.slice(0, 6)}`,
     id: row.user_id,
     initials: getInitials(label),
     isFriend: row.is_friend,
@@ -265,7 +297,48 @@ function socialGroupFromRow(row: SocialGroupRow): SocialGroup {
   };
 }
 
-function friendCandidateFromRow(row: FriendCandidateRow): RemoteFriendCandidate {
+export async function fetchRemoteFriendCandidatesPage({
+  offset,
+  query = "",
+  supabase,
+}: {
+  offset: number;
+  query?: string;
+  supabase: SupabaseClient;
+}) {
+  const searchQuery = query.trim();
+  const { data, error } = await supabase.rpc("list_friend_candidates_page", {
+    result_limit: FRIEND_CANDIDATE_PAGE_SIZE,
+    result_offset: offset,
+    // Omit when empty so browsing works the same with or without search.
+    ...(searchQuery ? { search_query: searchQuery } : {}),
+  });
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as FriendCandidateRow[];
+
+  return {
+    candidates: rows.map(friendCandidateFromRow),
+    hasMore: rows.length === FRIEND_CANDIDATE_PAGE_SIZE,
+  };
+}
+
+// Friends of friends, ranked by mutual friends, for "People you may know".
+export async function fetchRemoteFriendSuggestions(
+  supabase: SupabaseClient,
+): Promise<RemoteFriendCandidate[]> {
+  const { data, error } = await supabase.rpc("list_friend_suggestions", {
+    result_limit: 10,
+  });
+
+  if (error) throw error;
+  return ((data ?? []) as FriendCandidateRow[]).map(friendCandidateFromRow);
+}
+
+function friendCandidateFromRow(
+  row: FriendCandidateRow,
+): RemoteFriendCandidate {
   return {
     ...socialFriendFromProfile(row),
     mutualFriendCount: Number(row.mutual_friend_count) || 0,
@@ -309,7 +382,9 @@ function socialFriendFromProfile(row: {
     currentSubject: "General study",
     dailyStudySeconds: {},
     daySeconds: 0,
-    handle: row.username ? `@${row.username}` : `@user_${row.user_id.slice(0, 6)}`,
+    handle: row.username
+      ? `@${row.username}`
+      : `@user_${row.user_id.slice(0, 6)}`,
     id: row.user_id,
     initials: getInitials(label),
     isFriend: false,
@@ -319,19 +394,6 @@ function socialFriendFromProfile(row: {
     studying: false,
     subjectSeconds: {},
     weekSeconds: 0,
-  };
-}
-
-function superNudgeFromRow(
-  row: SuperNudgeRow,
-  userId: string,
-): RemoteSuperNudge {
-  return {
-    createdAt: row.created_at,
-    direction: row.sender_id === userId ? "outgoing" : "incoming",
-    friendId: row.sender_id === userId ? row.recipient_id : row.sender_id,
-    id: row.request_id,
-    status: row.status,
   };
 }
 
@@ -396,4 +458,21 @@ function getInitials(value: string) {
     .join("")
     .slice(0, 2)
     .toUpperCase();
+}
+
+// One person's day-by-day study seconds for the last year. Loaded only when
+// their profile opens; the shared friends/groups data no longer carries it.
+export async function fetchRemoteUserDailyStudySeconds({
+  supabase,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  userId: string;
+}): Promise<Record<string, number>> {
+  const { data, error } = await supabase.rpc("get_user_daily_study_seconds", {
+    target_user_id: userId,
+  });
+
+  if (error) throw error;
+  return parseDailyStudySeconds(data ?? {});
 }

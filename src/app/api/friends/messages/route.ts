@@ -97,7 +97,7 @@ async function sendDirectMessageNotification({
   const admin = createSupabaseAdminClient();
   if (!admin) return { recipients: 0, sent: 0 };
 
-  const [preferenceResult, senderResult] = await Promise.all([
+  const [preferenceResult, senderResult, muteResult] = await Promise.all([
     admin
       .from("user_notification_preferences")
       .select("other_notifications")
@@ -111,9 +111,16 @@ async function sendDirectMessageNotification({
         display_name: string | null;
         username: string | null;
       }>(),
+    admin
+      .from("user_message_mutes")
+      .select("muted_user_id")
+      .eq("user_id", friendId)
+      .eq("muted_user_id", senderId)
+      .maybeSingle(),
   ]);
 
-  if (preferenceResult.data?.other_notifications === false) {
+  // The message is delivered either way; a mute only silences the alert.
+  if (preferenceResult.data?.other_notifications === false || muteResult.data) {
     return { recipients: 0, sent: 0 };
   }
 

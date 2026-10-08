@@ -9,6 +9,7 @@ import {
   type UnitCohortMember,
   type UnitEnrollment,
   uniqueUnitSuggestions,
+  type UnitLeaderboardEntry,
 } from "@/lib/units";
 import { invalidateRemoteCachesForTable } from "@/lib/client-cache";
 import { getRemoteUserId } from "./shared";
@@ -41,7 +42,7 @@ export type UnitEnrollmentRow = {
 };
 
 type UnitCohortResult =
-  Database["public"]["Functions"]["get_unit_cohort_v2"]["Returns"][number];
+  Database["public"]["Functions"]["get_unit_cohort_page"]["Returns"][number];
 
 type UnitCohortRow = Omit<
   UnitCohortResult,
@@ -60,8 +61,6 @@ type UnitCohortRow = Omit<
 
 type UnitCohortCountRow =
   Database["public"]["Functions"]["get_my_unit_cohort_counts"]["Returns"][number];
-
-type FriendshipRow = Pick<Tables<"friendships">, "friend_id">;
 
 export async function saveRemoteSubjects({
   subjects,
@@ -237,8 +236,7 @@ export async function fetchRemoteUnitState(
   const subjectSuggestions = subjectRows.map((subject) => ({
     code: subject.code,
     nickname:
-      subject.name &&
-      subject.name.toUpperCase() !== subject.code.toUpperCase()
+      subject.name && subject.name.toUpperCase() !== subject.code.toUpperCase()
         ? subject.name
         : null,
   }));
@@ -293,6 +291,38 @@ export async function setRemoteSubjectUnitOffering({
 
   invalidateRemoteCachesForTable("subjects");
   return Boolean(data);
+}
+
+// Create a single subject and link it to a unit offering, for "Create a
+// subject for me" when linking a unit to the timer.
+export async function createRemoteSubjectForUnit({
+  color,
+  name,
+  offeringId,
+  supabase,
+}: {
+  color: string;
+  name: string;
+  offeringId: string;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+  if (!userId) throw new Error("Sign in to create a subject.");
+
+  const { data, error } = await supabase
+    .from("subjects")
+    .insert({ code: name, color, name, user_id: userId })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (error) throw error;
+
+  await setRemoteSubjectUnitOffering({
+    offeringId,
+    subjectId: data.id,
+    supabase,
+  });
+  return data.id;
 }
 
 export async function upsertRemoteUnitEnrollment({
@@ -371,45 +401,48 @@ export async function leaveRemoteUnitEnrollment({
   return Boolean(data);
 }
 
-export async function fetchRemoteUnitCohort({
+export const UNIT_COHORT_PAGE_SIZE = 30;
+
+export async function fetchRemoteUnitCohortPage({
+  friendsOnly,
   offeringId,
+  offset,
+  query,
   supabase,
 }: {
+  friendsOnly: boolean;
   offeringId: string;
+  offset: number;
+  query: string;
   supabase: SupabaseClient;
-}): Promise<UnitCohortMember[]> {
-  const userId = await getRemoteUserId();
+}): Promise<{ hasMore: boolean; members: UnitCohortMember[] }> {
+  const trimmedQuery = query.trim();
+  // Ask for one extra row to know whether another page exists.
+  const { data, error } = await supabase.rpc("get_unit_cohort_page", {
+    friends_only: friendsOnly,
+    input_offering_id: offeringId,
+    result_limit: UNIT_COHORT_PAGE_SIZE + 1,
+    result_offset: offset,
+    ...(trimmedQuery ? { search_query: trimmedQuery } : {}),
+  });
 
-  if (!userId) {
-    return [];
-  }
+  if (error) throw error;
 
-  const [cohortResult, friendshipsResult] = await Promise.all([
-    supabase.rpc("get_unit_cohort_v2", {
-      input_offering_id: offeringId,
-    }),
-    supabase.from("friendships").select("friend_id").eq("user_id", userId),
-  ]);
+  const rows = (data ?? []) as UnitCohortRow[];
 
-  if (cohortResult.error) throw cohortResult.error;
-  if (friendshipsResult.error) throw friendshipsResult.error;
-
-  const friendIds = new Set(
-    ((friendshipsResult.data ?? []) as FriendshipRow[]).map(
-      (friendship) => friendship.friend_id,
-    ),
-  );
-
-  return ((cohortResult.data ?? []) as UnitCohortRow[]).map((member) => ({
-    color: member.profile_color || "#FFE330",
-    displayName: member.display_name || member.username || "Student",
-    handle: member.username ? `@${member.username}` : "@student",
-    id: member.user_id,
-    isFriend: member.is_friend || friendIds.has(member.user_id),
-    mutualFriendCount: Number(member.mutual_friend_count) || 0,
-    sharedGroupIds: member.shared_group_ids ?? [],
-    studyIcon: member.study_icon || "flame-desk",
-  }));
+  return {
+    hasMore: rows.length > UNIT_COHORT_PAGE_SIZE,
+    members: rows.slice(0, UNIT_COHORT_PAGE_SIZE).map((member) => ({
+      color: member.profile_color || "#FFE330",
+      displayName: member.display_name || member.username || "Student",
+      handle: member.username ? `@${member.username}` : "@student",
+      id: member.user_id,
+      isFriend: member.is_friend,
+      mutualFriendCount: Number(member.mutual_friend_count) || 0,
+      sharedGroupIds: member.shared_group_ids ?? [],
+      studyIcon: member.study_icon || "flame-desk",
+    })),
+  };
 }
 
 export async function fetchRemoteSubjects(
@@ -475,4 +508,25 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
+}
+
+export async function fetchRemoteUnitWeeklyLeaderboard({
+  offeringId,
+  supabase,
+}: {
+  offeringId: string;
+  supabase: SupabaseClient;
+}): Promise<UnitLeaderboardEntry[]> {
+  const { data, error } = await supabase.rpc("get_unit_weekly_leaderboard", {
+    input_offering_id: offeringId,
+  });
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => ({
+    id: row.user_id,
+    name: row.display_name || row.username || "Student",
+    studyIcon: row.study_icon,
+    weekSeconds: Number(row.week_seconds) || 0,
+  }));
 }

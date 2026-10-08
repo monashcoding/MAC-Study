@@ -85,14 +85,9 @@ export async function POST(request: Request) {
     const retryAfterSeconds = getNudgeRetryAfterSeconds(nudgeError.message);
 
     if (retryAfterSeconds !== null) {
-      const isSuperNudge = nudgeError.message.includes(
-        "SUPER_NUDGE_RATE_LIMIT",
-      );
       return NextResponse.json(
         {
-          message: isSuperNudge
-            ? `Super Nudge allows 10 per minute. Ready again in ${retryAfterSeconds}s.`
-            : `One nudge per minute. Ready again in ${retryAfterSeconds}s.`,
+          message: `One nudge per minute. Ready again in ${retryAfterSeconds}s.`,
           retryAfterSeconds,
         },
         {

@@ -19,6 +19,7 @@ import {
   type PushStatus,
 } from "@/lib/push/client";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 const defaultPreferences: RemoteNotificationPreferences = {
@@ -147,74 +148,86 @@ export function PushNotificationSettings() {
   const enabled = pushStatus.state === "enabled";
 
   return (
-    <div className="px-3 py-4">
-      <div className="mb-3">
-        <p className="font-semibold">Notifications</p>
+    <div className="pb-3">
+      <div className="flex items-center gap-3 px-4 py-3 lg:px-5">
+        <SettingIcon>
+          {enabled ? (
+            <CheckCircle2 aria-hidden size={19} />
+          ) : (
+            <Bell aria-hidden size={19} />
+          )}
+        </SettingIcon>
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">Device alerts</p>
+          <p className="text-sm leading-5 text-[var(--color-text-muted)]">
+            {pushStatus.message}
+          </p>
+        </div>
+        <button
+          aria-busy={pushStatus.state === "checking"}
+          className={cn(
+            "mac-focus inline-flex h-10 shrink-0 items-center justify-center rounded-md px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
+            enabled
+              ? "bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]"
+              : "bg-[var(--color-mac-yellow)] text-[#141414]",
+          )}
+          disabled={enabled || pushStatus.state === "checking"}
+          onClick={handleDeviceAction}
+          type="button"
+        >
+          {getDeviceActionLabel(pushStatus.state)}
+        </button>
       </div>
 
-      <div>
-        <div className="flex items-center justify-between gap-4 py-2">
-          <SettingIcon>
-            {enabled ? (
-              <CheckCircle2 aria-hidden size={18} />
-            ) : (
-              <Bell aria-hidden size={18} />
-            )}
-          </SettingIcon>
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">Device alerts</p>
-            <p className="text-sm leading-5 text-[var(--color-text-muted)]">
-              {pushStatus.message}
-            </p>
-          </div>
-          <button
-            aria-busy={pushStatus.state === "checking"}
-            className={cn(
-              "mac-focus inline-flex h-11 shrink-0 items-center justify-center rounded-md px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45",
-              enabled
-                ? "bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]"
-                : "bg-[var(--color-mac-yellow)] text-[#141414]",
-            )}
-            disabled={enabled || pushStatus.state === "checking"}
-            onClick={handleDeviceAction}
-            type="button"
-          >
-            {getDeviceActionLabel(pushStatus.state)}
-          </button>
-        </div>
-
+      <div className="pl-[4.25rem] pr-4 lg:pl-[4.5rem] lg:pr-5">
         {enabled ? (
-          <div className="mt-2 border-t border-[var(--color-border)]">
-            <PreferenceRow
-              checked={preferences.friendNotifications}
-              disabled={savingKey !== null}
-              icon={<UserRoundPlus aria-hidden size={18} />}
-              label="Friend requests"
-              onChange={() => void togglePreference("friendNotifications")}
-            />
-            <PreferenceRow
-              checked={preferences.nudgeNotifications}
-              disabled={savingKey !== null}
-              icon={<Hand aria-hidden size={18} />}
-              label="Nudges"
-              onChange={() => void togglePreference("nudgeNotifications")}
-            />
-            <PreferenceRow
-              checked={preferences.otherNotifications}
-              disabled={savingKey !== null}
-              icon={<MessagesSquare aria-hidden size={18} />}
-              label="Messages & group invites"
-              onChange={() => void togglePreference("otherNotifications")}
-            />
-          </div>
+          <>
+            <p
+              className="pb-2 text-sm font-medium text-[var(--color-text-muted)]"
+              id="notification-topics"
+            >
+              Notify me about
+            </p>
+            <div
+              aria-labelledby="notification-topics"
+              className="divide-y divide-[rgb(255_255_255/0.07)] rounded-lg bg-[rgb(255_255_255/0.03)]"
+              role="group"
+            >
+              <PreferenceRow
+                checked={preferences.friendNotifications}
+                disabled={savingKey !== null}
+                icon={<UserRoundPlus aria-hidden size={16} />}
+                label="Friend requests"
+                onChange={() => void togglePreference("friendNotifications")}
+              />
+              <PreferenceRow
+                checked={preferences.nudgeNotifications}
+                disabled={savingKey !== null}
+                icon={<Hand aria-hidden size={16} />}
+                label="Nudges"
+                onChange={() => void togglePreference("nudgeNotifications")}
+              />
+              <PreferenceRow
+                checked={preferences.otherNotifications}
+                disabled={savingKey !== null}
+                icon={<MessagesSquare aria-hidden size={16} />}
+                label="Messages & group invites"
+                onChange={() => void togglePreference("otherNotifications")}
+              />
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Turn on device alerts to choose what you hear about.
+          </p>
+        )}
+
+        {feedback ? (
+          <p className="mt-2 text-sm text-[var(--color-danger)]" role="status">
+            {feedback}
+          </p>
         ) : null}
       </div>
-
-      {feedback ? (
-        <p className="mt-2 text-sm text-[var(--color-danger)]" role="status">
-          {feedback}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -233,37 +246,22 @@ function PreferenceRow({
   onChange: () => void;
 }) {
   return (
-    <div className="flex min-h-14 items-center gap-3 border-b border-[var(--color-border)] px-3 last:border-b-0">
-      <SettingIcon>{icon}</SettingIcon>
-      <span className="min-w-0 flex-1 font-medium">{label}</span>
-      <button
-        aria-checked={checked}
+    <div className="flex min-h-12 items-center gap-3 px-3">
+      <span className="shrink-0 text-[var(--color-text-muted)]">{icon}</span>
+      <span className="min-w-0 flex-1 text-sm font-medium">{label}</span>
+      <Switch
         aria-label={`${label} notifications`}
-        className={cn(
-          "mac-focus relative h-8 w-14 shrink-0 rounded-full border transition disabled:opacity-50",
-          checked
-            ? "border-[var(--color-mac-yellow)] bg-[var(--color-mac-yellow)]"
-            : "border-[var(--color-border)] bg-[var(--color-surface-raised)]",
-        )}
+        checked={checked}
         disabled={disabled}
-        onClick={onChange}
-        role="switch"
-        type="button"
-      >
-        <span
-          className={cn(
-            "absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow transition-transform",
-            checked ? "translate-x-6" : "translate-x-0",
-          )}
-        />
-      </button>
+        onCheckedChange={onChange}
+      />
     </div>
   );
 }
 
 function SettingIcon({ children }: { children: React.ReactNode }) {
   return (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgb(255_255_255/0.045)] text-[var(--color-mac-yellow)]">
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[rgb(255_227_48/0.1)] text-[var(--color-mac-yellow)]">
       {children}
     </span>
   );

@@ -10,29 +10,38 @@ import {
   BookOpen,
   ChevronRight,
   House,
-  LogOut,
   Settings,
   UserRound,
   Users,
 } from "lucide-react";
 import type { AppAuthState } from "@/lib/auth/app-auth";
 import {
+  cacheRemoteGroupsSnapshot,
   cacheRemoteTimerState,
+  cacheRemoteUnitState,
   dedupeRemoteRequest,
+  getCachedRemoteGroupsSnapshot,
+  getCachedRemoteTimerState,
 } from "@/lib/client-cache";
+import { getMascotSrc, MASCOT_KEYS } from "@/lib/mascots";
 import {
   fetchRemoteDirectMessageUnreadCount,
+  fetchRemoteGroupsSnapshot,
   fetchRemoteTimerState,
+  fetchRemoteUnitState,
   subscribeToRemoteAppChanges,
 } from "@/lib/supabase/app-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { fetchGroupChatUnreadCounts } from "@/lib/supabase/group-chat-read-receipts";
 import { AppWorkspace } from "@/components/app-workspace";
 import { AppHeaderDetailProvider } from "@/components/app-header-detail";
+import { OnboardingPreviewBanner } from "@/components/onboarding/onboarding-preview-banner";
+import { WelcomeOnboarding } from "@/components/onboarding/welcome-onboarding";
 import { InstallOnboarding } from "@/components/pwa/install-onboarding";
 import { NotificationOnboarding } from "@/components/pwa/notification-onboarding";
 import { AppNotifications } from "@/components/social/app-notifications";
 import { NudgeNotifications } from "@/components/social/nudge-notifications";
+import { SidebarStudyTimer } from "@/components/timer/sidebar-study-timer";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -69,8 +78,8 @@ const navItems = [
   },
   {
     href: "/app/profile",
-    label: "Profile",
-    title: "Profile",
+    label: "Settings",
+    title: "Settings",
     icon: Settings,
   },
 ];
@@ -93,7 +102,7 @@ export function AppShell({
     Record<string, number>
   >({});
   const [navUnread, setNavUnread] = useState({ friends: false, groups: false });
-  const [installOnboardingComplete, setInstallOnboardingComplete] =
+  const [welcomeOnboardingComplete, setWelcomeOnboardingComplete] =
     useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollPositionsRef = useRef<Record<string, number>>({});
@@ -128,8 +137,8 @@ export function AppShell({
     },
     [],
   );
-  const handleInstallOnboardingComplete = useCallback(() => {
-    setInstallOnboardingComplete(true);
+  const handleWelcomeOnboardingComplete = useCallback(() => {
+    setWelcomeOnboardingComplete(true);
   }, []);
 
   useEffect(() => {
@@ -167,6 +176,58 @@ export function AppShell({
   }, [router]);
 
   useEffect(() => {
+    if (authState.mode !== "authenticated" || !currentUserId) return;
+
+    const cacheUserId = currentUserId;
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      // Mascots are tiny SVGs; fetch them now so group cards don't pop in.
+      MASCOT_KEYS.forEach((key) => {
+        new window.Image().src = getMascotSrc(key);
+      });
+
+      void (async () => {
+        try {
+          const supabase = createSupabaseBrowserClient();
+          const unitState = await dedupeRemoteRequest({
+            key: "units",
+            load: () => fetchRemoteUnitState(supabase),
+            userId: cacheUserId,
+          });
+
+          if (!cancelled && unitState) {
+            cacheRemoteUnitState(unitState, cacheUserId);
+          }
+        } catch {
+          // Preloading is opportunistic; the Units view can retry on demand.
+        }
+      })();
+
+      if (getCachedRemoteGroupsSnapshot(cacheUserId)) return;
+
+      void (async () => {
+        try {
+          const supabase = createSupabaseBrowserClient();
+          const snapshot = await dedupeRemoteRequest({
+            key: "groups",
+            load: () => fetchRemoteGroupsSnapshot(supabase),
+            userId: cacheUserId,
+          });
+
+          if (!cancelled && snapshot) cacheRemoteGroupsSnapshot(snapshot);
+        } catch {
+          // Preloading is opportunistic; the Groups view can retry on demand.
+        }
+      })();
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [authState.mode, currentUserId]);
+
+  useEffect(() => {
     let readyFrame = 0;
 
     function revealApp() {
@@ -193,6 +254,12 @@ export function AppShell({
 
     const cacheUserId = currentUserId;
     let cancelled = false;
+
+    // Fresh cached timer data is enough; don't refetch on every navigation.
+    if (getCachedRemoteTimerState(cacheUserId)) {
+      revealApp();
+      return () => window.cancelAnimationFrame(readyFrame);
+    }
 
     async function warmAppData() {
       try {
@@ -270,12 +337,9 @@ export function AppShell({
 
     return subscribeToRemoteAppChanges(supabase, (table) => {
       if (table === "direct_messages") void refreshFriendUnread();
-      if (
-        table === "group_chat_messages" ||
-        table === "group_chat_read_receipts"
-      ) {
-        void refreshGroupUnread();
-      }
+      // Other people's read receipts can't change your unread count, and
+      // your own reads clear the badge locally via the Groups screen.
+      if (table === "group_chat_messages") void refreshGroupUnread();
     });
   }, [currentUserId]);
 
@@ -389,7 +453,18 @@ export function AppShell({
                 </nav>
               </div>
 
-              <DesktopAccount handle={accountHandle} name={accountName} />
+              <div className="mt-auto">
+                {currentUserId ? (
+                  <SidebarStudyTimer userId={currentUserId} />
+                ) : null}
+                <DesktopAccount
+                  handle={accountHandle}
+                  isActive={isActive(displayPathname, "/app/profile")}
+                  name={accountName}
+                  onIntent={warmRoute}
+                  onNavigate={navigateTo}
+                />
+              </div>
             </aside>
 
             <main
@@ -418,18 +493,7 @@ export function AppShell({
                       {currentTitle}
                     </h1>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {authState.mode === "authenticated" &&
-                    currentNav.href === "/app/profile" ? (
-                      <a
-                        className="mac-focus hidden h-10 items-center justify-center gap-2 rounded-md border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-muted)] transition hover:border-[rgb(255_255_255/0.2)] hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)] lg:inline-flex"
-                        href="/auth/logout"
-                      >
-                        <LogOut aria-hidden size={17} />
-                        <span>Sign out</span>
-                      </a>
-                    ) : null}
-                  </div>
+                  <div className="flex items-center gap-2" />
                 </div>
               </header>
 
@@ -517,12 +581,14 @@ export function AppShell({
           <>
             <AppNotifications userId={authState.user.id} />
             <NudgeNotifications userId={authState.user.id} />
-            <InstallOnboarding
-              onComplete={handleInstallOnboardingComplete}
+            <OnboardingPreviewBanner />
+            <WelcomeOnboarding
+              onComplete={handleWelcomeOnboardingComplete}
               userId={authState.user.id}
             />
+            <InstallOnboarding enabled={welcomeOnboardingComplete} />
             <NotificationOnboarding
-              enabled={installOnboardingComplete}
+              enabled={welcomeOnboardingComplete}
               userId={authState.user.id}
             />
           </>
@@ -639,7 +705,20 @@ function NavUnreadDot() {
   );
 }
 
-function DesktopAccount({ handle, name }: { handle: string; name: string }) {
+function DesktopAccount({
+  handle,
+  isActive,
+  name,
+  onIntent,
+  onNavigate,
+}: {
+  handle: string;
+  isActive: boolean;
+  name: string;
+  onIntent: (href: string) => void;
+  onNavigate: (href: string, event: MouseEvent<HTMLAnchorElement>) => void;
+}) {
+  const href = "/app/profile";
   const initials = name
     .split(/\s+/)
     .map((part) => part[0])
@@ -648,19 +727,35 @@ function DesktopAccount({ handle, name }: { handle: string; name: string }) {
     .toUpperCase();
 
   return (
-    <div className="mt-auto rounded-lg border border-[rgb(255_255_255/0.08)] bg-[rgb(255_255_255/0.025)] p-3">
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-sm font-bold text-[#141414]">
-          {initials}
+    <Link
+      aria-label={`Account settings for ${name}`}
+      className={cn(
+        "mac-focus group flex items-center gap-3 rounded-lg border p-3 transition",
+        isActive
+          ? "border-[rgb(255_227_48/0.45)] bg-[rgb(255_227_48/0.06)]"
+          : "border-[rgb(255_255_255/0.08)] bg-[rgb(255_255_255/0.025)] hover:border-[rgb(255_255_255/0.16)] hover:bg-[rgb(255_255_255/0.05)]",
+      )}
+      href={href}
+      onClick={(event) => onNavigate(href, event)}
+      onFocus={() => onIntent(href)}
+      onPointerEnter={() => onIntent(href)}
+      prefetch
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-sm font-bold text-[#141414]">
+        {initials}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold">{name}</span>
+        <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
+          {handle}
         </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold">{name}</span>
-          <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
-            {handle}
-          </span>
-        </span>
-      </div>
-    </div>
+      </span>
+      <Settings
+        aria-hidden
+        className="shrink-0 text-[var(--color-text-muted)] transition group-hover:rotate-45 group-hover:text-[var(--color-text)] motion-reduce:group-hover:rotate-0"
+        size={17}
+      />
+    </Link>
   );
 }
 
