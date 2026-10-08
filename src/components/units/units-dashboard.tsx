@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import Image from "next/image";
 import type { AppSupabaseClient as SupabaseClient } from "@/lib/supabase/types";
@@ -28,8 +29,11 @@ import {
   UserPlus,
   UsersRound,
   Timer,
+  Trophy,
+  Ellipsis,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import { EmptyStateCta } from "@/components/empty-state-cta";
 import { CustomSelect } from "@/components/custom-select";
 import { PaginatedList } from "@/components/paginated-list";
 import { TransientToast } from "@/components/transient-toast";
@@ -49,6 +53,7 @@ import {
   leaveRemoteUnitEnrollment,
   requestRemoteSpecialUnit,
   setRemoteSubjectUnitOffering,
+  createRemoteSubjectForUnit,
   upsertRemoteUnitEnrollment,
   type RemoteUnitState,
 } from "@/lib/supabase/app-data";
@@ -93,6 +98,16 @@ import { InfiniteScrollSentinel } from "@/components/infinite-scroll-sentinel";
 
 type CohortScope = "all" | "friends";
 const UNLINKED_SUBJECT_VALUE = "__unlinked__";
+const CREATE_SUBJECT_VALUE = "__create__";
+// Same palette as the timer's subject colours.
+const NEW_SUBJECT_COLORS = [
+  "#FFE330",
+  "#6CB6FF",
+  "#42D392",
+  "#FF8A65",
+  "#B388FF",
+  "#F06292",
+];
 const ALL_UNIT_FILTER_VALUE = "all";
 const UNIT_CHANGE_TABLES = new Set([
   "group_members",
@@ -295,7 +310,7 @@ export function UnitsDashboard({
   const selectedEnrollment = unitState.enrollments.find(
     (enrollment) => enrollment.offeringId === selectedOfferingId,
   );
-  useAppHeaderDetail("/app/units", selectedEnrollment?.code ?? null);
+  useAppHeaderDetail("/app/units", null);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearch(search), 250);
@@ -516,6 +531,50 @@ export function UnitsDashboard({
     }
   }
 
+  async function createSubjectForUnit(enrollment: UnitEnrollment) {
+    const usedColors = new Set(
+      unitState.subjects.map((subject) => subject.color.toUpperCase()),
+    );
+    const color =
+      NEW_SUBJECT_COLORS.find((option) => !usedColors.has(option)) ??
+      NEW_SUBJECT_COLORS[0];
+    const name = enrollment.code;
+
+    setBusyKey("link:new");
+    setFeedback(null);
+
+    try {
+      if (remoteClient) {
+        await createRemoteSubjectForUnit({
+          color,
+          name,
+          offeringId: enrollment.offeringId,
+          supabase: remoteClient,
+        });
+        await refreshRemote(remoteClient);
+      } else {
+        setUnitState((current) => ({
+          ...current,
+          subjects: [
+            ...current.subjects,
+            {
+              canonicalCode: enrollment.code,
+              color,
+              id: crypto.randomUUID(),
+              name,
+              unitOfferingId: enrollment.offeringId,
+            },
+          ],
+        }));
+      }
+      setToastMessage(`${name} subject created and linked`);
+    } catch (error) {
+      setFeedback(getErrorMessage(error, "Could not create that subject."));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
   async function linkSubject(subjectId: string, offeringId: string | null) {
     setBusyKey(`link:${subjectId}`);
     setFeedback(null);
@@ -654,6 +713,7 @@ export function UnitsDashboard({
             setScope("all");
           }}
           onLeave={() => void leaveEnrollment(selectedEnrollment)}
+          onCreateSubject={() => void createSubjectForUnit(selectedEnrollment)}
           onLinkSubject={(subjectId, offeringId) =>
             void linkSubject(subjectId, offeringId)
           }
@@ -873,64 +933,26 @@ export function UnitsDashboard({
 
 function UnitsEmptyState({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-[rgb(255_255_255/0.08)] bg-[var(--color-surface)] px-5 py-7 sm:px-8 sm:py-8">
-      <BookOpen
-        aria-hidden
-        className="pointer-events-none absolute -right-5 -top-7 text-[rgb(255_227_48/0.035)]"
-        size={150}
-        strokeWidth={1.4}
-      />
-      <div className="relative grid items-center gap-7 md:grid-cols-[minmax(0,1fr)_17rem] md:gap-10">
-        <div className="max-w-xl">
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-mac-yellow)] text-[#141414]">
-            <UsersRound aria-hidden size={22} />
-          </span>
-          <h2 className="mt-5 text-2xl font-semibold tracking-[-0.025em] sm:text-3xl">
-            Find your classmates
-          </h2>
-          <p className="mt-2 max-w-md text-sm leading-6 text-[var(--color-text-muted)] sm:text-base">
-            Add a unit to meet classmates and connect it to your study subjects.
-          </p>
-          <button
-            className="mac-focus mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-mac-yellow)] px-5 text-sm font-semibold text-[#141414] sm:w-auto"
-            onClick={onAdd}
-            type="button"
-          >
-            <Plus aria-hidden size={18} />
-            Add your first unit
-          </button>
-        </div>
-
-        <div
-          aria-hidden
-          className="border-t border-[var(--color-border)] pt-5 md:border-l md:border-t-0 md:pl-7 md:pt-0"
+    <EmptyStateCta
+      action={
+        <button
+          className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"
+          onClick={onAdd}
+          type="button"
         >
-          <div className="rounded-lg bg-[rgb(255_255_255/0.045)] p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-mac-yellow)]">
-              FIT2004
-            </p>
-            <p className="mt-1 text-sm font-semibold">
-              Algorithms &amp; data structures
-            </p>
-          </div>
-          <div className="mt-4 flex items-center">
-            {["#FFE330", "#6CB6FF", "#42D392"].map((color, index) => (
-              <span
-                className={cn(
-                  "h-9 w-9 rounded-full border-2 border-[var(--color-surface)]",
-                  index > 0 && "-ml-3",
-                )}
-                key={color}
-                style={{ backgroundColor: color }}
-              />
-            ))}
-            <span className="ml-3 text-xs text-[var(--color-text-muted)]">
-              Your cohort appears here
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
+          <Plus aria-hidden size={17} />
+          Add your first unit
+        </button>
+      }
+      description="Add the units you're taking to see who else is in them, then link each unit to a subject so your study time counts."
+      mascot="min-artist"
+      points={[
+        { icon: UsersRound, label: "Find classmates" },
+        { icon: Trophy, label: "Weekly leaderboard" },
+        { icon: Link2, label: "Link to your timer" },
+      ]}
+      title="Find your classmates"
+    />
   );
 }
 
@@ -1196,6 +1218,7 @@ function OfferingDetail({
   onAddFriend,
   onAddToGroup,
   onBack,
+  onCreateSubject,
   onLeave,
   onLinkSubject,
   onLoadMoreCohort,
@@ -1220,6 +1243,7 @@ function OfferingDetail({
   onAddFriend: (memberId: string) => void;
   onAddToGroup: (memberId: string, groupId: string) => void;
   onBack: () => void;
+  onCreateSubject: () => void;
   onLeave: () => void;
   onLinkSubject: (subjectId: string, offeringId: string | null) => void;
   onLoadMoreCohort: () => void;
@@ -1234,10 +1258,39 @@ function OfferingDetail({
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
   const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
 
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
+  const leaderboard = useUnitWeeklyLeaderboard(
+    enrollment.offeringId,
+    remoteClient,
+  );
+  const myWeekSeconds =
+    leaderboard?.find((entry) => entry.id === currentUserId)?.weekSeconds ?? 0;
   const linkedSubject =
     subjects.find(
       (subject) => subject.unitOfferingId === enrollment.offeringId,
     ) ?? null;
+  const unitMeta = `${enrollment.year} · ${getTeachingPeriodShortLabel(enrollment.period)} · ${getUnitMemberCountLabel(enrollment.memberCount)}`;
+  const scopeTabs = (
+    <div className="inline-flex rounded-full bg-[rgb(255_255_255/0.06)] p-[3px]">
+      {(["all", "friends"] as const).map((item) => (
+        <button
+          aria-pressed={scope === item}
+          className={cn(
+            "mac-focus h-8 rounded-full px-3.5 text-[13px] font-semibold transition",
+            scope === item
+              ? "bg-[rgb(255_255_255/0.14)] text-[var(--color-text)]"
+              : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+          )}
+          key={item}
+          onClick={() => onScopeChange(item)}
+          type="button"
+        >
+          {item === "all" ? "All" : "Friends"}
+        </button>
+      ))}
+    </div>
+  );
   const leaveButton = (
     <button
       className="mac-focus -ml-2 inline-flex h-9 items-center gap-2 rounded-lg px-2 text-[13px] font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-45"
@@ -1252,7 +1305,114 @@ function OfferingDetail({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--color-text-muted)]">
+      {/* Mobile: one header carries the code, period and class size. */}
+      <div className="-mx-2 flex items-center gap-1 lg:hidden">
+        <button
+          aria-label="Back to units"
+          className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.06)]"
+          onClick={onBack}
+          type="button"
+        >
+          <ArrowLeft aria-hidden size={20} />
+        </button>
+        <div className="min-w-0 flex-1 pl-1">
+          <h2 className="truncate text-[22px] font-bold leading-[1.1] tracking-[-0.02em]">
+            {enrollment.code}
+          </h2>
+          <p className="mt-0.5 truncate text-[13px] text-[var(--color-text-muted)]">
+            {unitMeta}
+          </p>
+        </div>
+        <button
+          aria-expanded={isMobileSearchOpen || Boolean(search)}
+          aria-label="Search students"
+          className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.06)]"
+          onClick={() => {
+            if (isMobileSearchOpen && search) onSearchChange("");
+            setIsMobileSearchOpen((current) => !current);
+          }}
+          type="button"
+        >
+          <Search aria-hidden size={20} />
+        </button>
+        <button
+          aria-haspopup="dialog"
+          aria-label="More options"
+          className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.06)]"
+          onClick={() => setIsActionSheetOpen(true)}
+          type="button"
+        >
+          <Ellipsis aria-hidden size={20} />
+        </button>
+      </div>
+
+      {isMobileSearchOpen || search ? (
+        <label className="flex h-11 items-center gap-2.5 rounded-[10px] bg-[rgb(255_255_255/0.06)] px-3 text-[var(--color-text-muted)] lg:hidden">
+          <Search aria-hidden size={16} />
+          <input
+            aria-label="Search people in this unit"
+            autoFocus
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search students"
+            type="search"
+            value={search}
+          />
+        </label>
+      ) : null}
+
+      {/* Mobile: one prompt to link a subject, a slim row once linked. */}
+      <div className="lg:hidden">
+        {linkedSubject ? (
+          <div className="flex items-center gap-2.5 rounded-xl bg-[rgb(255_255_255/0.045)] px-3.5 py-3">
+            <span
+              aria-hidden
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{
+                backgroundColor:
+                  linkedSubject.color ?? "var(--color-mac-yellow)",
+              }}
+            />
+            <span className="min-w-0 flex-1 truncate text-sm">
+              <span className="text-[var(--color-text-muted)]">Counting </span>
+              <b className="font-semibold">{linkedSubject.name}</b>
+            </span>
+            <span className="shrink-0 text-[13px] text-[var(--color-text-muted)]">
+              {formatStudyDuration(myWeekSeconds)} this week
+            </span>
+          </div>
+        ) : (
+          <div className="relative rounded-[14px] bg-[var(--color-mac-yellow)] py-4 pl-4 pr-[108px] text-[#141414]">
+            <span
+              aria-hidden
+              className="absolute right-3 top-1/2 flex h-[84px] w-[84px] -translate-y-1/2 items-end justify-center overflow-hidden rounded-full bg-[#141414]"
+            >
+              <Image
+                alt=""
+                className="-mb-1.5 h-20 w-20 object-contain"
+                height={80}
+                src={getMascotSrc("max-arms-up-happy")}
+                width={80}
+              />
+            </span>
+            <p className="text-base font-bold leading-tight">
+              Count your study towards {enrollment.code}
+            </p>
+            <p className="mt-1 text-[13px] leading-snug">
+              Link a timer subject to appear on this week&apos;s board.
+            </p>
+            <button
+              className="mac-focus mt-3 inline-flex h-10 items-center whitespace-nowrap rounded-full bg-[#141414] px-4 text-sm font-semibold text-[var(--color-mac-yellow)]"
+              onClick={() => setIsLinkDialogOpen(true)}
+              type="button"
+            >
+              Link a subject
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="hidden items-center gap-2 text-[13px] font-semibold text-[var(--color-text-muted)] lg:flex">
         <button
           aria-label="Back to units"
           className="mac-focus -ml-2 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.06)]"
@@ -1265,7 +1425,7 @@ function OfferingDetail({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start lg:gap-7">
-        <aside className="flex flex-col gap-7 lg:gap-11">
+        <aside className="hidden flex-col gap-11 lg:flex">
           <section className="rounded-xl border border-[rgb(255_227_48/0.24)] bg-[#1d1c16] px-4 pb-1 pt-4 lg:px-5 lg:pb-4 lg:pt-5">
             <span className="inline-flex h-6 items-center rounded-full bg-[rgb(255_255_255/0.06)] px-2.5 text-xs font-semibold text-[#cfcfc6]">
               {enrollment.year} ·{" "}
@@ -1319,13 +1479,13 @@ function OfferingDetail({
           <UnitWeeklyLeaderboard
             code={enrollment.code}
             currentUserId={currentUserId}
-            offeringId={enrollment.offeringId}
-            remoteClient={remoteClient}
+            entries={leaderboard}
+            isRemote={Boolean(remoteClient)}
           />
         </aside>
 
         <div className="min-w-0 space-y-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div className="hidden gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <label className="flex h-10 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 transition focus-within:border-[rgb(255_227_48/0.6)]">
               <Search
                 aria-hidden
@@ -1363,7 +1523,11 @@ function OfferingDetail({
           {feedback ? <Feedback message={feedback} /> : null}
 
           <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-3 pt-2 lg:hidden">
+              <h3 className="text-[17px] font-semibold">Students</h3>
+              {scopeTabs}
+            </div>
+            <div className="hidden items-center justify-between gap-3 lg:flex">
               <h3 className="text-base font-semibold">Students</h3>
               <span className="text-xs text-[var(--color-text-muted)]">
                 {getUnitMemberCountLabel(enrollment.memberCount)}
@@ -1404,16 +1568,43 @@ function OfferingDetail({
               </p>
             )}
           </section>
-
-          <div className="lg:hidden">{leaveButton}</div>
         </div>
       </div>
+
+      {isActionSheetOpen ? (
+        <ActionSheet onClose={() => setIsActionSheetOpen(false)}>
+          <button
+            className="mac-focus flex h-[52px] w-full items-center gap-3 rounded-[10px] px-3 text-[15px] font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.05)]"
+            onClick={() => {
+              setIsActionSheetOpen(false);
+              setIsLinkDialogOpen(true);
+            }}
+            type="button"
+          >
+            <Timer aria-hidden size={18} />
+            {linkedSubject ? "Change linked subject" : "Link a subject"}
+          </button>
+          <button
+            className="mac-focus flex h-[52px] w-full items-center gap-3 rounded-[10px] px-3 text-[15px] font-semibold text-[var(--color-danger)] transition hover:bg-[rgb(255_107_107/0.08)] disabled:opacity-45"
+            disabled={busyKey === `leave:${enrollment.offeringId}`}
+            onClick={() => {
+              setIsActionSheetOpen(false);
+              setIsLeaveDialogOpen(true);
+            }}
+            type="button"
+          >
+            <LogOut aria-hidden size={18} />
+            Leave unit
+          </button>
+        </ActionSheet>
+      ) : null}
 
       {isLinkDialogOpen ? (
         <StudyTimerLinkDialog
           busyKey={busyKey}
           enrollment={enrollment}
           onClose={() => setIsLinkDialogOpen(false)}
+          onCreateSubject={onCreateSubject}
           onLinkSubject={onLinkSubject}
           subjects={subjects}
         />
@@ -1440,17 +1631,11 @@ const LEADERBOARD_TABLES = new Set([
   "unit_enrolments",
 ]);
 
-function UnitWeeklyLeaderboard({
-  code,
-  currentUserId,
-  offeringId,
-  remoteClient,
-}: {
-  code: string;
-  currentUserId: string | null;
-  offeringId: string;
-  remoteClient: SupabaseClient | null;
-}) {
+// One request feeds both the desktop board and the mobile "Counting" row.
+function useUnitWeeklyLeaderboard(
+  offeringId: string,
+  remoteClient: SupabaseClient | null,
+) {
   const [entries, setEntries] = useState<UnitLeaderboardEntry[] | null>(null);
 
   useEffect(() => {
@@ -1477,6 +1662,20 @@ function UnitWeeklyLeaderboard({
     };
   }, [offeringId, remoteClient]);
 
+  return entries;
+}
+
+function UnitWeeklyLeaderboard({
+  code,
+  currentUserId,
+  entries,
+  isRemote,
+}: {
+  code: string;
+  currentUserId: string | null;
+  entries: UnitLeaderboardEntry[] | null;
+  isRemote: boolean;
+}) {
   const ranked = (entries ?? []).filter((entry) => entry.weekSeconds > 0);
   const topSeconds = ranked[0]?.weekSeconds ?? 0;
   const myIndex = ranked.findIndex((entry) => entry.id === currentUserId);
@@ -1490,7 +1689,7 @@ function UnitWeeklyLeaderboard({
           { entry: ranked[myIndex], rank: myIndex + 1 },
         ]
       : ranked.slice(0, 5).map((entry, index) => ({ entry, rank: index + 1 }));
-  const isLoading = Boolean(remoteClient) && entries === null;
+  const isLoading = isRemote && entries === null;
 
   return (
     <section className="relative rounded-[10px] border border-[#2a2a26] bg-[rgb(255_255_255/0.015)] p-4">
@@ -1572,6 +1771,44 @@ function UnitWeeklyLeaderboard({
   );
 }
 
+// Mobile bottom sheet for secondary actions.
+function ActionSheet({
+  children,
+  onClose,
+}: {
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end bg-black/55 lg:hidden"
+      onClick={onClose}
+    >
+      <div
+        aria-label="Unit options"
+        aria-modal
+        className="w-full rounded-t-[18px] bg-[#222] px-3 pb-[calc(var(--safe-area-bottom)+1.75rem)] pt-2"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <span
+          aria-hidden
+          className="mx-auto mb-3 mt-1 block h-1 w-9 rounded-full bg-[rgb(255_255_255/0.2)]"
+        />
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function formatStudyDuration(seconds: number) {
   const totalMinutes = Math.floor(seconds / 60);
   const hours = Math.floor(totalMinutes / 60);
@@ -1583,12 +1820,14 @@ function StudyTimerLinkDialog({
   busyKey,
   enrollment,
   onClose,
+  onCreateSubject,
   onLinkSubject,
   subjects,
 }: {
   busyKey: string | null;
   enrollment: UnitEnrollment;
   onClose: () => void;
+  onCreateSubject: () => void;
   onLinkSubject: (subjectId: string, offeringId: string | null) => void;
   subjects: RemoteUnitState["subjects"];
 }) {
@@ -1607,7 +1846,9 @@ function StudyTimerLinkDialog({
   function saveLink() {
     if (!isDirty) return;
 
-    if (selectedSubjectId === UNLINKED_SUBJECT_VALUE) {
+    if (selectedSubjectId === CREATE_SUBJECT_VALUE) {
+      onCreateSubject();
+    } else if (selectedSubjectId === UNLINKED_SUBJECT_VALUE) {
       if (linkedSubject) onLinkSubject(linkedSubject.id, null);
     } else {
       onLinkSubject(selectedSubjectId, enrollment.offeringId);
@@ -1635,7 +1876,9 @@ function StudyTimerLinkDialog({
             onClick={saveLink}
             type="button"
           >
-            Save link
+            {selectedSubjectId === CREATE_SUBJECT_VALUE
+              ? "Create and link"
+              : "Save link"}
           </button>
         </div>
       }
@@ -1644,31 +1887,35 @@ function StudyTimerLinkDialog({
       onClose={onClose}
       title="Study timer link"
     >
-      {availableSubjects.length ? (
-        <div>
-          <p className="mb-2 text-sm font-medium">Study subject</p>
-          <CustomSelect
-            ariaLabel={`Study subject linked to ${enrollment.code}`}
-            disabled={isBusy}
-            onChange={setSelectedSubjectId}
-            options={[
-              {
-                label: "Not linked",
-                value: UNLINKED_SUBJECT_VALUE,
-              },
-              ...availableSubjects.map((subject) => ({
-                label: subject.name,
-                value: subject.id,
-              })),
-            ]}
-            value={selectedSubjectId}
-          />
-        </div>
-      ) : (
-        <p className="text-sm text-[var(--color-text-muted)]">
-          Create a study subject before linking this unit.
-        </p>
-      )}
+      <div>
+        <p className="mb-2 text-sm font-medium">Study subject</p>
+        <CustomSelect
+          ariaLabel={`Study subject linked to ${enrollment.code}`}
+          disabled={isBusy}
+          onChange={setSelectedSubjectId}
+          options={[
+            {
+              label: "Not linked",
+              value: UNLINKED_SUBJECT_VALUE,
+            },
+            ...availableSubjects.map((subject) => ({
+              label: subject.name,
+              value: subject.id,
+            })),
+            {
+              label: `+ Create "${enrollment.code}" subject for me`,
+              value: CREATE_SUBJECT_VALUE,
+            },
+          ]}
+          value={selectedSubjectId}
+        />
+        {selectedSubjectId === CREATE_SUBJECT_VALUE ? (
+          <p className="mt-2 text-xs leading-5 text-[var(--color-text-muted)]">
+            Adds a {enrollment.code} subject to your timer on Home and links it
+            here, so time you study on it counts towards this unit.
+          </p>
+        ) : null}
+      </div>
     </AppDialog>
   );
 }

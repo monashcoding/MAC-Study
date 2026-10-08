@@ -39,6 +39,7 @@ export {
   requestRemoteSpecialUnit,
   saveRemoteSubjects,
   setRemoteSubjectUnitOffering,
+  createRemoteSubjectForUnit,
   upsertRemoteUnitEnrollment,
 } from "./app-data/units";
 

@@ -293,6 +293,38 @@ export async function setRemoteSubjectUnitOffering({
   return Boolean(data);
 }
 
+// Create a single subject and link it to a unit offering, for "Create a
+// subject for me" when linking a unit to the timer.
+export async function createRemoteSubjectForUnit({
+  color,
+  name,
+  offeringId,
+  supabase,
+}: {
+  color: string;
+  name: string;
+  offeringId: string;
+  supabase: SupabaseClient;
+}) {
+  const userId = await getRemoteUserId();
+  if (!userId) throw new Error("Sign in to create a subject.");
+
+  const { data, error } = await supabase
+    .from("subjects")
+    .insert({ code: name, color, name, user_id: userId })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (error) throw error;
+
+  await setRemoteSubjectUnitOffering({
+    offeringId,
+    subjectId: data.id,
+    supabase,
+  });
+  return data.id;
+}
+
 export async function upsertRemoteUnitEnrollment({
   code,
   nickname,

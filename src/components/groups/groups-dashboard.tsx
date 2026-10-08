@@ -30,6 +30,7 @@ import {
   Plus,
   Settings,
   UserPlus,
+  UsersRound,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
 import { EmptyStateCta } from "@/components/empty-state-cta";
@@ -1584,6 +1585,14 @@ export function GroupsDashboard({
             </div>
           ) : (
             <EmptyStateCta
+              description="A group is a shared space for your study crew: see who's studying right now, race up the leaderboard, and chat."
+              mascot="max-arms-up"
+              points={[
+                { icon: UsersRound, label: "Who's studying now" },
+                { icon: Crown, label: "Leaderboard" },
+                { icon: MessagesSquare, label: "Group chat" },
+              ]}
+              title="Study together in a group"
               action={
                 <button
                   className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"

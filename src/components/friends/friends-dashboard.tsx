@@ -1512,6 +1512,14 @@ export function FriendsDashboard({
               </div>
             ) : (
               <EmptyStateCta
+                description="Add the people you study with to see their study time, nudge them when they go quiet, and message them privately."
+                mascot="min-wave"
+                points={[
+                  { icon: Clock3, label: "See their study time" },
+                  { icon: Bell, label: "Send a nudge" },
+                  { icon: MessageCircle, label: "Private messages" },
+                ]}
+                title="Study alongside friends"
                 action={
                   <button
                     className="mac-focus inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-mac-yellow)] px-4 text-sm font-semibold text-[#141414] sm:w-auto"
