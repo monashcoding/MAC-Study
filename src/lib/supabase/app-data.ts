@@ -57,6 +57,7 @@ export {
   fetchRemoteFriendsSnapshot,
   fetchRemoteGroupsSnapshot,
   fetchRemoteStudyGroups,
+  fetchRemoteUserDailyStudySeconds,
 } from "./app-data/social";
 
 export {

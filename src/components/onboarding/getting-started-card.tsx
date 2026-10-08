@@ -7,7 +7,7 @@ import {
   BookPlus,
   Check,
   Download,
-  Play,
+  ListPlus,
   Plus,
   X,
 } from "lucide-react";
@@ -19,18 +19,18 @@ import {
 const STORAGE_KEY = "mac-getting-started-card-hidden";
 
 export function GettingStartedCard({
-  hasStudySession: actualHasStudySession,
+  hasSubject: actualHasSubject,
   hasUnit: actualHasUnit,
-  onStartSession,
+  onAddSubject,
 }: {
-  hasStudySession: boolean;
+  hasSubject: boolean;
   hasUnit: boolean;
-  onStartSession: () => void;
+  onAddSubject: () => void;
 }) {
   const [hidden, setHidden] = useState(false);
   const [isPreview, setIsPreview] = useState(false);
   // A preview shows the checklist as a brand new account would see it.
-  const hasStudySession = actualHasStudySession && !isPreview;
+  const hasSubject = actualHasSubject && !isPreview;
   const hasUnit = actualHasUnit && !isPreview;
 
   useEffect(() => {
@@ -42,14 +42,14 @@ export function GettingStartedCard({
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
-  if (hidden || (hasStudySession && hasUnit)) return null;
+  if (hidden || (hasSubject && hasUnit)) return null;
 
   function dismiss() {
     onboardingStorage.set(STORAGE_KEY, "true");
     setHidden(true);
   }
 
-  const completedEssentials = Number(hasStudySession) + Number(hasUnit);
+  const completedEssentials = Number(hasSubject) + Number(hasUnit);
   const progressWidth = `${(completedEssentials / 2) * 100}%`;
 
   return (
@@ -87,10 +87,10 @@ export function GettingStartedCard({
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <ChecklistAction
-          complete={hasStudySession}
-          icon={Play}
-          label="Start a session"
-          onClick={onStartSession}
+          complete={hasSubject}
+          icon={ListPlus}
+          label="Add your subjects"
+          onClick={onAddSubject}
         />
         <Link
           className="mac-focus flex min-h-12 items-center gap-3 rounded-lg bg-[rgb(255_255_255/0.04)] px-3 text-left text-sm font-semibold transition hover:bg-[rgb(255_255_255/0.07)]"

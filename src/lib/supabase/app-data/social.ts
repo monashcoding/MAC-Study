@@ -447,3 +447,20 @@ function getInitials(value: string) {
     .slice(0, 2)
     .toUpperCase();
 }
+
+// One person's day-by-day study seconds for the last year. Loaded only when
+// their profile opens; the shared friends/groups data no longer carries it.
+export async function fetchRemoteUserDailyStudySeconds({
+  supabase,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  userId: string;
+}): Promise<Record<string, number>> {
+  const { data, error } = await supabase.rpc("get_user_daily_study_seconds", {
+    target_user_id: userId,
+  });
+
+  if (error) throw error;
+  return parseDailyStudySeconds(data ?? {});
+}

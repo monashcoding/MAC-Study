@@ -55,6 +55,7 @@ import {
   FRIEND_CANDIDATE_PAGE_SIZE,
   fetchRemoteFriendCandidatesPage,
   fetchRemoteFriendsSnapshot,
+  fetchRemoteUserDailyStudySeconds,
   inviteRemoteFriendToGroup,
   removeRemoteFriend,
   setRemoteFriendFavourite,
@@ -577,6 +578,34 @@ export function FriendsDashboard({
 
   const selectedFriend =
     friendList.find((friend) => friend.id === selectedFriendId) ?? null;
+  // A friend's day-by-day history only loads when their page is open.
+  const [friendHistory, setFriendHistory] = useState<{
+    days: Record<string, number>;
+    friendId: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!selectedFriendId || !remoteClient) return;
+
+    let cancelled = false;
+    void fetchRemoteUserDailyStudySeconds({
+      supabase: remoteClient,
+      userId: selectedFriendId,
+    })
+      .then((days) => {
+        if (!cancelled) setFriendHistory({ days, friendId: selectedFriendId });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [remoteClient, selectedFriendId]);
+
+  const selectedFriendHistory =
+    friendHistory && friendHistory.friendId === selectedFriendId
+      ? friendHistory.days
+      : (selectedFriend?.dailyStudySeconds ?? {});
   useEffect(() => {
     const friendId = new URLSearchParams(window.location.search).get("friend");
     if (!friendId || !friendList.some((friend) => friend.id === friendId)) {
@@ -1011,7 +1040,7 @@ export function FriendsDashboard({
     const nudgeState = nudgeQueue.getState(selectedFriend.id);
     const studyBlockActive = selectedFriend.studying;
     const selectedTimeSeconds = getFriendTimeSeconds(
-      selectedFriend,
+      { ...selectedFriend, dailyStudySeconds: selectedFriendHistory },
       friendTimeRange,
       now,
     );
@@ -1217,7 +1246,7 @@ export function FriendsDashboard({
 
         <div className="max-sm:[&>section]:p-3 max-sm:[&>section>div:nth-child(2)]:mt-2 max-sm:[&>section>div:last-child]:mt-1 max-sm:[&_button]:h-2.5 max-sm:[&_button]:aspect-auto">
           <StudyHeatmap
-            dailySeconds={selectedFriend.dailyStudySeconds ?? {}}
+            dailySeconds={selectedFriendHistory}
             title={`${selectedFriend.name}'s activity`}
           />
         </div>

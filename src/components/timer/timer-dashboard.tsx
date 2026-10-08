@@ -803,9 +803,9 @@ export function TimerDashboard({
       {/* Wait for real data so the checklist doesn't flash for returning users. */}
       {isLoaded ? (
         <GettingStartedCard
-          hasStudySession={Boolean(activeSession) || sessions.length > 0}
+          hasSubject={subjects.length > 0}
           hasUnit={unitEnrollments.length > 0}
-          onStartSession={() => setIsChoosingStudy(true)}
+          onAddSubject={openNewSubjectEditor}
         />
       ) : null}
       <section className="py-5 text-center lg:flex lg:min-h-[24rem] lg:flex-col lg:items-center lg:justify-center lg:rounded-lg lg:border lg:border-[rgb(255_255_255/0.08)] lg:bg-[rgb(18_18_18/0.52)] lg:px-6 lg:py-10 xl:min-h-[30rem]">

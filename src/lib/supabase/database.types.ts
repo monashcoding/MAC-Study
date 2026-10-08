@@ -758,6 +758,9 @@ isOneToOne: true
               "display_name": string,"is_friend": boolean,"mutual_friend_count": number,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
             }[]
                            },
+"get_user_daily_study_seconds":
+{ Args: { "target_user_id": string }; Returns: Json
+                           },
 "get_unit_weekly_leaderboard":
 { Args: { "input_offering_id": string }; Returns: {
               "display_name": string | null,"study_icon": string | null,"user_id": string,"username": string | null,"week_seconds": number

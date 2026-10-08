@@ -316,13 +316,28 @@ export async function markRemoteAppNotificationRead({
   if (error) throw error;
 }
 
+const REALTIME_BATCH_MS = 750;
+
 export function subscribeToRemoteAppChanges(
   supabase: SupabaseClient,
   onChange?: (table: string) => void,
 ) {
+  // Realtime events arrive in bursts (one session start can touch several
+  // rows and tables). Collect them briefly and refetch once per table.
+  const pendingTables = new Set<string>();
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    flushTimer = null;
+    const tables = [...pendingTables];
+    pendingTables.clear();
+    tables.forEach((table) => {
+      invalidateRemoteCachesForTable(table);
+      onChange?.(table);
+    });
+  };
   const handleChange = (table: string) => {
-    invalidateRemoteCachesForTable(table);
-    onChange?.(table);
+    pendingTables.add(table);
+    flushTimer ??= setTimeout(flush, REALTIME_BATCH_MS);
   };
 
   const channel = supabase
@@ -379,11 +394,6 @@ export function subscribeToRemoteAppChanges(
     )
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "profiles" },
-      () => handleChange("profiles"),
-    )
-    .on(
-      "postgres_changes",
       { event: "*", schema: "public", table: "nudges" },
       () => handleChange("nudges"),
     )
@@ -410,6 +420,7 @@ export function subscribeToRemoteAppChanges(
     .subscribe();
 
   return () => {
+    if (flushTimer) clearTimeout(flushTimer);
     void supabase.removeChannel(channel);
   };
 }
