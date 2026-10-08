@@ -557,6 +557,31 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"user_favourite_friends": {
+                  Row: {
+                    "created_at": string,"friend_id": string,"user_id": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"friend_id": string,"user_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"friend_id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "user_favourite_friends_friend_id_fkey"
+      columns: ["friend_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "user_favourite_friends_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"user_goals": {
                   Row: {
                     "created_at": string,"id": string,"period": string,"subject_id": string | null,"target_seconds": number,"updated_at": string,"user_id": string
@@ -607,6 +632,31 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"user_message_mutes": {
+                  Row: {
+                    "created_at": string,"muted_user_id": string,"user_id": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"muted_user_id": string,"user_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"muted_user_id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "user_message_mutes_muted_user_id_fkey"
+      columns: ["muted_user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "user_message_mutes_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"user_notification_preferences": {
                   Row: {
                     "created_at": string,"friend_notifications": boolean,"nudge_notifications": boolean,"other_notifications": boolean,"updated_at": string,"user_id": string
@@ -626,39 +676,6 @@ isOneToOne: true
       referencedColumns: ["id"]
     }
                   ]
-                },"user_favourite_friends": {
-                  Row: {
-                    "created_at": string,"friend_id": string,"user_id": string
-                  }
-                  Insert: {
-                    "created_at"?: string,"friend_id": string,"user_id": string
-                  }
-                  Update: {
-                    "created_at"?: string,"friend_id"?: string,"user_id"?: string
-                  }
-                  Relationships: []
-                },"user_pinned_groups": {
-                  Row: {
-                    "created_at": string,"group_id": string,"user_id": string
-                  }
-                  Insert: {
-                    "created_at"?: string,"group_id": string,"user_id": string
-                  }
-                  Update: {
-                    "created_at"?: string,"group_id"?: string,"user_id"?: string
-                  }
-                  Relationships: []
-                },"user_message_mutes": {
-                  Row: {
-                    "created_at": string,"muted_user_id": string,"user_id": string
-                  }
-                  Insert: {
-                    "created_at"?: string,"muted_user_id": string,"user_id": string
-                  }
-                  Update: {
-                    "created_at"?: string,"muted_user_id"?: string,"user_id"?: string
-                  }
-                  Relationships: []
                 },"user_nudge_mutes": {
                   Row: {
                     "created_at": string,"group_id": string | null,"id": string,"muted_user_id": string,"user_id": string
@@ -709,6 +726,31 @@ isOneToOne: true
       referencedColumns: ["id"]
     }
                   ]
+                },"user_pinned_groups": {
+                  Row: {
+                    "created_at": string,"group_id": string,"user_id": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"group_id": string,"user_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"group_id"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "user_pinned_groups_group_id_fkey"
+      columns: ["group_id"]
+isOneToOne: false
+      referencedRelation: "groups"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "user_pinned_groups_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 }
           }
           Views: {
@@ -753,28 +795,23 @@ isOneToOne: true
               "display_name": string,"is_friend": boolean,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
             }[]
                            },
-"get_unit_cohort_v2":
-{ Args: { "input_offering_id": string }; Returns: {
-              "display_name": string,"is_friend": boolean,"mutual_friend_count": number,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
-            }[]
-                           },
-"get_user_daily_study_seconds":
-{ Args: { "target_user_id": string }; Returns: Json
-                           },
 "get_unit_cohort_page":
 { Args: { "friends_only"?: boolean,"input_offering_id": string,"result_limit"?: number,"result_offset"?: number,"search_query"?: string }; Returns: {
               "display_name": string,"is_friend": boolean,"mutual_friend_count": number,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
             }[]
                            },
-"list_friend_suggestions":
-{ Args: { "result_limit"?: number }; Returns: {
-              "avatar_url": string | null,"display_name": string | null,"mutual_friend_count": number,"profile_color": string | null,"request_direction": string | null,"study_icon": string | null,"user_id": string,"username": string | null
+"get_unit_cohort_v2":
+{ Args: { "input_offering_id": string }; Returns: {
+              "display_name": string,"is_friend": boolean,"mutual_friend_count": number,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
             }[]
                            },
 "get_unit_weekly_leaderboard":
 { Args: { "input_offering_id": string }; Returns: {
-              "display_name": string | null,"study_icon": string | null,"user_id": string,"username": string | null,"week_seconds": number
+              "display_name": string,"study_icon": string,"user_id": string,"username": string,"week_seconds": number
             }[]
+                           },
+"get_user_daily_study_seconds":
+{ Args: { "target_user_id": string }; Returns: Json
                            },
 "invite_friend_to_group":
 { Args: { "target_group_id": string,"target_user_id": string }; Returns: boolean
@@ -838,6 +875,11 @@ isOneToOne: true
               "avatar_url": string,"created_at": string,"direction": string,"display_name": string,"profile_color": string,"request_id": string,"study_icon": string,"user_id": string,"username": string
             }[]
                            },
+"list_friend_suggestions":
+{ Args: { "result_limit"?: number }; Returns: {
+              "avatar_url": string,"display_name": string,"mutual_friend_count": number,"profile_color": string,"request_direction": string,"study_icon": string,"user_id": string,"username": string
+            }[]
+                           },
 "list_group_chat_unread_counts":
 { Args: Record<PropertyKey, never>; Returns: {
               "group_id": string,"unread_count": number
@@ -870,6 +912,9 @@ isOneToOne: true
                            },
 "mark_group_chat_read":
 { Args: { "target_group_id": string }; Returns: string
+                           },
+"prune_old_activity":
+{ Args: Record<PropertyKey, never>; Returns: undefined
                            },
 "redeem_access_invite":
 { Args: { "invite_code": string }; Returns: boolean

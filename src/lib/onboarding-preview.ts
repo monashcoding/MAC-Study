@@ -23,7 +23,8 @@ export function startOnboardingPreview() {
     return;
   }
 
-  window.location.assign("/app");
+  // A full reload (not router.push) so the preview starts from clean state.
+  window.location.assign(new URL("/app", window.location.origin).href);
 }
 
 export function endOnboardingPreview() {
