@@ -115,6 +115,7 @@ export function DirectMessages({
   const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const chatRef = useRef<HTMLElement>(null);
   const loadSequenceRef = useRef(0);
   const shouldScrollToBottomRef = useRef(false);
   const friendsRef = useRef(friends);
@@ -200,6 +201,86 @@ export function DirectMessages({
   useEffect(() => {
     onConversationOpenChange?.(Boolean(selectedFriend));
   }, [onConversationOpenChange, selectedFriend]);
+
+  const isConversationOpen = Boolean(selectedFriend);
+
+  // Mirror the group chat: hide the mobile nav while a conversation is open
+  // and track the visual viewport so the composer sits above the keyboard.
+  useEffect(() => {
+    if (!isConversationOpen) return;
+
+    const body = document.body;
+    const chat = chatRef.current;
+    const workspace = chat?.closest<HTMLElement>("[data-workspace-view]");
+    const visualViewport = window.visualViewport;
+    let frame = 0;
+
+    function isWorkspaceVisible() {
+      return !workspace || workspace.getAttribute("aria-hidden") !== "true";
+    }
+
+    function sizeChat() {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        if (!chat) return;
+
+        if (
+          !isWorkspaceVisible() ||
+          !window.matchMedia("(max-width: 1023px)").matches
+        ) {
+          chat.style.removeProperty("top");
+          chat.style.removeProperty("height");
+          return;
+        }
+
+        const viewportHeight = visualViewport?.height ?? window.innerHeight;
+        chat.style.top = `${visualViewport?.offsetTop ?? 0}px`;
+        chat.style.height = `${viewportHeight}px`;
+      });
+    }
+
+    function syncChatVisibility() {
+      const visible = isWorkspaceVisible();
+      body.classList.toggle("mac-chat-view-active", visible);
+
+      if (!visible) {
+        body.classList.remove("mac-chat-composer-active");
+      }
+
+      sizeChat();
+    }
+
+    const workspaceObserver = workspace
+      ? new MutationObserver(syncChatVisibility)
+      : null;
+    if (workspace && workspaceObserver) {
+      workspaceObserver.observe(workspace, {
+        attributeFilter: ["aria-hidden"],
+        attributes: true,
+      });
+    }
+
+    syncChatVisibility();
+    window.addEventListener("resize", sizeChat);
+    visualViewport?.addEventListener("resize", sizeChat);
+    visualViewport?.addEventListener("scroll", sizeChat);
+
+    return () => {
+      workspaceObserver?.disconnect();
+      window.cancelAnimationFrame(frame);
+      chat?.style.removeProperty("top");
+      chat?.style.removeProperty("height");
+      body.classList.remove("mac-chat-view-active", "mac-chat-composer-active");
+      window.removeEventListener("resize", sizeChat);
+      visualViewport?.removeEventListener("resize", sizeChat);
+      visualViewport?.removeEventListener("scroll", sizeChat);
+    };
+  }, [isConversationOpen]);
+
+  function setComposerFocused(focused: boolean) {
+    document.body.classList.toggle("mac-chat-composer-active", focused);
+    window.dispatchEvent(new Event("resize"));
+  }
 
   useEffect(() => {
     if (!hasLoadedConversationsRef.current) return;
@@ -503,6 +584,7 @@ export function DirectMessages({
     return (
       <section
         aria-label={`Messages with ${selectedFriend.name}`}
+        ref={chatRef}
         className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-viewport-height)] flex-col overflow-hidden bg-[var(--color-background)] lg:relative lg:inset-auto lg:z-auto lg:h-[calc(100dvh-11rem)] lg:min-h-[32rem] lg:max-h-[760px] lg:rounded-lg lg:border lg:border-[var(--color-border)]"
       >
         <header className="flex shrink-0 items-center gap-3 border-b border-[var(--color-border)] px-3 pb-3 pt-[max(0.75rem,var(--safe-area-top))] lg:p-3">
@@ -650,7 +732,9 @@ export function DirectMessages({
               aria-label={`Message ${selectedFriend.name}`}
               className="max-h-28 min-h-10 min-w-0 resize-none overflow-y-auto border-0 bg-transparent px-3 py-[0.62rem] text-sm leading-snug outline-none"
               maxLength={2000}
+              onBlur={() => setComposerFocused(false)}
               onChange={(event) => setDraft(event.target.value)}
+              onFocus={() => setComposerFocused(true)}
               onKeyDown={(event) => {
                 if (
                   event.key === "Enter" &&
