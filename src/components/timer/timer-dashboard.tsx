@@ -932,7 +932,7 @@ export function TimerDashboard({
           />
         ) : (
           <EmptyStateCta
-            description="Subjects are what you study, like a unit or a skill. Press play on one to start timing."
+            description=""
             mascot="max-arms-down"
             title="Add your first subject"
             action={
