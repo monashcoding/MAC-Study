@@ -7,6 +7,7 @@ import type {
 } from "./supabase/app-data/types";
 import {
   REMOTE_CACHE_MAX_AGE_MS,
+  REMOTE_STALE_CACHE_MAX_AGE_MS,
   cacheRemoteFriendsSnapshot,
   cacheRemoteGroupsSnapshot,
   cacheRemoteTimerState,
@@ -17,6 +18,7 @@ import {
   getCachedRemoteGroupsSnapshot,
   getCachedRemoteTimerState,
   getCachedRemoteUnitState,
+  getStaleRemoteTimerState,
   invalidateRemoteCachesForTable,
   subscribeToRemoteTableChanges,
 } from "./client-cache";
@@ -72,7 +74,7 @@ afterEach(() => {
 });
 
 describe("remote client cache freshness", () => {
-  it("expires cached data and removes it from persistent storage", () => {
+  it("stops serving expired data but keeps it stored for the stale window", () => {
     cacheRemoteFriendsSnapshot(friendsSnapshot);
     expect(getCachedRemoteFriendsSnapshot("viewer")).toEqual(friendsSnapshot);
     expect(storage.size).toBe(1);
@@ -80,7 +82,34 @@ describe("remote client cache freshness", () => {
     vi.advanceTimersByTime(REMOTE_CACHE_MAX_AGE_MS + 1);
 
     expect(getCachedRemoteFriendsSnapshot("viewer")).toBeNull();
+    expect(storage.size).toBe(1);
+
+    vi.advanceTimersByTime(REMOTE_STALE_CACHE_MAX_AGE_MS);
+
+    expect(getCachedRemoteFriendsSnapshot("viewer")).toBeNull();
     expect(storage.size).toBe(0);
+  });
+
+  it("serves stale timer state for painting until the stale window ends", () => {
+    cacheRemoteTimerState(timerState);
+    vi.advanceTimersByTime(REMOTE_CACHE_MAX_AGE_MS + 1);
+
+    expect(getCachedRemoteTimerState("viewer")).toBeNull();
+    expect(getStaleRemoteTimerState("viewer")).toEqual(timerState);
+    expect(getStaleRemoteTimerState("someone-else")).toBeNull();
+
+    vi.advanceTimersByTime(REMOTE_STALE_CACHE_MAX_AGE_MS);
+
+    expect(getStaleRemoteTimerState("viewer")).toBeNull();
+  });
+
+  it("drops stale timer state once a table change invalidates it", () => {
+    cacheRemoteTimerState(timerState);
+    vi.advanceTimersByTime(REMOTE_CACHE_MAX_AGE_MS + 1);
+
+    invalidateRemoteCachesForTable("study_sessions");
+
+    expect(getStaleRemoteTimerState("viewer")).toBeNull();
   });
 
   it("invalidates only the caches affected by a changed table", () => {

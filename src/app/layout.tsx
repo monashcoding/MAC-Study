@@ -14,7 +14,10 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    // Not "black-translucent": on iOS 26 that shrinks the installed app's
+    // viewport and leaves a gap under the mobile nav.
+    // See docs/ios-pwa-mobile-nav.md.
+    statusBarStyle: "black",
     title: "MAC Study",
   },
   icons: {

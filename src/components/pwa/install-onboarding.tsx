@@ -12,6 +12,7 @@ import {
 import {
   Download,
   MonitorDown,
+  MoreHorizontal,
   MoreVertical,
   Pin,
   Share,
@@ -53,6 +54,7 @@ type LauncherKind = "pc" | "phone";
 const phoneGuides: Record<InstallPlatform, InstallStep[]> = {
   ios: [
     { title: "Open study.monashcoding.com in Safari" },
+    { glyph: MoreHorizontal, title: "Tap the menu" },
     { glyph: Share, title: "Tap Share" },
     { glyph: SquarePlus, title: "Add to Home Screen" },
   ],

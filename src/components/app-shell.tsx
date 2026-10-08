@@ -16,16 +16,20 @@ import {
 } from "lucide-react";
 import type { AppAuthState } from "@/lib/auth/app-auth";
 import {
+  cacheRemoteFriendsSnapshot,
   cacheRemoteGroupsSnapshot,
   cacheRemoteTimerState,
   cacheRemoteUnitState,
   dedupeRemoteRequest,
+  getCachedRemoteFriendsSnapshot,
   getCachedRemoteGroupsSnapshot,
   getCachedRemoteTimerState,
+  getStaleRemoteTimerState,
 } from "@/lib/client-cache";
 import { getMascotSrc, MASCOT_KEYS } from "@/lib/mascots";
 import {
   fetchRemoteDirectMessageUnreadCount,
+  fetchRemoteFriendsSnapshot,
   fetchRemoteGroupsSnapshot,
   fetchRemoteTimerState,
   fetchRemoteUnitState,
@@ -203,6 +207,23 @@ export function AppShell({
         }
       })();
 
+      if (!getCachedRemoteFriendsSnapshot(cacheUserId)) {
+        void (async () => {
+          try {
+            const supabase = createSupabaseBrowserClient();
+            const snapshot = await dedupeRemoteRequest({
+              key: "friends",
+              load: () => fetchRemoteFriendsSnapshot(supabase),
+              userId: cacheUserId,
+            });
+
+            if (!cancelled && snapshot) cacheRemoteFriendsSnapshot(snapshot);
+          } catch {
+            // Preloading is opportunistic; the Friends view can retry on demand.
+          }
+        })();
+      }
+
       if (getCachedRemoteGroupsSnapshot(cacheUserId)) return;
 
       void (async () => {
@@ -219,7 +240,9 @@ export function AppShell({
           // Preloading is opportunistic; the Groups view can retry on demand.
         }
       })();
-    }, 350);
+      // Queued behind the timer request so Home still goes first, but early
+      // enough that the other tabs are warm by the time the splash leaves.
+    }, 0);
 
     return () => {
       cancelled = true;
@@ -255,8 +278,12 @@ export function AppShell({
     const cacheUserId = currentUserId;
     let cancelled = false;
 
-    // Fresh cached timer data is enough; don't refetch on every navigation.
-    if (getCachedRemoteTimerState(cacheUserId)) {
+    // Any recent timer snapshot is enough to paint Home: the dashboard shows
+    // it straight away and refetches behind it, so don't hold the splash.
+    if (
+      getCachedRemoteTimerState(cacheUserId) ||
+      getStaleRemoteTimerState(cacheUserId)
+    ) {
       revealApp();
       return () => window.cancelAnimationFrame(readyFrame);
     }
