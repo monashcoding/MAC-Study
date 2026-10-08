@@ -19,10 +19,7 @@ import {
   SquarePlus,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
-import {
-  onboardingSessionStorage,
-  onboardingStorage,
-} from "@/lib/onboarding-preview";
+import { onboardingStorage } from "@/lib/onboarding-preview";
 import { cn } from "@/lib/utils";
 
 type BeforeInstallPromptEvent = Event & {
@@ -46,10 +43,12 @@ type InstallStep = {
 
 export type InstallGuideTarget = "pc" | "phone";
 
-// Closing a guide hides the launchers for the browser session; ticking
-// "Don't show again" hides them for good. Settings can always reopen a guide.
-const LAUNCHER_HIDDEN_KEY = "mac-install-launchers-hidden";
-const LAUNCHER_CLOSED_SESSION_KEY = "mac-install-launchers-closed";
+// Each launcher (PC, phone) stays until "Don't show again" is ticked in its
+// own guide, or the app is installed. Settings can always reopen a guide.
+const PC_LAUNCHER_HIDDEN_KEY = "mac-install-pc-launcher-hidden";
+const PHONE_LAUNCHER_HIDDEN_KEY = "mac-install-phone-launcher-hidden";
+
+type LauncherKind = "pc" | "phone";
 
 const phoneGuides: Record<InstallPlatform, InstallStep[]> = {
   ios: [
@@ -73,7 +72,9 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
   const [isInstalling, setIsInstalling] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
   const [activePlatform, setActivePlatform] = useState<InstallPlatform>("ios");
-  const [areLaunchersHidden, setAreLaunchersHidden] = useState(true);
+  const [hiddenLaunchers, setHiddenLaunchers] = useState<
+    Record<LauncherKind, boolean>
+  >({ pc: true, phone: true });
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
   const tabRefs = useRef<Record<InstallPlatform, HTMLButtonElement | null>>({
@@ -91,14 +92,15 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
           true);
 
     const android = /Android/i.test(navigator.userAgent);
-    const launchersHidden =
-      onboardingStorage.get(LAUNCHER_HIDDEN_KEY) === "true" ||
-      onboardingSessionStorage.get(LAUNCHER_CLOSED_SESSION_KEY) === "true";
+    const launchersHidden = {
+      pc: onboardingStorage.get(PC_LAUNCHER_HIDDEN_KEY) === "true",
+      phone: onboardingStorage.get(PHONE_LAUNCHER_HIDDEN_KEY) === "true",
+    };
 
     const frame = window.requestAnimationFrame(() => {
       setIsDesktop(desktopDevice);
       setIsStandalone(standalone);
-      setAreLaunchersHidden(launchersHidden);
+      setHiddenLaunchers(launchersHidden);
       if (android) setActivePlatform("android");
       setIsReady(true);
     });
@@ -149,13 +151,30 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
       window.removeEventListener("mac-open-install-guide", openInstallGuide);
   }, [isDesktop, isReady, isStandalone]);
 
-  function closeGuides() {
+  function hideLauncher(kind: LauncherKind) {
+    setHiddenLaunchers((current) => ({ ...current, [kind]: true }));
+    onboardingStorage.set(
+      kind === "pc" ? PC_LAUNCHER_HIDDEN_KEY : PHONE_LAUNCHER_HIDDEN_KEY,
+      "true",
+    );
+  }
+
+  // A plain Done/close leaves the launchers; "Don't show again" hides only
+  // the one for the guide being closed. Installing hides both.
+  function closeGuide(
+    kind: LauncherKind,
+    { installed = false }: { installed?: boolean } = {},
+  ) {
     setIsOpen(false);
     setIsDesktopGuideOpen(false);
-    setAreLaunchersHidden(true);
 
-    onboardingSessionStorage.set(LAUNCHER_CLOSED_SESSION_KEY, "true");
-    if (dontShowAgain) onboardingStorage.set(LAUNCHER_HIDDEN_KEY, "true");
+    if (installed) {
+      hideLauncher("pc");
+      hideLauncher("phone");
+    } else if (dontShowAgain) {
+      hideLauncher(kind);
+    }
+    setDontShowAgain(false);
   }
 
   async function install() {
@@ -166,7 +185,9 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
     try {
       await deferredPrompt.prompt();
       const choice = await deferredPrompt.userChoice;
-      if (choice.outcome === "accepted") closeGuides();
+      if (choice.outcome === "accepted") {
+        closeGuide(isDesktopGuideOpen ? "pc" : "phone", { installed: true });
+      }
     } finally {
       deferredPromptRef.current = null;
       setCanInstall(false);
@@ -232,9 +253,12 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
 
   return (
     <>
-      {enabled && isReady && !isStandalone && !areLaunchersHidden ? (
+      {enabled &&
+      isReady &&
+      !isStandalone &&
+      ((isDesktop && !hiddenLaunchers.pc) || !hiddenLaunchers.phone) ? (
         <div className="fixed bottom-[calc(var(--mobile-nav-height)+0.75rem)] right-3 z-40 flex items-end gap-2 lg:bottom-6 lg:right-6">
-          {isDesktop ? (
+          {isDesktop && !hiddenLaunchers.pc ? (
             <InstallLauncher
               className="hidden lg:inline-flex"
               icon={MonitorDown}
@@ -243,12 +267,14 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
               subtitle="Open it like an app"
             />
           ) : null}
-          <InstallLauncher
-            icon={Smartphone}
-            label={isDesktop ? "Add to your phone" : "Add to Home Screen"}
-            onClick={() => setIsOpen(true)}
-            subtitle="Keep it one tap away"
-          />
+          {hiddenLaunchers.phone ? null : (
+            <InstallLauncher
+              icon={Smartphone}
+              label={isDesktop ? "Add to your phone" : "Add to Home Screen"}
+              onClick={() => setIsOpen(true)}
+              subtitle="Keep it one tap away"
+            />
+          )}
         </div>
       ) : null}
 
@@ -261,14 +287,14 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
               canInstall={canInstall && !isDesktop}
               dismissLabel={canInstall && !isDesktop ? "Not now" : "Done"}
               isInstalling={isInstalling}
-              dontShowAgain={areLaunchersHidden ? undefined : dontShowAgain}
-              onDismiss={closeGuides}
+              dontShowAgain={hiddenLaunchers.phone ? undefined : dontShowAgain}
+              onDismiss={() => closeGuide("phone")}
               onDontShowAgainChange={setDontShowAgain}
               onInstall={() => void install()}
             />
           }
           maxWidthClassName="max-w-3xl"
-          onClose={closeGuides}
+          onClose={() => closeGuide("phone")}
           title="Add MAC Study to your phone"
           titleClassName="whitespace-normal text-xl leading-7 sm:text-2xl"
         >
@@ -336,14 +362,14 @@ export function InstallOnboarding({ enabled = true }: { enabled?: boolean }) {
               canInstall={canInstall}
               dismissLabel={canInstall ? "Install later" : "Done"}
               isInstalling={isInstalling}
-              dontShowAgain={areLaunchersHidden ? undefined : dontShowAgain}
-              onDismiss={closeGuides}
+              dontShowAgain={hiddenLaunchers.pc ? undefined : dontShowAgain}
+              onDismiss={() => closeGuide("pc")}
               onDontShowAgainChange={setDontShowAgain}
               onInstall={() => void install()}
             />
           }
           maxWidthClassName="max-w-xl"
-          onClose={closeGuides}
+          onClose={() => closeGuide("pc")}
           title="Install MAC Study on your PC"
           titleClassName="whitespace-normal text-xl leading-7 sm:text-2xl"
         >
@@ -429,15 +455,20 @@ function InstallFooter({
   return (
     <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-3">
       {dontShowAgain !== undefined ? (
-        <label className="mr-auto inline-flex min-h-11 cursor-pointer items-center gap-2.5 text-sm text-[var(--color-text-muted)] has-[:focus-visible]:text-[var(--color-text)]">
-          <input
-            checked={dontShowAgain}
-            className="mac-focus h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-mac-yellow)]"
-            onChange={(event) => onDontShowAgainChange(event.target.checked)}
-            type="checkbox"
-          />
-          Don’t show again
-        </label>
+        <div className="mr-auto">
+          <label className="inline-flex min-h-9 cursor-pointer items-center gap-2.5 text-sm text-[var(--color-text-muted)] has-[:focus-visible]:text-[var(--color-text)]">
+            <input
+              checked={dontShowAgain}
+              className="mac-focus h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-mac-yellow)]"
+              onChange={(event) => onDontShowAgainChange(event.target.checked)}
+              type="checkbox"
+            />
+            Don’t show again
+          </label>
+          <p className="pl-[26px] text-xs text-[var(--color-text-muted)] opacity-80">
+            You can still find this in Settings later.
+          </p>
+        </div>
       ) : null}
       <button
         className={cn(
