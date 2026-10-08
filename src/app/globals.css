@@ -151,6 +151,21 @@ body {
   }
 }
 
+/* Hide scroll indicators on mobile; scrolling itself still works. */
+@media (max-width: 63.999rem) {
+  html,
+  body,
+  * {
+    scrollbar-width: none;
+  }
+
+  ::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}
+
 @media (min-width: 64rem) {
   .mac-desktop-shell {
     background: var(--color-background);
