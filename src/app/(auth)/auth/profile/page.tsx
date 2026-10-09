@@ -59,7 +59,7 @@ export default async function ProfileSetupPage({
           <header className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center">
             <Link
               aria-label="Back to profile"
-              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.04)] hover:text-[var(--color-text)]"
+              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_255_255/0.04)]"
               href={next}
             >
               <ArrowLeft aria-hidden size={20} />

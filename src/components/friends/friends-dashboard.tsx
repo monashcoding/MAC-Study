@@ -30,6 +30,7 @@ import {
 import { AppDialog } from "@/components/app-dialog";
 import { EmptyStateCta } from "@/components/empty-state-cta";
 import { DirectMessages } from "@/components/friends/direct-messages";
+import { ChunkedList } from "@/components/chunked-list";
 import { PaginatedList } from "@/components/paginated-list";
 import { StudyHeatmap } from "@/components/study-heatmap";
 import {
@@ -147,6 +148,7 @@ export function FriendsDashboard({
     "friends" | "messages" | "requests"
   >("friends");
   const [messageFriendId, setMessageFriendId] = useState<string | null>(null);
+  const [friendSearch, setFriendSearch] = useState("");
   const [isDirectConversationOpen, setIsDirectConversationOpen] =
     useState(false);
   const [directMessageUnreadCount, setDirectMessageUnreadCount] = useState(0);
@@ -176,7 +178,12 @@ export function FriendsDashboard({
   const listScrollRef = useRef<HTMLDivElement>(null);
   const pendingFriendRequestIdsRef = useRef(new Set<string>());
   const pendingCancelledRequestsRef = useRef(new Map<string, string>());
+  const isAddingRef = useRef(false);
   const nudgeQueue = useNudgeQueue(Boolean(remoteClient));
+
+  useEffect(() => {
+    isAddingRef.current = isAdding;
+  }, [isAdding]);
 
   useEffect(() => {
     onUnreadChange?.(directMessageUnreadCount > 0);
@@ -214,9 +221,15 @@ export function FriendsDashboard({
               : friend;
           },
         );
-        setAvailableFriends((current) =>
-          mergeCandidateFirstPage(firstPage, current),
-        );
+        setAvailableFriends((current) => {
+          const merged = mergeCandidateFirstPage(firstPage, current);
+          // The server drops people once they're requested. Keep them in
+          // place while the add-friend dialog is open so the list doesn't
+          // jump; they're pruned when it closes.
+          return isAddingRef.current
+            ? keepRequestedCandidates(merged, current)
+            : merged;
+        });
         if (firstPage.length < FRIEND_CANDIDATE_PAGE_SIZE) {
           setCandidatesHaveMore(false);
         }
@@ -460,8 +473,21 @@ export function FriendsDashboard({
         ),
     [selfId, socialState.friends],
   );
-  const favouriteFriends = friendList.filter((friend) => friend.isFavourite);
-  const otherFriends = friendList.filter((friend) => !friend.isFavourite);
+  const friendSearchTerm = friendSearch.trim().toLowerCase().replace(/^@/, "");
+  const matchingFriends = friendSearchTerm
+    ? friendList.filter(
+        (friend) =>
+          friend.name.toLowerCase().includes(friendSearchTerm) ||
+          friend.handle
+            .toLowerCase()
+            .replace(/^@/, "")
+            .includes(friendSearchTerm),
+      )
+    : friendList;
+  const favouriteFriends = matchingFriends.filter(
+    (friend) => friend.isFavourite,
+  );
+  const otherFriends = matchingFriends.filter((friend) => !friend.isFavourite);
 
   function setFriendFavouriteLocally(friendId: string, favourite: boolean) {
     setSocialState((current) => ({
@@ -638,6 +664,19 @@ export function FriendsDashboard({
   );
   const directConversationVisible =
     isDirectConversationOpen || Boolean(messageFriendId);
+  const showFriendSearch =
+    activeTab === "friends" && isLoaded && friendList.length > 0;
+
+  // People requested while the dialog was open stay visible as "Requested"
+  // until it closes, then drop out; they're listed under Requests instead.
+  function closeAddFriend() {
+    isAddingRef.current = false;
+    setIsAdding(false);
+    const withoutRequested = (current: RemoteFriendCandidate[]) =>
+      current.filter((friend) => !friend.requestDirection);
+    setAvailableFriends(withoutRequested);
+    setFriendSuggestions(withoutRequested);
+  }
 
   function addFriend() {
     const name = friendName.trim();
@@ -743,8 +782,11 @@ export function FriendsDashboard({
     setIsLoadingCandidates(true);
 
     try {
+      // The server leaves out anyone with a pending request, so people
+      // requested since this list loaded no longer count toward the offset.
+      const loaded = query ? (searchResults ?? []) : availableFriends;
       const page = await fetchRemoteFriendCandidatesPage({
-        offset: query ? (searchResults?.length ?? 0) : availableFriends.length,
+        offset: loaded.filter((friend) => !friend.requestDirection).length,
         query,
         supabase: remoteClient,
       });
@@ -1090,7 +1132,7 @@ export function FriendsDashboard({
         <section className="grid grid-cols-[2.25rem_auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-2 sm:gap-x-3 sm:gap-y-3">
           <button
             aria-label="Back to friends"
-            className="mac-focus inline-flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)] sm:h-11 sm:w-11 sm:rounded-xl"
+            className="mac-focus inline-flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_255_255/0.045)] sm:h-11 sm:w-11 sm:rounded-xl"
             onClick={() => setSelectedFriendId(null)}
             type="button"
           >
@@ -1423,29 +1465,21 @@ export function FriendsDashboard({
             </div>
           </div>
 
-          <div className="flex min-h-10 items-center gap-3">
+          <div className="flex min-h-10 items-center gap-2 sm:gap-3">
             {activeTab === "friends" ? (
-              <p className="text-sm font-medium text-[var(--color-text-muted)]">
+              <p className="shrink-0 text-sm font-medium text-[var(--color-text-muted)]">
                 {!isLoaded
                   ? "Loading friends…"
                   : friendList.length
                     ? `${friendList.length} ${friendList.length === 1 ? "friend" : "friends"}`
                     : "No friends yet"}
               </p>
-            ) : activeTab === "requests" ? (
-              <button
-                className="mac-focus -ml-1 inline-flex h-10 items-center gap-1.5 rounded-md px-1 text-sm font-semibold text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
-                onClick={() => setActiveTab("friends")}
-                type="button"
-              >
-                <ArrowLeft aria-hidden size={16} />
-                Friends
-              </button>
             ) : null}
             <button
               aria-pressed={activeTab === "requests"}
               className={cn(
-                "mac-focus -mr-2.5 ml-auto inline-grid h-10 shrink-0 grid-flow-col place-items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold leading-none transition hover:bg-[rgb(255_255_255/0.04)]",
+                "mac-focus ml-auto inline-grid h-10 shrink-0 grid-flow-col place-items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold leading-none transition hover:bg-[rgb(255_255_255/0.04)]",
+                !showFriendSearch && "-mr-2.5",
                 activeTab === "requests"
                   ? "text-[var(--color-mac-yellow)]"
                   : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
@@ -1466,12 +1500,39 @@ export function FriendsDashboard({
                 </span>
               ) : null}
             </button>
+            {showFriendSearch ? (
+              <label className="relative block min-w-0 max-w-[10.5rem] flex-1 sm:w-60 sm:max-w-none sm:flex-none">
+                <span className="sr-only">Search friends</span>
+                <Search
+                  aria-hidden
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+                  size={14}
+                />
+                <input
+                  autoComplete="off"
+                  className="mac-focus h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] pl-7 pr-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] sm:h-10 sm:pl-8 sm:pr-2.5"
+                  enterKeyHint="search"
+                  onChange={(event) => setFriendSearch(event.target.value)}
+                  placeholder="Search friends"
+                  type="search"
+                  value={friendSearch}
+                />
+              </label>
+            ) : null}
           </div>
         </div>
       ) : null}
 
+      {/* An open chat is fixed full-screen on mobile. Drop the scroll
+          container then: on iOS it traps the chat's z-index, letting the app
+          header cover the chat header. */}
       <div
-        className="mac-friends-list-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pt-4 [-webkit-overflow-scrolling:touch] lg:overflow-visible lg:pb-0 lg:pt-6"
+        className={cn(
+          "mac-friends-list-scroll min-h-0 flex-1",
+          directConversationVisible
+            ? "lg:pt-6"
+            : "overflow-y-auto overscroll-contain pb-4 pt-4 [-webkit-overflow-scrolling:touch] lg:overflow-visible lg:pb-0 lg:pt-6",
+        )}
         ref={listScrollRef}
       >
         {feedback && !directConversationVisible ? (
@@ -1487,6 +1548,10 @@ export function FriendsDashboard({
           <section className="space-y-3" role="tabpanel">
             {!isLoaded ? (
               <ListSkeleton avatar count={4} label="Loading friends" />
+            ) : friendList.length && !matchingFriends.length ? (
+              <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">
+                No friends match &ldquo;{friendSearch.trim()}&rdquo;
+              </p>
             ) : friendList.length ? (
               <div className="space-y-5">
                 {favouriteFriends.length ? (
@@ -1500,12 +1565,11 @@ export function FriendsDashboard({
                   <ListSection
                     title={favouriteFriends.length ? "All friends" : null}
                   >
-                    <PaginatedList
+                    <ChunkedList
                       className="grid gap-2 lg:grid-cols-2 lg:gap-3"
                       items={otherFriends}
-                      pageSize={12}
                       renderItem={renderFriendRow}
-                      resetKey="friends"
+                      resetKey={`friends:${friendSearchTerm}`}
                     />
                   </ListSection>
                 ) : null}
@@ -1631,7 +1695,7 @@ export function FriendsDashboard({
             void addRemoteFriendFromCandidate(friendId)
           }
           onClose={() => {
-            setIsAdding(false);
+            closeAddFriend();
             setFriendName("");
             setFriendHandle("");
             setFriendColor(PROFILE_COLORS[1]);
@@ -1641,7 +1705,7 @@ export function FriendsDashboard({
           onHandleChange={setFriendHandle}
           onNameChange={setFriendName}
           onShowRequests={() => {
-            setIsAdding(false);
+            closeAddFriend();
             setActiveTab("requests");
           }}
           candidateQuery={candidateQuery}
@@ -2205,6 +2269,23 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 // A refresh only re-fetches the first page; keep pages loaded by scrolling.
+// Re-inserts candidates requested this session at their old positions.
+function keepRequestedCandidates(
+  next: RemoteFriendCandidate[],
+  current: RemoteFriendCandidate[],
+) {
+  const nextIds = new Set(next.map((friend) => friend.id));
+  const result = [...next];
+
+  current.forEach((friend, index) => {
+    if (friend.requestDirection && !nextIds.has(friend.id)) {
+      result.splice(Math.min(index, result.length), 0, friend);
+    }
+  });
+
+  return result;
+}
+
 function mergeCandidateFirstPage(
   firstPage: RemoteFriendCandidate[],
   current: RemoteFriendCandidate[],

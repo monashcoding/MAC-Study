@@ -29,10 +29,13 @@ import type { SocialFriend } from "@/lib/social-state";
 import {
   deleteRemoteGroupChatMessage,
   fetchRemoteGroupChatMessages,
+  fetchRemoteGroupNotificationSettings,
+  saveRemoteGroupNotificationSettings,
   sendRemoteGroupChatMessage,
   subscribeToRemoteGroupChat,
   type RemoteGroupChatMessage,
   type RemoteGroupChatPage,
+  type RemoteGroupNotificationSettings,
 } from "@/lib/supabase/app-data";
 import {
   fetchGroupChatReadReceipts,
@@ -41,7 +44,10 @@ import {
   type GroupChatReadReceipt,
 } from "@/lib/supabase/group-chat-read-receipts";
 import { cn } from "@/lib/utils";
-import { ChatSkeleton } from "@/components/friends/direct-messages";
+import {
+  ChatMuteButton,
+  ChatSkeleton,
+} from "@/components/friends/direct-messages";
 
 const LOCAL_CHAT_KEY = "mac-study-group-chat";
 type RemoteMessageCacheEntry = RemoteGroupChatPage;
@@ -119,6 +125,9 @@ export function GroupChat({
   );
   const [messageToDelete, setMessageToDelete] =
     useState<RemoteGroupChatMessage | null>(null);
+  const [notificationSettings, setNotificationSettings] =
+    useState<RemoteGroupNotificationSettings | null>(null);
+  const [isSavingMute, setIsSavingMute] = useState(false);
   const chatRef = useRef<HTMLElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -235,6 +244,24 @@ export function GroupChat({
     if (!remoteClient) return;
 
     let cancelled = false;
+    void fetchRemoteGroupNotificationSettings({
+      groupId,
+      supabase: remoteClient,
+    })
+      .then((settings) => {
+        if (!cancelled) setNotificationSettings(settings);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [groupId, remoteClient]);
+
+  useEffect(() => {
+    if (!remoteClient) return;
+
+    let cancelled = false;
     void fetchGroupChatReadReceipts(remoteClient, groupId)
       .then((receipts) => {
         if (!cancelled) {
@@ -317,19 +344,26 @@ export function GroupChat({
             }
           }
 
-          setMessages((current) => {
-            const nextMessages = mergeMessages(current, [message]);
-            const cached = remoteMessageCache.get(groupId);
+          // Our own message can arrive here before the send request returns;
+          // drop its pending copy so it doesn't show twice.
+          if (message.userId === selfId) {
+            setPendingMessages((current) => {
+              const pendingIndex = current.findIndex(
+                (pending) =>
+                  pending.delivery === "sending" &&
+                  pending.body === message.body &&
+                  pending.replyToId === message.replyToId,
+              );
 
-            if (cached) {
-              remoteMessageCache.set(groupId, {
-                ...cached,
-                messages: nextMessages,
-              });
-            }
+              return pendingIndex === -1
+                ? current
+                : current.filter((_, index) => index !== pendingIndex);
+            });
+          }
 
-            return nextMessages;
-          });
+          setMessages((current) =>
+            cacheMessages(groupId, mergeMessages(current, [message])),
+          );
           setIsReady(true);
         }
       },
@@ -521,6 +555,33 @@ export function GroupChat({
     window.dispatchEvent(new Event("resize"));
   }
 
+  async function toggleChatMute() {
+    if (!remoteClient || !notificationSettings || isSavingMute) return;
+
+    const previous = notificationSettings;
+    const next = { ...previous, chatMuted: !previous.chatMuted };
+    setNotificationSettings(next);
+    setIsSavingMute(true);
+
+    try {
+      await saveRemoteGroupNotificationSettings({
+        groupId,
+        settings: next,
+        supabase: remoteClient,
+      });
+      setToastMessage(
+        next.chatMuted
+          ? `${groupName} messages muted`
+          : `${groupName} message alerts on`,
+      );
+    } catch {
+      setNotificationSettings(previous);
+      setFeedback("Notification setting could not be saved.");
+    } finally {
+      setIsSavingMute(false);
+    }
+  }
+
   function closeChat() {
     if (isClosing) return;
 
@@ -593,11 +654,31 @@ export function GroupChat({
   async function deliverPendingMessage(pendingMessage: PendingChatMessage) {
     try {
       if (remoteClient) {
-        await sendRemoteGroupChatMessage({
+        const messageId = await sendRemoteGroupChatMessage({
           body: pendingMessage.body,
           groupId,
           replyToId: pendingMessage.replyToId,
         });
+
+        // Swap the pending bubble for the sent message in the same render so
+        // it never disappears while the refresh below is in flight.
+        if (messageId) {
+          const sentMessage: RemoteGroupChatMessage = {
+            body: pendingMessage.body,
+            createdAt: pendingMessage.createdAt,
+            groupId: pendingMessage.groupId,
+            id: messageId,
+            imagePath: null,
+            imageUrl: null,
+            replyToId: pendingMessage.replyToId,
+            userId: pendingMessage.userId,
+          };
+          setMessages((current) =>
+            current.some((message) => message.id === messageId)
+              ? current
+              : cacheMessages(groupId, mergeMessages(current, [sentMessage])),
+          );
+        }
         setPendingMessages((current) =>
           current.filter((message) => message.id !== pendingMessage.id),
         );
@@ -766,7 +847,7 @@ export function GroupChat({
           <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center">
             <button
               aria-label="Back to group"
-              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_255_255/0.045)]"
               onClick={closeChat}
               type="button"
             >
@@ -778,7 +859,15 @@ export function GroupChat({
                 {members.length} {members.length === 1 ? "member" : "members"}
               </p>
             </div>
-            <span aria-hidden />
+            {remoteClient ? (
+              <ChatMuteButton
+                disabled={!notificationSettings || isSavingMute}
+                muted={notificationSettings?.chatMuted ?? false}
+                onToggle={() => void toggleChatMute()}
+              />
+            ) : (
+              <span aria-hidden />
+            )}
           </div>
         </header>
 
@@ -1246,6 +1335,17 @@ function mergeMessages(
       new Date(first.createdAt).getTime() -
       new Date(second.createdAt).getTime(),
   );
+}
+
+// Keeps the shared page cache in step with messages added locally.
+function cacheMessages(groupId: string, messages: RemoteGroupChatMessage[]) {
+  const cached = remoteMessageCache.get(groupId);
+
+  if (cached) {
+    remoteMessageCache.set(groupId, { ...cached, messages });
+  }
+
+  return messages;
 }
 
 function mergeReadReceipts(

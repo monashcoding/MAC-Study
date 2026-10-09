@@ -112,11 +112,11 @@ export function DirectMessages({
     Boolean(initialFriendId && remoteClient),
   );
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
-  const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isClosing, setIsClosing] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const closeTimerRef = useRef<number | null>(null);
   const finishCloseRef = useRef<() => void>(() => {});
   const loadSequenceRef = useRef(0);
@@ -293,6 +293,14 @@ export function DirectMessages({
       visualViewport?.removeEventListener("scroll", sizeChat);
     };
   }, [isConversationOpen]);
+
+  useEffect(() => {
+    const composer = composerRef.current;
+    if (!composer) return;
+
+    composer.style.height = "auto";
+    composer.style.height = `${Math.min(composer.scrollHeight, 112)}px`;
+  }, [draft, isConversationOpen]);
 
   function setComposerFocused(focused: boolean) {
     document.body.classList.toggle("mac-chat-composer-active", focused);
@@ -488,7 +496,9 @@ export function DirectMessages({
           if (counterpartId === selectedFriendId) {
             shouldScrollToBottomRef.current = true;
             setMessages((current) =>
-              mergeMessages(current, [directMessageFromInsertRow(row)]),
+              mergeMessages(dropMatchingPending(current, row), [
+                directMessageFromInsertRow(row),
+              ]),
             );
 
             if (
@@ -536,15 +546,11 @@ export function DirectMessages({
     }
   }
 
+  // Like the group chat, sends don't block the composer: each message shows
+  // as pending straight away and several can be in flight at once.
   async function sendMessage(messageBody = draft) {
     const body = messageBody.trim();
-    if (
-      !body ||
-      !selectedFriend ||
-      !currentUserId ||
-      !remoteClient ||
-      isSending
-    ) {
+    if (!body || !selectedFriend || !currentUserId || !remoteClient) {
       return;
     }
 
@@ -561,7 +567,6 @@ export function DirectMessages({
 
     setDraft("");
     setFeedback(null);
-    setIsSending(true);
     shouldScrollToBottomRef.current = true;
     setMessages((current) => mergeMessages(current, [pendingMessage]));
 
@@ -600,8 +605,6 @@ export function DirectMessages({
         ),
       );
       setFeedback(getErrorMessage(error, "Message could not be sent."));
-    } finally {
-      setIsSending(false);
     }
   }
 
@@ -631,11 +634,11 @@ export function DirectMessages({
         <header className="flex shrink-0 items-center gap-3 border-b border-[var(--color-border)] bg-[rgb(23_23_23/0.96)] px-3 pb-2 pt-[calc(var(--safe-area-top)+0.5rem)] backdrop-blur-xl lg:pt-2">
           <button
             aria-label="Back to messages"
-            className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+            className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[var(--color-mac-yellow)] transition active:scale-[0.94]"
             onClick={closeConversation}
             type="button"
           >
-            <ArrowLeft aria-hidden size={19} />
+            <ArrowLeft aria-hidden size={22} />
           </button>
           <button
             aria-label={`View ${selectedFriend.name}'s profile`}
@@ -660,6 +663,11 @@ export function DirectMessages({
               </span>
             </span>
           </button>
+          <ChatMuteButton
+            disabled={!remoteClient || muteBusyFriendIds.has(selectedFriend.id)}
+            muted={mutedFriendIds.has(selectedFriend.id)}
+            onToggle={() => onToggleMute(selectedFriend)}
+          />
         </header>
 
         <div
@@ -765,29 +773,35 @@ export function DirectMessages({
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-1 focus-within:border-[rgb(255_227_48/0.7)] focus-within:shadow-[0_0_0_3px_rgb(255_227_48/0.1)]">
             <textarea
               aria-label={`Message ${selectedFriend.name}`}
-              className="max-h-28 min-h-10 min-w-0 resize-none overflow-y-auto border-0 bg-transparent px-3 py-[0.62rem] text-sm leading-snug outline-none"
+              className="min-h-10 min-w-0 resize-none overflow-y-auto border-0 bg-transparent px-3 py-[0.62rem] text-sm leading-snug outline-none"
               maxLength={2000}
               onBlur={() => setComposerFocused(false)}
               onChange={(event) => setDraft(event.target.value)}
               onFocus={() => setComposerFocused(true)}
               onKeyDown={(event) => {
                 if (
-                  event.key === "Enter" &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing
+                  event.key !== "Enter" ||
+                  event.shiftKey ||
+                  event.nativeEvent.isComposing
                 ) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
+                  return;
                 }
+
+                event.preventDefault();
+                void sendMessage();
               }}
               placeholder="Message…"
+              ref={composerRef}
               rows={1}
               value={draft}
             />
+            {/* Keep the textarea focused on tap so the mobile keyboard stays
+                up and the chat doesn't resize mid-send. */}
             <button
               aria-label="Send message"
               className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-md bg-[var(--color-mac-yellow)] text-[#141414] transition active:scale-[0.97] disabled:opacity-45"
-              disabled={!draft.trim() || isSending || !remoteClient}
+              disabled={!draft.trim() || !remoteClient}
+              onPointerDown={(event) => event.preventDefault()}
               type="submit"
             >
               <Send aria-hidden size={17} />
@@ -909,6 +923,43 @@ export function DirectMessages({
   );
 }
 
+// Bell in a chat header that mutes notifications for that conversation.
+// Shared with the group chat.
+export function ChatMuteButton({
+  disabled,
+  muted,
+  onToggle,
+}: {
+  disabled: boolean;
+  muted: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      aria-label={
+        muted ? "Unmute message notifications" : "Mute message notifications"
+      }
+      aria-pressed={muted}
+      className={cn(
+        "mac-focus ml-auto inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition disabled:opacity-50",
+        muted
+          ? "bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]"
+          : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]",
+      )}
+      disabled={disabled}
+      onClick={onToggle}
+      title={muted ? "Notifications muted" : "Mute notifications"}
+      type="button"
+    >
+      {muted ? (
+        <BellOff aria-hidden size={19} />
+      ) : (
+        <Bell aria-hidden size={19} />
+      )}
+    </button>
+  );
+}
+
 function FriendAvatar({ friend }: { friend: SocialFriend }) {
   return (
     <span
@@ -943,6 +994,25 @@ function directMessageFromInsertRow(
     recipientId: row.recipient_id,
     senderId: row.sender_id,
   };
+}
+
+// Realtime can echo our own message before the send request returns; swap
+// out the matching pending copy so the message doesn't show twice.
+function dropMatchingPending(
+  current: DirectMessage[],
+  row: DirectMessageInsertRow,
+) {
+  const pendingIndex = current.findIndex(
+    (message) =>
+      message.delivery === "sending" &&
+      message.senderId === row.sender_id &&
+      message.recipientId === row.recipient_id &&
+      message.body === row.body,
+  );
+
+  return pendingIndex === -1
+    ? current
+    : current.filter((_, index) => index !== pendingIndex);
 }
 
 function mergeMessages(current: DirectMessage[], incoming: DirectMessage[]) {

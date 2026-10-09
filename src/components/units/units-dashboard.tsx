@@ -54,6 +54,7 @@ import {
   requestRemoteSpecialUnit,
   setRemoteSubjectUnitOffering,
   createRemoteSubjectForUnit,
+  updateRemoteFriendRequest,
   upsertRemoteUnitEnrollment,
   type RemoteUnitState,
 } from "@/lib/supabase/app-data";
@@ -652,6 +653,36 @@ export function UnitsDashboard({
     }
   }
 
+  async function acceptFriendRequest(member: UnitCohortMember) {
+    if (!member.friendRequestId) return;
+    setBusyKey(`friend:${member.id}`);
+    setFeedback(null);
+
+    try {
+      await updateRemoteFriendRequest({
+        action: "accept",
+        requestId: member.friendRequestId,
+      });
+      setCohort((current) =>
+        current.map((item) =>
+          item.id === member.id
+            ? {
+                ...item,
+                friendRequest: null,
+                friendRequestId: null,
+                isFriend: true,
+              }
+            : item,
+        ),
+      );
+      setToastMessage("Friend request accepted");
+    } catch (error) {
+      setFeedback(getErrorMessage(error, "Could not accept this request."));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
   async function addToGroup(memberId: string, groupId: string) {
     if (!groupId) return;
     setBusyKey(`group:${memberId}`);
@@ -700,6 +731,7 @@ export function UnitsDashboard({
           enrollment={selectedEnrollment}
           feedback={feedback}
           manageableGroups={manageableGroups}
+          onAcceptFriend={(member) => void acceptFriendRequest(member)}
           onAddFriend={(memberId) => void addFriend(memberId)}
           onAddToGroup={(memberId, groupId) =>
             void addToGroup(memberId, groupId)
@@ -1215,6 +1247,7 @@ function OfferingDetail({
   enrollment,
   feedback,
   manageableGroups,
+  onAcceptFriend,
   onAddFriend,
   onAddToGroup,
   onBack,
@@ -1240,6 +1273,7 @@ function OfferingDetail({
   enrollment: UnitEnrollment;
   feedback: string | null;
   manageableGroups: SocialGroup[];
+  onAcceptFriend: (member: UnitCohortMember) => void;
   onAddFriend: (memberId: string) => void;
   onAddToGroup: (memberId: string, groupId: string) => void;
   onBack: () => void;
@@ -1309,7 +1343,7 @@ function OfferingDetail({
       <div className="-mx-2 flex items-center gap-1 lg:hidden">
         <button
           aria-label="Back to units"
-          className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.06)]"
+          className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_255_255/0.06)]"
           onClick={onBack}
           type="button"
         >
@@ -1415,7 +1449,7 @@ function OfferingDetail({
       <div className="hidden items-center gap-2 text-[13px] font-semibold text-[var(--color-text-muted)] lg:flex">
         <button
           aria-label="Back to units"
-          className="mac-focus -ml-2 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.06)]"
+          className="mac-focus -ml-2 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_255_255/0.06)]"
           onClick={onBack}
           type="button"
         >
@@ -1550,6 +1584,7 @@ function OfferingDetail({
                       key={member.id}
                       manageableGroups={manageableGroups}
                       member={member}
+                      onAcceptFriend={onAcceptFriend}
                       onAddFriend={onAddFriend}
                       onAddToGroup={onAddToGroup}
                       requested={sentFriendRequestIds.includes(member.id)}
@@ -1967,6 +2002,7 @@ function CohortMemberCard({
   busyKey,
   manageableGroups,
   member,
+  onAcceptFriend,
   onAddFriend,
   onAddToGroup,
   requested,
@@ -1975,6 +2011,7 @@ function CohortMemberCard({
   busyKey: string | null;
   manageableGroups: SocialGroup[];
   member: UnitCohortMember;
+  onAcceptFriend: (member: UnitCohortMember) => void;
   onAddFriend: (memberId: string) => void;
   onAddToGroup: (memberId: string, groupId: string) => void;
   requested: boolean;
@@ -1982,6 +2019,11 @@ function CohortMemberCard({
   const availableGroups = manageableGroups.filter(
     (group) => !member.sharedGroupIds.includes(group.id),
   );
+  const isOutgoing = requested || member.friendRequest === "outgoing";
+  const canAccept =
+    !isOutgoing &&
+    member.friendRequest === "incoming" &&
+    Boolean(member.friendRequestId);
   const sharedGroupNames = member.sharedGroupIds
     .map((groupId) => allGroups.find((group) => group.id === groupId)?.name)
     .filter((name): name is string => Boolean(name));
@@ -2031,16 +2073,25 @@ function CohortMemberCard({
         <button
           className={cn(
             "mac-focus inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold disabled:opacity-60",
-            requested
+            isOutgoing
               ? "border border-[var(--color-border)] text-[var(--color-text-muted)]"
               : "bg-[var(--color-mac-yellow)] text-[#141414]",
           )}
-          disabled={requested || busyKey === `friend:${member.id}`}
-          onClick={() => onAddFriend(member.id)}
+          disabled={isOutgoing || busyKey === `friend:${member.id}`}
+          onClick={() =>
+            canAccept ? onAcceptFriend(member) : onAddFriend(member.id)
+          }
+          title={
+            canAccept ? `${member.displayName} sent you a request` : undefined
+          }
           type="button"
         >
-          <UserPlus aria-hidden size={13} />
-          {requested ? "Requested" : "Request"}
+          {canAccept ? (
+            <Check aria-hidden size={13} />
+          ) : (
+            <UserPlus aria-hidden size={13} />
+          )}
+          {isOutgoing ? "Requested" : canAccept ? "Accept" : "Request"}
         </button>
       ) : availableGroups.length ? (
         <CustomSelect
@@ -2580,6 +2631,8 @@ function getDemoCohort(offeringId: string, groups: SocialGroup[]) {
     .map((friend, index) => ({
       color: friend.color,
       displayName: friend.name,
+      friendRequest: null,
+      friendRequestId: null,
       handle: friend.handle,
       id: friend.id,
       isFriend: index < 2,

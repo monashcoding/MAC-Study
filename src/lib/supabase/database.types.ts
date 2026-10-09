@@ -797,7 +797,7 @@ isOneToOne: false
                            },
 "get_unit_cohort_page":
 { Args: { "friends_only"?: boolean,"input_offering_id": string,"result_limit"?: number,"result_offset"?: number,"search_query"?: string }; Returns: {
-              "display_name": string,"is_friend": boolean,"mutual_friend_count": number,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
+              "display_name": string,"friend_request_direction": string,"friend_request_id": string,"is_friend": boolean,"mutual_friend_count": number,"profile_color": string,"shared_group_ids": (string)[],"study_icon": string,"user_id": string,"username": string
             }[]
                            },
 "get_unit_cohort_v2":
