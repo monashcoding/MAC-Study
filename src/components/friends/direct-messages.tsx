@@ -664,6 +664,11 @@ export function DirectMessages({
               </span>
             </span>
           </button>
+          <ChatMuteButton
+            disabled={!remoteClient || muteBusyFriendIds.has(selectedFriend.id)}
+            muted={mutedFriendIds.has(selectedFriend.id)}
+            onToggle={() => onToggleMute(selectedFriend)}
+          />
         </header>
 
         <div
@@ -916,6 +921,43 @@ export function DirectMessages({
         </div>
       )}
     </section>
+  );
+}
+
+// Bell in a chat header that mutes notifications for that conversation.
+// Shared with the group chat.
+export function ChatMuteButton({
+  disabled,
+  muted,
+  onToggle,
+}: {
+  disabled: boolean;
+  muted: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      aria-label={
+        muted ? "Unmute message notifications" : "Mute message notifications"
+      }
+      aria-pressed={muted}
+      className={cn(
+        "mac-focus ml-auto inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition disabled:opacity-50",
+        muted
+          ? "bg-[rgb(255_227_48/0.12)] text-[var(--color-mac-yellow)]"
+          : "text-[var(--color-text-muted)] hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]",
+      )}
+      disabled={disabled}
+      onClick={onToggle}
+      title={muted ? "Notifications muted" : "Mute notifications"}
+      type="button"
+    >
+      {muted ? (
+        <BellOff aria-hidden size={19} />
+      ) : (
+        <Bell aria-hidden size={19} />
+      )}
+    </button>
   );
 }
 

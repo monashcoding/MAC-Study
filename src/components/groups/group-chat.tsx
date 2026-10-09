@@ -29,10 +29,13 @@ import type { SocialFriend } from "@/lib/social-state";
 import {
   deleteRemoteGroupChatMessage,
   fetchRemoteGroupChatMessages,
+  fetchRemoteGroupNotificationSettings,
+  saveRemoteGroupNotificationSettings,
   sendRemoteGroupChatMessage,
   subscribeToRemoteGroupChat,
   type RemoteGroupChatMessage,
   type RemoteGroupChatPage,
+  type RemoteGroupNotificationSettings,
 } from "@/lib/supabase/app-data";
 import {
   fetchGroupChatReadReceipts,
@@ -41,7 +44,10 @@ import {
   type GroupChatReadReceipt,
 } from "@/lib/supabase/group-chat-read-receipts";
 import { cn } from "@/lib/utils";
-import { ChatSkeleton } from "@/components/friends/direct-messages";
+import {
+  ChatMuteButton,
+  ChatSkeleton,
+} from "@/components/friends/direct-messages";
 
 const LOCAL_CHAT_KEY = "mac-study-group-chat";
 type RemoteMessageCacheEntry = RemoteGroupChatPage;
@@ -119,6 +125,9 @@ export function GroupChat({
   );
   const [messageToDelete, setMessageToDelete] =
     useState<RemoteGroupChatMessage | null>(null);
+  const [notificationSettings, setNotificationSettings] =
+    useState<RemoteGroupNotificationSettings | null>(null);
+  const [isSavingMute, setIsSavingMute] = useState(false);
   const chatRef = useRef<HTMLElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -230,6 +239,24 @@ export function GroupChat({
   useEffect(() => {
     messageIdsRef.current = new Set(messages.map((message) => message.id));
   }, [messages]);
+
+  useEffect(() => {
+    if (!remoteClient) return;
+
+    let cancelled = false;
+    void fetchRemoteGroupNotificationSettings({
+      groupId,
+      supabase: remoteClient,
+    })
+      .then((settings) => {
+        if (!cancelled) setNotificationSettings(settings);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [groupId, remoteClient]);
 
   useEffect(() => {
     if (!remoteClient) return;
@@ -528,6 +555,33 @@ export function GroupChat({
     window.dispatchEvent(new Event("resize"));
   }
 
+  async function toggleChatMute() {
+    if (!remoteClient || !notificationSettings || isSavingMute) return;
+
+    const previous = notificationSettings;
+    const next = { ...previous, chatMuted: !previous.chatMuted };
+    setNotificationSettings(next);
+    setIsSavingMute(true);
+
+    try {
+      await saveRemoteGroupNotificationSettings({
+        groupId,
+        settings: next,
+        supabase: remoteClient,
+      });
+      setToastMessage(
+        next.chatMuted
+          ? `${groupName} messages muted`
+          : `${groupName} message alerts on`,
+      );
+    } catch {
+      setNotificationSettings(previous);
+      setFeedback("Notification setting could not be saved.");
+    } finally {
+      setIsSavingMute(false);
+    }
+  }
+
   function closeChat() {
     if (isClosing) return;
 
@@ -805,7 +859,15 @@ export function GroupChat({
                 {members.length} {members.length === 1 ? "member" : "members"}
               </p>
             </div>
-            <span aria-hidden />
+            {remoteClient ? (
+              <ChatMuteButton
+                disabled={!notificationSettings || isSavingMute}
+                muted={notificationSettings?.chatMuted ?? false}
+                onToggle={() => void toggleChatMute()}
+              />
+            ) : (
+              <span aria-hidden />
+            )}
           </div>
         </header>
 
