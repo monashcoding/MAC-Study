@@ -1470,8 +1470,16 @@ export function FriendsDashboard({
         </div>
       ) : null}
 
+      {/* An open chat is fixed full-screen on mobile. Drop the scroll
+          container then: on iOS it traps the chat's z-index, letting the app
+          header cover the chat header. */}
       <div
-        className="mac-friends-list-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pt-4 [-webkit-overflow-scrolling:touch] lg:overflow-visible lg:pb-0 lg:pt-6"
+        className={cn(
+          "mac-friends-list-scroll min-h-0 flex-1",
+          directConversationVisible
+            ? "lg:pt-6"
+            : "overflow-y-auto overscroll-contain pb-4 pt-4 [-webkit-overflow-scrolling:touch] lg:overflow-visible lg:pb-0 lg:pt-6",
+        )}
         ref={listScrollRef}
       >
         {feedback && !directConversationVisible ? (
