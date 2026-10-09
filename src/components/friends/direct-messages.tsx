@@ -634,11 +634,12 @@ export function DirectMessages({
         <header className="flex shrink-0 items-center gap-3 border-b border-[var(--color-border)] bg-[rgb(23_23_23/0.96)] px-3 pb-2 pt-[calc(var(--safe-area-top)+0.5rem)] backdrop-blur-xl lg:pt-2">
           <button
             aria-label="Back to messages"
-            className="mac-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+            className="mac-focus inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-[rgb(255_255_255/0.035)] pl-2 pr-3 text-sm font-semibold text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.07)] active:scale-[0.97]"
             onClick={closeConversation}
             type="button"
           >
-            <ArrowLeft aria-hidden size={19} />
+            <ArrowLeft aria-hidden size={18} />
+            Back
           </button>
           <button
             aria-label={`View ${selectedFriend.name}'s profile`}
