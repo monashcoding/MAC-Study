@@ -178,7 +178,12 @@ export function FriendsDashboard({
   const listScrollRef = useRef<HTMLDivElement>(null);
   const pendingFriendRequestIdsRef = useRef(new Set<string>());
   const pendingCancelledRequestsRef = useRef(new Map<string, string>());
+  const isAddingRef = useRef(false);
   const nudgeQueue = useNudgeQueue(Boolean(remoteClient));
+
+  useEffect(() => {
+    isAddingRef.current = isAdding;
+  }, [isAdding]);
 
   useEffect(() => {
     onUnreadChange?.(directMessageUnreadCount > 0);
@@ -216,9 +221,15 @@ export function FriendsDashboard({
               : friend;
           },
         );
-        setAvailableFriends((current) =>
-          mergeCandidateFirstPage(firstPage, current),
-        );
+        setAvailableFriends((current) => {
+          const merged = mergeCandidateFirstPage(firstPage, current);
+          // The server drops people once they're requested. Keep them in
+          // place while the add-friend dialog is open so the list doesn't
+          // jump; they're pruned when it closes.
+          return isAddingRef.current
+            ? keepRequestedCandidates(merged, current)
+            : merged;
+        });
         if (firstPage.length < FRIEND_CANDIDATE_PAGE_SIZE) {
           setCandidatesHaveMore(false);
         }
@@ -655,6 +666,17 @@ export function FriendsDashboard({
     isDirectConversationOpen || Boolean(messageFriendId);
   const showFriendSearch =
     activeTab === "friends" && isLoaded && friendList.length > 0;
+
+  // People requested while the dialog was open stay visible as "Requested"
+  // until it closes, then drop out; they're listed under Requests instead.
+  function closeAddFriend() {
+    isAddingRef.current = false;
+    setIsAdding(false);
+    const withoutRequested = (current: RemoteFriendCandidate[]) =>
+      current.filter((friend) => !friend.requestDirection);
+    setAvailableFriends(withoutRequested);
+    setFriendSuggestions(withoutRequested);
+  }
 
   function addFriend() {
     const name = friendName.trim();
@@ -1110,7 +1132,7 @@ export function FriendsDashboard({
         <section className="grid grid-cols-[2.25rem_auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-2 sm:gap-x-3 sm:gap-y-3">
           <button
             aria-label="Back to friends"
-            className="mac-focus inline-flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)] sm:h-11 sm:w-11 sm:rounded-xl"
+            className="mac-focus inline-flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_255_255/0.045)] sm:h-11 sm:w-11 sm:rounded-xl"
             onClick={() => setSelectedFriendId(null)}
             type="button"
           >
@@ -1452,15 +1474,6 @@ export function FriendsDashboard({
                     ? `${friendList.length} ${friendList.length === 1 ? "friend" : "friends"}`
                     : "No friends yet"}
               </p>
-            ) : activeTab === "requests" ? (
-              <button
-                className="mac-focus -ml-1 inline-flex h-10 items-center gap-1.5 rounded-md px-1 text-sm font-semibold text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
-                onClick={() => setActiveTab("friends")}
-                type="button"
-              >
-                <ArrowLeft aria-hidden size={16} />
-                Friends
-              </button>
             ) : null}
             <button
               aria-pressed={activeTab === "requests"}
@@ -1488,16 +1501,16 @@ export function FriendsDashboard({
               ) : null}
             </button>
             {showFriendSearch ? (
-              <label className="relative block min-w-0 flex-1 sm:w-60 sm:flex-none">
+              <label className="relative block min-w-0 max-w-[10.5rem] flex-1 sm:w-60 sm:max-w-none sm:flex-none">
                 <span className="sr-only">Search friends</span>
                 <Search
                   aria-hidden
                   className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
-                  size={15}
+                  size={14}
                 />
                 <input
                   autoComplete="off"
-                  className="mac-focus h-10 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] pl-8 pr-2.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
+                  className="mac-focus h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] pl-7 pr-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] sm:h-10 sm:pl-8 sm:pr-2.5"
                   enterKeyHint="search"
                   onChange={(event) => setFriendSearch(event.target.value)}
                   placeholder="Search friends"
@@ -1682,7 +1695,7 @@ export function FriendsDashboard({
             void addRemoteFriendFromCandidate(friendId)
           }
           onClose={() => {
-            setIsAdding(false);
+            closeAddFriend();
             setFriendName("");
             setFriendHandle("");
             setFriendColor(PROFILE_COLORS[1]);
@@ -1692,7 +1705,7 @@ export function FriendsDashboard({
           onHandleChange={setFriendHandle}
           onNameChange={setFriendName}
           onShowRequests={() => {
-            setIsAdding(false);
+            closeAddFriend();
             setActiveTab("requests");
           }}
           candidateQuery={candidateQuery}
@@ -2256,6 +2269,23 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 // A refresh only re-fetches the first page; keep pages loaded by scrolling.
+// Re-inserts candidates requested this session at their old positions.
+function keepRequestedCandidates(
+  next: RemoteFriendCandidate[],
+  current: RemoteFriendCandidate[],
+) {
+  const nextIds = new Set(next.map((friend) => friend.id));
+  const result = [...next];
+
+  current.forEach((friend, index) => {
+    if (friend.requestDirection && !nextIds.has(friend.id)) {
+      result.splice(Math.min(index, result.length), 0, friend);
+    }
+  });
+
+  return result;
+}
+
 function mergeCandidateFirstPage(
   firstPage: RemoteFriendCandidate[],
   current: RemoteFriendCandidate[],

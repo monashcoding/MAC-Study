@@ -1343,7 +1343,7 @@ function OfferingDetail({
       <div className="-mx-2 flex items-center gap-1 lg:hidden">
         <button
           aria-label="Back to units"
-          className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.06)]"
+          className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_255_255/0.06)]"
           onClick={onBack}
           type="button"
         >
@@ -1449,7 +1449,7 @@ function OfferingDetail({
       <div className="hidden items-center gap-2 text-[13px] font-semibold text-[var(--color-text-muted)] lg:flex">
         <button
           aria-label="Back to units"
-          className="mac-focus -ml-2 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--color-text)] transition hover:bg-[rgb(255_255_255/0.06)]"
+          className="mac-focus -ml-2 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_255_255/0.06)]"
           onClick={onBack}
           type="button"
         >

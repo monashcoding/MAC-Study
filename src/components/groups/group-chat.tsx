@@ -847,7 +847,7 @@ export function GroupChat({
           <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center">
             <button
               aria-label="Back to group"
-              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+              className="mac-focus inline-flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_255_255/0.045)]"
               onClick={closeChat}
               type="button"
             >

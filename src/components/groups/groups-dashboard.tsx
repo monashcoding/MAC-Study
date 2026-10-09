@@ -1140,7 +1140,7 @@ export function GroupsDashboard({
           <div className="flex min-w-0 items-center gap-2.5">
             <button
               aria-label="Back to groups"
-              className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[var(--color-text-muted)] transition hover:bg-[rgb(255_255_255/0.045)] hover:text-[var(--color-text)]"
+              className="mac-focus inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[var(--color-mac-yellow)] transition hover:bg-[rgb(255_255_255/0.045)]"
               onClick={() => {
                 setSelectedGroupId(null);
                 setSelectedMemberId(null);
@@ -1505,7 +1505,11 @@ export function GroupsDashboard({
             onClick={() => setActiveTab("groups")}
             type="button"
           >
-            <ArrowLeft aria-hidden size={16} />
+            <ArrowLeft
+              aria-hidden
+              className="text-[var(--color-mac-yellow)]"
+              size={16}
+            />
             Groups
           </button>
         ) : (
