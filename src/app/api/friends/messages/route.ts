@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerStudySession } from "@/lib/auth/server-session";
+import { getMessageRateLimitError } from "@/lib/message-rate-limit";
 import { sendWebPush } from "@/lib/push/send-web-push";
 import {
   createSupabaseAdminClient,
@@ -54,6 +55,19 @@ export async function POST(request: Request) {
     })
     .select("id, sender_id, recipient_id, body, created_at, read_at")
     .single<DirectMessageRow>();
+
+  const rateLimit = getMessageRateLimitError(error?.message);
+  if (rateLimit) {
+    return NextResponse.json(
+      { message: rateLimit.message },
+      {
+        headers: rateLimit.retryAfterSeconds
+          ? { "Retry-After": String(rateLimit.retryAfterSeconds) }
+          : undefined,
+        status: 429,
+      },
+    );
+  }
 
   if (error || !data) {
     return NextResponse.json(
