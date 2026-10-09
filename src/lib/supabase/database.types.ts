@@ -751,6 +751,25 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"user_presence": {
+                  Row: {
+                    "last_active_at": string | null,"user_id": string
+                  }
+                  Insert: {
+                    "last_active_at"?: string | null,"user_id": string
+                  }
+                  Update: {
+                    "last_active_at"?: string | null,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "user_presence_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: true
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 }
           }
           Views: {
@@ -960,6 +979,9 @@ isOneToOne: false
                            },
 "shares_active_group_with_user":
 { Args: { "target_user_id": string }; Returns: boolean
+                           },
+"touch_user_presence":
+{ Args: { "is_active": boolean }; Returns: undefined
                            },
 "transfer_group_leadership":
 { Args: { "target_group_id": string,"target_user_id": string }; Returns: boolean

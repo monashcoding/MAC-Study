@@ -30,7 +30,8 @@ type NudgeRow = Pick<
 >;
 
 export function getNudgeDeliveryMessage(delivery: RemoteNudgeDelivery) {
-  if (delivery.sent > 0) {
+  // Recipients with the app open see the nudge in-app instead of a push.
+  if (delivery.sent > 0 || delivery.skipped === "active_in_app") {
     return "Nudge delivered.";
   }
 

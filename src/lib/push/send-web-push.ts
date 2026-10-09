@@ -4,19 +4,22 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type { Tables } from "@/lib/supabase/types";
 
 export type NotificationCategory =
-  | "friend"
-  | "nudge"
-  | "other"
-  | "study_reminder";
+  "friend" | "nudge" | "other" | "study_reminder";
 
 type PushSubscriptionRow = Pick<
   Tables<"push_subscriptions">,
   "auth" | "endpoint" | "p256dh"
 >;
 
+// Someone who had the app on screen this recently already sees the in-app
+// alert, so a native notification on top would be a duplicate. Comfortably
+// longer than the app's 25s presence heartbeat.
+const ACTIVE_IN_APP_WINDOW_MS = 45_000;
+
 export type PushDelivery = {
   sent: number;
   skipped?:
+    | "active_in_app"
     | "disabled"
     | "no_subscriptions"
     | "push_not_configured"
@@ -45,22 +48,30 @@ export async function sendWebPush({
     return { sent: 0, skipped: "push_not_configured" };
   }
 
-  const [preferencesResult, subscriptionsResult] = await Promise.all([
-    admin
-      .from("user_notification_preferences")
-      .select("friend_notifications, nudge_notifications, other_notifications")
-      .eq("user_id", userId)
-      .maybeSingle<{
-        friend_notifications: boolean;
-        nudge_notifications: boolean;
-        other_notifications: boolean;
-      }>(),
-    admin
-      .from("push_subscriptions")
-      .select("endpoint, p256dh, auth")
-      .eq("user_id", userId)
-      .is("revoked_at", null),
-  ]);
+  const [preferencesResult, subscriptionsResult, presenceResult] =
+    await Promise.all([
+      admin
+        .from("user_notification_preferences")
+        .select(
+          "friend_notifications, nudge_notifications, other_notifications",
+        )
+        .eq("user_id", userId)
+        .maybeSingle<{
+          friend_notifications: boolean;
+          nudge_notifications: boolean;
+          other_notifications: boolean;
+        }>(),
+      admin
+        .from("push_subscriptions")
+        .select("endpoint, p256dh, auth")
+        .eq("user_id", userId)
+        .is("revoked_at", null),
+      admin
+        .from("user_presence")
+        .select("last_active_at")
+        .eq("user_id", userId)
+        .maybeSingle<{ last_active_at: string | null }>(),
+    ]);
   const preferences = preferencesResult.data;
 
   const enabled =
@@ -74,6 +85,14 @@ export async function sendWebPush({
 
   if (enabled === false) {
     return { sent: 0, skipped: "disabled" };
+  }
+
+  // Study reminders have no in-app equivalent, so they always push.
+  if (
+    category !== "study_reminder" &&
+    isRecentlyActive(presenceResult.data?.last_active_at)
+  ) {
+    return { sent: 0, skipped: "active_in_app" };
   }
 
   const { data, error } = subscriptionsResult;
@@ -129,6 +148,14 @@ export async function sendWebPush({
   return {
     sent: results.filter((result) => result.status === "fulfilled").length,
   };
+}
+
+function isRecentlyActive(lastActiveAt: string | null | undefined) {
+  if (!lastActiveAt) return false;
+
+  return (
+    Date.now() - new Date(lastActiveAt).getTime() < ACTIVE_IN_APP_WINDOW_MS
+  );
 }
 
 function isExpiredPushSubscription(error: unknown) {

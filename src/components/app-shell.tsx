@@ -43,6 +43,7 @@ import { OnboardingPreviewBanner } from "@/components/onboarding/onboarding-prev
 import { WelcomeOnboarding } from "@/components/onboarding/welcome-onboarding";
 import { InstallOnboarding } from "@/components/pwa/install-onboarding";
 import { NotificationOnboarding } from "@/components/pwa/notification-onboarding";
+import { useAppPresence } from "@/components/pwa/use-app-presence";
 import { AppNotifications } from "@/components/social/app-notifications";
 import { NudgeNotifications } from "@/components/social/nudge-notifications";
 import { SidebarStudyTimer } from "@/components/timer/sidebar-study-timer";
@@ -144,6 +145,8 @@ export function AppShell({
   const handleWelcomeOnboardingComplete = useCallback(() => {
     setWelcomeOnboardingComplete(true);
   }, []);
+
+  useAppPresence(authState.mode === "authenticated");
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {

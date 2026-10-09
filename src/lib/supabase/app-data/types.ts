@@ -125,6 +125,7 @@ export type RemoteNudgeNotification = {
 export type RemoteNudgeDelivery = {
   sent: number;
   skipped?:
+    | "active_in_app"
     | "disabled"
     | "no_subscriptions"
     | "push_not_configured"
