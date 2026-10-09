@@ -30,6 +30,7 @@ import {
 import { AppDialog } from "@/components/app-dialog";
 import { EmptyStateCta } from "@/components/empty-state-cta";
 import { DirectMessages } from "@/components/friends/direct-messages";
+import { ChunkedList } from "@/components/chunked-list";
 import { PaginatedList } from "@/components/paginated-list";
 import { StudyHeatmap } from "@/components/study-heatmap";
 import {
@@ -147,6 +148,7 @@ export function FriendsDashboard({
     "friends" | "messages" | "requests"
   >("friends");
   const [messageFriendId, setMessageFriendId] = useState<string | null>(null);
+  const [friendSearch, setFriendSearch] = useState("");
   const [isDirectConversationOpen, setIsDirectConversationOpen] =
     useState(false);
   const [directMessageUnreadCount, setDirectMessageUnreadCount] = useState(0);
@@ -460,8 +462,21 @@ export function FriendsDashboard({
         ),
     [selfId, socialState.friends],
   );
-  const favouriteFriends = friendList.filter((friend) => friend.isFavourite);
-  const otherFriends = friendList.filter((friend) => !friend.isFavourite);
+  const friendSearchTerm = friendSearch.trim().toLowerCase().replace(/^@/, "");
+  const matchingFriends = friendSearchTerm
+    ? friendList.filter(
+        (friend) =>
+          friend.name.toLowerCase().includes(friendSearchTerm) ||
+          friend.handle
+            .toLowerCase()
+            .replace(/^@/, "")
+            .includes(friendSearchTerm),
+      )
+    : friendList;
+  const favouriteFriends = matchingFriends.filter(
+    (friend) => friend.isFavourite,
+  );
+  const otherFriends = matchingFriends.filter((friend) => !friend.isFavourite);
 
   function setFriendFavouriteLocally(friendId: string, favourite: boolean) {
     setSocialState((current) => ({
@@ -638,6 +653,8 @@ export function FriendsDashboard({
   );
   const directConversationVisible =
     isDirectConversationOpen || Boolean(messageFriendId);
+  const showFriendSearch =
+    activeTab === "friends" && isLoaded && friendList.length > 0;
 
   function addFriend() {
     const name = friendName.trim();
@@ -743,8 +760,11 @@ export function FriendsDashboard({
     setIsLoadingCandidates(true);
 
     try {
+      // The server leaves out anyone with a pending request, so people
+      // requested since this list loaded no longer count toward the offset.
+      const loaded = query ? (searchResults ?? []) : availableFriends;
       const page = await fetchRemoteFriendCandidatesPage({
-        offset: query ? (searchResults?.length ?? 0) : availableFriends.length,
+        offset: loaded.filter((friend) => !friend.requestDirection).length,
         query,
         supabase: remoteClient,
       });
@@ -1423,9 +1443,9 @@ export function FriendsDashboard({
             </div>
           </div>
 
-          <div className="flex min-h-10 items-center gap-3">
+          <div className="flex min-h-10 items-center gap-2 sm:gap-3">
             {activeTab === "friends" ? (
-              <p className="text-sm font-medium text-[var(--color-text-muted)]">
+              <p className="shrink-0 text-sm font-medium text-[var(--color-text-muted)]">
                 {!isLoaded
                   ? "Loading friends…"
                   : friendList.length
@@ -1445,7 +1465,8 @@ export function FriendsDashboard({
             <button
               aria-pressed={activeTab === "requests"}
               className={cn(
-                "mac-focus -mr-2.5 ml-auto inline-grid h-10 shrink-0 grid-flow-col place-items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold leading-none transition hover:bg-[rgb(255_255_255/0.04)]",
+                "mac-focus ml-auto inline-grid h-10 shrink-0 grid-flow-col place-items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold leading-none transition hover:bg-[rgb(255_255_255/0.04)]",
+                !showFriendSearch && "-mr-2.5",
                 activeTab === "requests"
                   ? "text-[var(--color-mac-yellow)]"
                   : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
@@ -1466,6 +1487,25 @@ export function FriendsDashboard({
                 </span>
               ) : null}
             </button>
+            {showFriendSearch ? (
+              <label className="relative block min-w-0 flex-1 sm:w-60 sm:flex-none">
+                <span className="sr-only">Search friends</span>
+                <Search
+                  aria-hidden
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+                  size={15}
+                />
+                <input
+                  autoComplete="off"
+                  className="mac-focus h-10 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] pl-8 pr-2.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
+                  enterKeyHint="search"
+                  onChange={(event) => setFriendSearch(event.target.value)}
+                  placeholder="Search friends"
+                  type="search"
+                  value={friendSearch}
+                />
+              </label>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1495,6 +1535,10 @@ export function FriendsDashboard({
           <section className="space-y-3" role="tabpanel">
             {!isLoaded ? (
               <ListSkeleton avatar count={4} label="Loading friends" />
+            ) : friendList.length && !matchingFriends.length ? (
+              <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">
+                No friends match &ldquo;{friendSearch.trim()}&rdquo;
+              </p>
             ) : friendList.length ? (
               <div className="space-y-5">
                 {favouriteFriends.length ? (
@@ -1508,12 +1552,11 @@ export function FriendsDashboard({
                   <ListSection
                     title={favouriteFriends.length ? "All friends" : null}
                   >
-                    <PaginatedList
+                    <ChunkedList
                       className="grid gap-2 lg:grid-cols-2 lg:gap-3"
                       items={otherFriends}
-                      pageSize={12}
                       renderItem={renderFriendRow}
-                      resetKey="friends"
+                      resetKey={`friends:${friendSearchTerm}`}
                     />
                   </ListSection>
                 ) : null}
