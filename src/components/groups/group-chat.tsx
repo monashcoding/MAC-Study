@@ -317,19 +317,26 @@ export function GroupChat({
             }
           }
 
-          setMessages((current) => {
-            const nextMessages = mergeMessages(current, [message]);
-            const cached = remoteMessageCache.get(groupId);
+          // Our own message can arrive here before the send request returns;
+          // drop its pending copy so it doesn't show twice.
+          if (message.userId === selfId) {
+            setPendingMessages((current) => {
+              const pendingIndex = current.findIndex(
+                (pending) =>
+                  pending.delivery === "sending" &&
+                  pending.body === message.body &&
+                  pending.replyToId === message.replyToId,
+              );
 
-            if (cached) {
-              remoteMessageCache.set(groupId, {
-                ...cached,
-                messages: nextMessages,
-              });
-            }
+              return pendingIndex === -1
+                ? current
+                : current.filter((_, index) => index !== pendingIndex);
+            });
+          }
 
-            return nextMessages;
-          });
+          setMessages((current) =>
+            cacheMessages(groupId, mergeMessages(current, [message])),
+          );
           setIsReady(true);
         }
       },
@@ -593,11 +600,31 @@ export function GroupChat({
   async function deliverPendingMessage(pendingMessage: PendingChatMessage) {
     try {
       if (remoteClient) {
-        await sendRemoteGroupChatMessage({
+        const messageId = await sendRemoteGroupChatMessage({
           body: pendingMessage.body,
           groupId,
           replyToId: pendingMessage.replyToId,
         });
+
+        // Swap the pending bubble for the sent message in the same render so
+        // it never disappears while the refresh below is in flight.
+        if (messageId) {
+          const sentMessage: RemoteGroupChatMessage = {
+            body: pendingMessage.body,
+            createdAt: pendingMessage.createdAt,
+            groupId: pendingMessage.groupId,
+            id: messageId,
+            imagePath: null,
+            imageUrl: null,
+            replyToId: pendingMessage.replyToId,
+            userId: pendingMessage.userId,
+          };
+          setMessages((current) =>
+            current.some((message) => message.id === messageId)
+              ? current
+              : cacheMessages(groupId, mergeMessages(current, [sentMessage])),
+          );
+        }
         setPendingMessages((current) =>
           current.filter((message) => message.id !== pendingMessage.id),
         );
@@ -1246,6 +1273,17 @@ function mergeMessages(
       new Date(first.createdAt).getTime() -
       new Date(second.createdAt).getTime(),
   );
+}
+
+// Keeps the shared page cache in step with messages added locally.
+function cacheMessages(groupId: string, messages: RemoteGroupChatMessage[]) {
+  const cached = remoteMessageCache.get(groupId);
+
+  if (cached) {
+    remoteMessageCache.set(groupId, { ...cached, messages });
+  }
+
+  return messages;
 }
 
 function mergeReadReceipts(
