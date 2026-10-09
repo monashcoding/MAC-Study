@@ -33,6 +33,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { AppDialog } from "@/components/app-dialog";
+import { ChunkedList } from "@/components/chunked-list";
 import { EmptyStateCta } from "@/components/empty-state-cta";
 import { PaginatedList } from "@/components/paginated-list";
 import { useAppHeaderDetail } from "@/components/app-header-detail";
@@ -2166,10 +2167,10 @@ function GroupFriendInviteDialog({
       ) : null}
 
       {inviteableFriends.length ? (
-        <PaginatedList
+        <ChunkedList
+          chunkSize={20}
           className="grid gap-1.5"
           items={inviteableFriends}
-          pageSize={8}
           renderItem={(friend) => {
             const sent = sentFriendIds.has(friend.id);
             const busy = busyFriendIds.has(friend.id);
