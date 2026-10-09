@@ -54,6 +54,7 @@ import {
   requestRemoteSpecialUnit,
   setRemoteSubjectUnitOffering,
   createRemoteSubjectForUnit,
+  updateRemoteFriendRequest,
   upsertRemoteUnitEnrollment,
   type RemoteUnitState,
 } from "@/lib/supabase/app-data";
@@ -652,6 +653,36 @@ export function UnitsDashboard({
     }
   }
 
+  async function acceptFriendRequest(member: UnitCohortMember) {
+    if (!member.friendRequestId) return;
+    setBusyKey(`friend:${member.id}`);
+    setFeedback(null);
+
+    try {
+      await updateRemoteFriendRequest({
+        action: "accept",
+        requestId: member.friendRequestId,
+      });
+      setCohort((current) =>
+        current.map((item) =>
+          item.id === member.id
+            ? {
+                ...item,
+                friendRequest: null,
+                friendRequestId: null,
+                isFriend: true,
+              }
+            : item,
+        ),
+      );
+      setToastMessage("Friend request accepted");
+    } catch (error) {
+      setFeedback(getErrorMessage(error, "Could not accept this request."));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
   async function addToGroup(memberId: string, groupId: string) {
     if (!groupId) return;
     setBusyKey(`group:${memberId}`);
@@ -700,6 +731,7 @@ export function UnitsDashboard({
           enrollment={selectedEnrollment}
           feedback={feedback}
           manageableGroups={manageableGroups}
+          onAcceptFriend={(member) => void acceptFriendRequest(member)}
           onAddFriend={(memberId) => void addFriend(memberId)}
           onAddToGroup={(memberId, groupId) =>
             void addToGroup(memberId, groupId)
@@ -1215,6 +1247,7 @@ function OfferingDetail({
   enrollment,
   feedback,
   manageableGroups,
+  onAcceptFriend,
   onAddFriend,
   onAddToGroup,
   onBack,
@@ -1240,6 +1273,7 @@ function OfferingDetail({
   enrollment: UnitEnrollment;
   feedback: string | null;
   manageableGroups: SocialGroup[];
+  onAcceptFriend: (member: UnitCohortMember) => void;
   onAddFriend: (memberId: string) => void;
   onAddToGroup: (memberId: string, groupId: string) => void;
   onBack: () => void;
@@ -1550,6 +1584,7 @@ function OfferingDetail({
                       key={member.id}
                       manageableGroups={manageableGroups}
                       member={member}
+                      onAcceptFriend={onAcceptFriend}
                       onAddFriend={onAddFriend}
                       onAddToGroup={onAddToGroup}
                       requested={sentFriendRequestIds.includes(member.id)}
@@ -1967,6 +2002,7 @@ function CohortMemberCard({
   busyKey,
   manageableGroups,
   member,
+  onAcceptFriend,
   onAddFriend,
   onAddToGroup,
   requested,
@@ -1975,6 +2011,7 @@ function CohortMemberCard({
   busyKey: string | null;
   manageableGroups: SocialGroup[];
   member: UnitCohortMember;
+  onAcceptFriend: (member: UnitCohortMember) => void;
   onAddFriend: (memberId: string) => void;
   onAddToGroup: (memberId: string, groupId: string) => void;
   requested: boolean;
@@ -1983,8 +2020,10 @@ function CohortMemberCard({
     (group) => !member.sharedGroupIds.includes(group.id),
   );
   const isOutgoing = requested || member.friendRequest === "outgoing";
-  const isIncoming = !isOutgoing && member.friendRequest === "incoming";
-  const isPending = isOutgoing || isIncoming;
+  const canAccept =
+    !isOutgoing &&
+    member.friendRequest === "incoming" &&
+    Boolean(member.friendRequestId);
   const sharedGroupNames = member.sharedGroupIds
     .map((groupId) => allGroups.find((group) => group.id === groupId)?.name)
     .filter((name): name is string => Boolean(name));
@@ -2034,16 +2073,25 @@ function CohortMemberCard({
         <button
           className={cn(
             "mac-focus inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold disabled:opacity-60",
-            isPending
+            isOutgoing
               ? "border border-[var(--color-border)] text-[var(--color-text-muted)]"
               : "bg-[var(--color-mac-yellow)] text-[#141414]",
           )}
-          disabled={isPending || busyKey === `friend:${member.id}`}
-          onClick={() => onAddFriend(member.id)}
+          disabled={isOutgoing || busyKey === `friend:${member.id}`}
+          onClick={() =>
+            canAccept ? onAcceptFriend(member) : onAddFriend(member.id)
+          }
+          title={
+            canAccept ? `${member.displayName} sent you a request` : undefined
+          }
           type="button"
         >
-          <UserPlus aria-hidden size={13} />
-          {isOutgoing ? "Requested" : isIncoming ? "Requested you" : "Request"}
+          {canAccept ? (
+            <Check aria-hidden size={13} />
+          ) : (
+            <UserPlus aria-hidden size={13} />
+          )}
+          {isOutgoing ? "Requested" : canAccept ? "Accept" : "Request"}
         </button>
       ) : availableGroups.length ? (
         <CustomSelect

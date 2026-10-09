@@ -1,6 +1,6 @@
--- The unit class list also says whether a friend request is already pending
--- with each student, so the Request button stays "Requested" after a reload.
--- 'outgoing' means the viewer sent it, 'incoming' means the student did.
+-- Adds friend_request_id to the unit class list so an incoming friend
+-- request can be accepted from the Units page. Recreates the function in
+-- full, so it applies whether or not the previous migration already had it.
 
 drop function if exists public.get_unit_cohort_page(uuid, text, boolean, integer, integer);
 
@@ -20,7 +20,8 @@ returns table (
   is_friend boolean,
   mutual_friend_count bigint,
   shared_group_ids uuid[],
-  friend_request_direction text
+  friend_request_direction text,
+  friend_request_id uuid
 )
 language sql
 stable
@@ -106,22 +107,26 @@ as $$
       ),
       '{}'::uuid[]
     ),
-    (
-      select case
+    pending.direction,
+    pending.id
+  from page
+  left join lateral (
+    select
+      request.id,
+      case
         when request.sender_id = auth.uid() then 'outgoing'
         else 'incoming'
-      end
-      from public.friend_requests as request
-      where not page.is_friend
-        and request.status = 'pending'
-        and (
-          (request.sender_id = auth.uid() and request.recipient_id = page.id)
-          or (request.sender_id = page.id and request.recipient_id = auth.uid())
-        )
-      order by request.created_at desc
-      limit 1
-    )
-  from page
+      end as direction
+    from public.friend_requests as request
+    where not page.is_friend
+      and request.status = 'pending'
+      and (
+        (request.sender_id = auth.uid() and request.recipient_id = page.id)
+        or (request.sender_id = page.id and request.recipient_id = auth.uid())
+      )
+    order by request.created_at desc
+    limit 1
+  ) as pending on true
   order by
     page.is_friend desc,
     page.display_name nulls last,
