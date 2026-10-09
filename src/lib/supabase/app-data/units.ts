@@ -47,12 +47,16 @@ type UnitCohortResult =
 type UnitCohortRow = Omit<
   UnitCohortResult,
   | "display_name"
+  | "friend_request_direction"
+  | "friend_request_id"
   | "profile_color"
   | "shared_group_ids"
   | "study_icon"
   | "username"
 > & {
   display_name: string | null;
+  friend_request_direction: string | null;
+  friend_request_id: string | null;
   profile_color: string | null;
   shared_group_ids: string[] | null;
   study_icon: string | null;
@@ -435,6 +439,12 @@ export async function fetchRemoteUnitCohortPage({
     members: rows.slice(0, UNIT_COHORT_PAGE_SIZE).map((member) => ({
       color: member.profile_color || "#FFE330",
       displayName: member.display_name || member.username || "Student",
+      friendRequest:
+        member.friend_request_direction === "incoming" ||
+        member.friend_request_direction === "outgoing"
+          ? member.friend_request_direction
+          : null,
+      friendRequestId: member.friend_request_id,
       handle: member.username ? `@${member.username}` : "@student",
       id: member.user_id,
       isFriend: member.is_friend,

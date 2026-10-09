@@ -1982,6 +1982,9 @@ function CohortMemberCard({
   const availableGroups = manageableGroups.filter(
     (group) => !member.sharedGroupIds.includes(group.id),
   );
+  const isOutgoing = requested || member.friendRequest === "outgoing";
+  const isIncoming = !isOutgoing && member.friendRequest === "incoming";
+  const isPending = isOutgoing || isIncoming;
   const sharedGroupNames = member.sharedGroupIds
     .map((groupId) => allGroups.find((group) => group.id === groupId)?.name)
     .filter((name): name is string => Boolean(name));
@@ -2031,16 +2034,16 @@ function CohortMemberCard({
         <button
           className={cn(
             "mac-focus inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold disabled:opacity-60",
-            requested
+            isPending
               ? "border border-[var(--color-border)] text-[var(--color-text-muted)]"
               : "bg-[var(--color-mac-yellow)] text-[#141414]",
           )}
-          disabled={requested || busyKey === `friend:${member.id}`}
+          disabled={isPending || busyKey === `friend:${member.id}`}
           onClick={() => onAddFriend(member.id)}
           type="button"
         >
           <UserPlus aria-hidden size={13} />
-          {requested ? "Requested" : "Request"}
+          {isOutgoing ? "Requested" : isIncoming ? "Requested you" : "Request"}
         </button>
       ) : availableGroups.length ? (
         <CustomSelect
@@ -2580,6 +2583,8 @@ function getDemoCohort(offeringId: string, groups: SocialGroup[]) {
     .map((friend, index) => ({
       color: friend.color,
       displayName: friend.name,
+      friendRequest: null,
+      friendRequestId: null,
       handle: friend.handle,
       id: friend.id,
       isFriend: index < 2,

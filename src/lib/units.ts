@@ -26,6 +26,9 @@ export type UnitEnrollmentFilter = {
 export type UnitCohortMember = {
   color: string;
   displayName: string;
+  // A pending friend request with this student, if any.
+  friendRequest: "incoming" | "outgoing" | null;
+  friendRequestId: string | null;
   handle: string;
   id: string;
   isFriend: boolean;
